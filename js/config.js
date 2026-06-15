@@ -9,7 +9,7 @@
  */
 window.APP_CONFIG = {
   // e.g. "https://script.google.com/macros/s/AKfy....../exec"
-  API_URL: "",
+  API_URL: "https://script.google.com/macros/s/AKfycbyFvGswUWCeMn-jBjZcI06ajOVYmwaDp96EmOtOxA5difjG1F6gNaY0LbgCeLfSj4JphA/exec",
 
   CHALLENGE_LENGTH: 75,
   WATER_GOAL_OZ: 128,   // 1 US gallon
