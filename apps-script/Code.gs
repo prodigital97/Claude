@@ -283,25 +283,69 @@ function handleUpdateProfile(body) {
 }
 
 function handleLeaderboard(body) {
-  authUser(body); // any logged-in user may view the leaderboard
-  var users = getSheet(USERS_SHEET, USER_HEADERS).getDataRange().getValues();
-  var idx = colIndex(USER_HEADERS);
-  var board = [];
+  authUser(body); // any logged-in user may view the friends feed
+  var today = todayStr();
 
+  var users = getSheet(USERS_SHEET, USER_HEADERS).getDataRange().getValues();
+  var uIdx = colIndex(USER_HEADERS);
+
+  // Read each sheet once and bucket by username (avoids per-user full scans).
+  var logRows = getSheet(LOGS_SHEET, LOG_HEADERS).getDataRange().getValues();
+  var lIdx = colIndex(LOG_HEADERS);
+  var logsByUser = {};
+  for (var a = 1; a < logRows.length; a++) {
+    var un = normalizeUsername(logRows[a][lIdx.username]);
+    if (!un) continue;
+    (logsByUser[un] = logsByUser[un] || []).push(logFromRow(logRows[a], lIdx));
+  }
+
+  var foodRows = getSheet(FOOD_SHEET, FOOD_HEADERS).getDataRange().getValues();
+  var fIdx = colIndex(FOOD_HEADERS);
+  var calToday = {};
+  for (var b = 1; b < foodRows.length; b++) {
+    if (formatDate(foodRows[b][fIdx.date]) !== today) continue;
+    var fu = normalizeUsername(foodRows[b][fIdx.username]);
+    calToday[fu] = (calToday[fu] || 0) + (Number(foodRows[b][fIdx.calories]) || 0);
+  }
+
+  var profRows = getSheet(PROFILE_SHEET, PROFILE_HEADERS).getDataRange().getValues();
+  var goalByUser = {};
+  for (var c = 1; c < profRows.length; c++) {
+    var pu = normalizeUsername(profRows[c][0]);
+    try { goalByUser[pu] = (JSON.parse(profRows[c][1] || '{}').calorieGoal) || 0; } catch (e) { goalByUser[pu] = 0; }
+  }
+
+  var board = [];
   for (var i = 1; i < users.length; i++) {
     var u = users[i];
-    if (!u[idx.username]) continue;
-    var logs = getUserLogs(u[idx.username]);
-    var completed = logs.filter(function (l) { return l.completed; }).length;
+    var name = normalizeUsername(u[uIdx.username]);
+    if (!name) continue;
+    var logs = (logsByUser[name] || []).sort(function (x, y) { return x.date < y.date ? -1 : 1; });
+    var todayLog = logs.filter(function (l) { return l.date === today; })[0];
     board.push({
-      displayName: u[idx.displayName] || u[idx.username],
-      currentDay: dayNumberFor(u[idx.startDate], todayStr()),
-      completedDays: completed,
-      streak: currentStreak(logs)
+      displayName: u[uIdx.displayName] || name,
+      currentDay: dayNumberFor(u[uIdx.startDate], today),
+      completedDays: logs.filter(function (l) { return l.completed; }).length,
+      streak: currentStreak(logs),
+      todayDone: todayLog ? tasksDoneCount(todayLog) : 0,
+      todayTotal: 8,
+      todayComplete: todayLog ? !!todayLog.completed : false,
+      todayWaterMl: todayLog ? (Number(todayLog.waterMl) || 0) : 0,
+      todayCalories: Math.round(calToday[name] || 0),
+      calorieGoal: goalByUser[name] || 0
     });
   }
-  board.sort(function (a, b) { return b.completedDays - a.completedDays; });
+  board.sort(function (a, b) { return b.completedDays - a.completedDays || b.todayDone - a.todayDone; });
   return { leaderboard: board };
+}
+
+function tasksDoneCount(l) {
+  var c = 0;
+  ['workout1', 'workout2', 'outdoor', 'reading', 'photo', 'diet', 'noAlcohol'].forEach(function (k) {
+    if (l[k]) c++;
+  });
+  if (Number(l.waterMl) >= WATER_GOAL_ML) c++;
+  return c;
 }
 
 /* ----------------------------------------------------------------------- *

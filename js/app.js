@@ -164,11 +164,26 @@
       me.displayName = p.displayName || me.displayName; saveDb(d); return { user: pub(me) };
     }
     if (action === 'leaderboard') {
+      var today = todayStr();
       var board = Object.keys(d.users).map(function (k) {
         var u = d.users[k], lg = userLogs(k);
-        return { displayName: u.displayName, currentDay: dayNumber(u.startDate, todayStr()),
-          completedDays: lg.filter(function (x) { return x.completed; }).length, streak: streakOf(lg) };
-      }).sort(function (a, b) { return b.completedDays - a.completedDays; });
+        var tl = lg.filter(function (x) { return x.date === today; })[0];
+        var done = 0;
+        if (tl) {
+          ['workout1', 'workout2', 'outdoor', 'reading', 'photo', 'diet', 'noAlcohol'].forEach(function (key) { if (tl[key]) done++; });
+          if (Number(tl.waterMl) >= WATER_GOAL) done++;
+        }
+        var cals = ((d.foods && d.foods[k]) || []).filter(function (x) { return x.date === today; })
+          .reduce(function (s, x) { return s + (Number(x.calories) || 0); }, 0);
+        return {
+          displayName: u.displayName, currentDay: dayNumber(u.startDate, today),
+          completedDays: lg.filter(function (x) { return x.completed; }).length, streak: streakOf(lg),
+          todayDone: done, todayTotal: 8, todayComplete: tl ? !!tl.completed : false,
+          todayWaterMl: tl ? (Number(tl.waterMl) || 0) : 0,
+          todayCalories: Math.round(cals),
+          calorieGoal: (d.profiles && d.profiles[k] && d.profiles[k].calorieGoal) || 0
+        };
+      }).sort(function (a, b) { return b.completedDays - a.completedDays || b.todayDone - a.todayDone; });
       return { leaderboard: board };
     }
     throw new Error('Unknown action');
@@ -479,7 +494,7 @@
     return best;
   }
 
-  /* ---------------- Leaderboard ---------------- */
+  /* ---------------- Friends ---------------- */
   function renderBoard() {
     var box = $('#leaderboard');
     box.innerHTML = '<p class="muted tiny">Loading…</p>';
@@ -489,14 +504,31 @@
       if (!list.length) { box.innerHTML = '<p class="muted">No athletes yet.</p>'; return; }
       list.forEach(function (u, i) {
         var mine = u.displayName === state.user.displayName;
-        var medal = ['🥇', '🥈', '🥉'][i] || (i + 1);
-        var row = el('div', 'lb-row' + (mine ? ' me' : ''));
-        row.innerHTML =
-          '<div class="lb-rank">' + medal + '</div>' +
-          '<div class="lb-name">' + esc(u.displayName) + (mine ? ' (you)' : '') +
-            '<small>Day ' + Math.min(u.currentDay, LEN) + ' · 🔥 ' + u.streak + ' streak</small></div>' +
-          '<div class="lb-stat"><b>' + u.completedDays + '</b><div class="muted tiny">days done</div></div>';
-        box.appendChild(row);
+        var medal = ['🥇', '🥈', '🥉'][i] || ('#' + (i + 1));
+        var done = u.todayDone || 0, total = u.todayTotal || 8;
+        var pending = Math.max(0, total - done);
+        var pct = Math.round(done / total * 100);
+        var water = litres(u.todayWaterMl || 0) + ' L';
+        var cal = Math.round(u.todayCalories || 0);
+        var calStr = u.calorieGoal ? (cal + ' / ' + u.calorieGoal) : ('' + cal);
+        var badge = u.todayComplete
+          ? '<span class="fc-badge done">Day done ✓</span>'
+          : '<span class="fc-badge pend">' + pending + ' left</span>';
+        var card = el('div', 'friend-card' + (mine ? ' me' : ''));
+        card.innerHTML =
+          '<div class="fc-top">' +
+            '<div class="fc-rank">' + medal + '</div>' +
+            '<div class="fc-name">' + esc(u.displayName) + (mine ? ' <span class="muted">(you)</span>' : '') +
+              '<small>Day ' + Math.min(u.currentDay, LEN) + ' · 🔥 ' + u.streak + ' · ' + u.completedDays + ' days done</small></div>' +
+            badge +
+          '</div>' +
+          '<div class="fc-bar"><span style="width:' + pct + '%"></span></div>' +
+          '<div class="fc-stats">' +
+            '<span>✅ <b>' + done + '/' + total + '</b> tasks</span>' +
+            '<span>💧 <b>' + water + '</b></span>' +
+            '<span>🍽️ <b>' + calStr + '</b> kcal</span>' +
+          '</div>';
+        box.appendChild(card);
       });
     }).catch(function (err) { box.innerHTML = '<p class="muted">' + esc(err.message) + '</p>'; });
   }
