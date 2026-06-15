@@ -39,6 +39,7 @@ There are two halves: the **Google Sheet backend** and the **web app hosting**.
 1. Go to <https://sheets.google.com> and create a **new blank spreadsheet**. Name it e.g. `75 Hard Data`.
 2. In the menu choose **Extensions → Apps Script**.
 3. Delete any starter code, then **paste the entire contents of [`apps-script/Code.gs`](apps-script/Code.gs)** into the editor.
+   - Open **Project Settings** (⚙ in the left sidebar) and set the **Time zone** to **`(GMT+05:30) India Standard Time - Mumbai/Kolkata`** so "today" and day rollover happen at midnight Mumbai time.
 4. (Optional) Click the ▶ **Run** button with `setup` selected to pre-create the `Users` and `Logs` tabs, and approve the permission prompt once.
 5. Click **Deploy → New deployment**.
    - Click the gear ⚙ and choose **Web app**.
