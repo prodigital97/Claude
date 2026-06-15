@@ -31,6 +31,10 @@
     user: null,
     logs: [],
     today: null,
+    profile: {},
+    foods: [],
+    foodsDate: null,
+    pendingFood: null,
     saveTimer: null
   };
 
@@ -124,7 +128,27 @@
     var me = d.users[(p.username || '').toLowerCase().trim()];
     if (!me || me.token !== p.token) throw new Error('Session expired. Please log in again.');
 
-    if (action === 'getState') return { user: pub(me), logs: userLogs(me.username) };
+    if (action === 'getState') return { user: pub(me), logs: userLogs(me.username), profile: d.profiles && d.profiles[me.username] || {} };
+    if (action === 'saveGoals') {
+      d.profiles = d.profiles || {}; d.profiles[me.username] = p.profile || {}; saveDb(d);
+      return { profile: d.profiles[me.username] };
+    }
+    if (action === 'getFood') {
+      var all = (d.foods && d.foods[me.username]) || [];
+      return { foods: all.filter(function (x) { return x.date === (p.date || todayStr()); }) };
+    }
+    if (action === 'addFood') {
+      d.foods = d.foods || {}; var arr = d.foods[me.username] || (d.foods[me.username] = []);
+      var rec = p.food; rec.id = 'f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      arr.push(rec); saveDb(d); return { food: rec };
+    }
+    if (action === 'deleteFood') {
+      if (d.foods && d.foods[me.username]) {
+        d.foods[me.username] = d.foods[me.username].filter(function (x) { return x.id !== p.id; });
+        saveDb(d);
+      }
+      return { deleted: p.id };
+    }
     if (action === 'saveDay') {
       var day = p.day; day.completed = isComplete(day);
       var arr = d.logs[me.username] || (d.logs[me.username] = []);
@@ -229,6 +253,7 @@
     return api('getState', {}).then(function (data) {
       state.user = data.user;
       state.logs = data.logs || [];
+      state.profile = data.profile || {};
       var t = logFor(todayStr());
       state.today = t ? Object.assign(emptyDay(todayStr()), t) : emptyDay(todayStr());
       cacheState();
@@ -261,6 +286,7 @@
     $('#logout').addEventListener('click', logout);
     $('#reset-challenge').addEventListener('click', resetChallenge);
     $('#save-profile').addEventListener('click', saveProfile);
+    bindDietEvents();
   }
 
   function switchView(name) {
@@ -269,6 +295,7 @@
     document.querySelectorAll('.nav-btn').forEach(function (b) {
       b.classList.toggle('active', b.dataset.view === name);
     });
+    if (name === 'diet') renderDiet();
     if (name === 'calendar') renderCalendar();
     if (name === 'stats') renderStats();
     if (name === 'board') renderBoard();
@@ -476,6 +503,7 @@
   function renderSettings() {
     $('#set-displayname').value = state.user.displayName;
     $('#set-username').textContent = state.user.username;
+    prefillGoals();
   }
   function saveProfile() {
     var name = $('#set-displayname').value.trim();
@@ -498,6 +526,292 @@
     localStorage.removeItem('hard_cache');
     state.token = ''; state.username = ''; state.user = null; state.logs = [];
     location.reload();
+  }
+
+  /* ---------------- Diet & calories ---------------- */
+  // Per 100 g unless the item is naturally counted per piece (then grams = avg weight).
+  var COMMON_FOODS = [
+    { name: 'White rice (cooked)', kcal: 130, p: 2.7, c: 28, f: 0.3, serving: 150 },
+    { name: 'Roti / Chapati', kcal: 297, p: 11, c: 50, f: 7, serving: 40 },
+    { name: 'Dal (cooked)', kcal: 116, p: 7, c: 17, f: 1.5, serving: 150 },
+    { name: 'Paneer', kcal: 296, p: 18, c: 4, f: 22, serving: 50 },
+    { name: 'Chicken breast (cooked)', kcal: 165, p: 31, c: 0, f: 3.6, serving: 120 },
+    { name: 'Egg (whole)', kcal: 155, p: 13, c: 1.1, f: 11, serving: 50 },
+    { name: 'Milk (full fat)', kcal: 61, p: 3.2, c: 4.8, f: 3.3, serving: 200 },
+    { name: 'Curd / Yogurt', kcal: 98, p: 11, c: 3.4, f: 4.3, serving: 150 },
+    { name: 'Oats (dry)', kcal: 389, p: 17, c: 66, f: 7, serving: 40 },
+    { name: 'Banana', kcal: 89, p: 1.1, c: 23, f: 0.3, serving: 120 },
+    { name: 'Apple', kcal: 52, p: 0.3, c: 14, f: 0.2, serving: 180 },
+    { name: 'Peanut butter', kcal: 588, p: 25, c: 20, f: 50, serving: 20 },
+    { name: 'Almonds', kcal: 579, p: 21, c: 22, f: 50, serving: 28 },
+    { name: 'Whey protein (scoop)', kcal: 400, p: 80, c: 8, f: 6, serving: 30 },
+    { name: 'Bread (white slice)', kcal: 265, p: 9, c: 49, f: 3.2, serving: 30 },
+    { name: 'Potato (boiled)', kcal: 87, p: 1.9, c: 20, f: 0.1, serving: 150 },
+    { name: 'Chicken curry', kcal: 180, p: 14, c: 6, f: 11, serving: 200 },
+    { name: 'Fish (cooked)', kcal: 206, p: 22, c: 0, f: 12, serving: 120 },
+    { name: 'Mixed vegetables', kcal: 65, p: 2.6, c: 13, f: 0.4, serving: 150 },
+    { name: 'Olive oil', kcal: 884, p: 0, c: 0, f: 100, serving: 10 }
+  ];
+
+  function dietGoals() {
+    var p = state.profile || {};
+    return {
+      cal: Number(p.calorieGoal) || 0,
+      protein: Number(p.proteinGoal) || 0,
+      carbs: Number(p.carbGoal) || 0,
+      fat: Number(p.fatGoal) || 0
+    };
+  }
+
+  function loadFoods(date) {
+    return api('getFood', { date: date }).then(function (data) {
+      state.foods = data.foods || [];
+      state.foodsDate = date;
+    });
+  }
+
+  function renderDiet() {
+    var date = todayStr();
+    if (state.foodsDate !== date) {
+      $('#meals').innerHTML = '<p class="muted tiny center">Loading…</p>';
+      loadFoods(date).then(renderDietBody).catch(function (e) {
+        $('#meals').innerHTML = '<p class="muted tiny center">' + esc(e.message) + '</p>';
+      });
+    } else {
+      renderDietBody();
+    }
+  }
+
+  function renderDietBody() {
+    var g = dietGoals();
+    var t = state.foods.reduce(function (s, f) {
+      s.cal += f.calories; s.p += f.protein; s.c += f.carbs; s.f += f.fat; return s;
+    }, { cal: 0, p: 0, c: 0, f: 0 });
+
+    $('#cal-eaten').textContent = Math.round(t.cal);
+    $('#cal-goal').textContent = g.cal ? g.cal : '—';
+    $('#cal-left').textContent = g.cal ? Math.round(g.cal - t.cal) : '—';
+    $('#goal-hint').classList.toggle('hidden', !!g.cal);
+
+    var ring = $('#cal-ring');
+    var circ = 2 * Math.PI * 34;
+    var frac = g.cal ? Math.min(1, t.cal / g.cal) : 0;
+    ring.style.strokeDashoffset = circ * (1 - frac);
+    ring.style.stroke = (g.cal && t.cal > g.cal) ? 'var(--red)' : '#2fd47a';
+
+    var bars = $('#macro-bars');
+    bars.innerHTML = '';
+    [['p', 'Protein', t.p, g.protein], ['c', 'Carbs', t.c, g.carbs], ['f', 'Fat', t.f, g.fat]].forEach(function (m) {
+      var pct = m[3] ? Math.min(100, Math.round((m[2] / m[3]) * 100)) : 0;
+      var row = el('div', 'macro ' + m[0]);
+      row.innerHTML = '<div class="ml"><span>' + m[1] + '</span><span><b>' + Math.round(m[2]) + 'g</b>' +
+        (m[3] ? ' / ' + m[3] + 'g' : '') + '</span></div>' +
+        '<div class="bar"><span style="width:' + pct + '%"></span></div>';
+      bars.appendChild(row);
+    });
+
+    renderMeals();
+  }
+
+  function renderMeals() {
+    var meals = ['Breakfast', 'Lunch', 'Dinner', 'Snacks'];
+    var box = $('#meals');
+    box.innerHTML = '';
+    meals.forEach(function (meal) {
+      var items = state.foods.filter(function (f) { return f.meal === meal; });
+      var cals = items.reduce(function (s, f) { return s + f.calories; }, 0);
+      var card = el('div', 'meal-card');
+      var head = el('div', 'meal-top');
+      head.innerHTML = '<span class="mt-name">' + meal + '</span><span class="mt-cal">' + Math.round(cals) + ' kcal</span>';
+      card.appendChild(head);
+      items.forEach(function (f) {
+        var it = el('div', 'food-item');
+        it.innerHTML =
+          '<div class="fi-body"><div class="fi-name">' + esc(f.name) + '</div>' +
+          '<div class="fi-sub">' + Math.round(f.grams) + ' g · P' + Math.round(f.protein) + ' C' + Math.round(f.carbs) + ' F' + Math.round(f.fat) + '</div></div>' +
+          '<div class="fi-cal">' + Math.round(f.calories) + '</div>' +
+          '<button class="fi-del" title="Remove">✕</button>';
+        it.querySelector('.fi-del').addEventListener('click', function () { deleteFood(f.id); });
+        card.appendChild(it);
+      });
+      var add = el('button', 'add-food-btn', '+ Add food');
+      add.addEventListener('click', function () { openFoodModal(meal); });
+      card.appendChild(add);
+      box.appendChild(card);
+    });
+  }
+
+  /* ----- Food modal ----- */
+  var searchTimer;
+  function openFoodModal(meal) {
+    $('#food-modal-title').textContent = 'Add to ' + meal;
+    $('#p-meal').value = meal;
+    showSearchStep();
+    $('#food-search').value = '';
+    $('#food-results').innerHTML = '<p class="fr-loading">Type to search foods…</p>';
+    $('#food-manual').classList.add('hidden');
+    show('#food-modal');
+    setTimeout(function () { $('#food-search').focus(); }, 100);
+  }
+  function closeFoodModal() { hide('#food-modal'); state.pendingFood = null; }
+  function showSearchStep() { $('#food-step-search').classList.remove('hidden'); $('#food-step-portion').classList.add('hidden'); }
+  function showPortionStep() { $('#food-step-search').classList.add('hidden'); $('#food-step-portion').classList.remove('hidden'); }
+
+  function runSearch(q) {
+    q = q.trim();
+    var results = $('#food-results');
+    if (!q) { results.innerHTML = '<p class="fr-loading">Type to search foods…</p>'; return; }
+    var local = COMMON_FOODS.filter(function (f) { return f.name.toLowerCase().indexOf(q.toLowerCase()) !== -1; });
+    renderResults(local, true);
+    results.insertAdjacentHTML('beforeend', '<p class="fr-loading" id="fr-loading">Searching database…</p>');
+
+    fetch('https://world.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q) +
+          '&search_simple=1&action=process&json=1&page_size=20' +
+          '&fields=product_name,brands,nutriments,serving_quantity')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var items = (d.products || []).map(function (p) {
+          var n = p.nutriments || {};
+          var kcal = n['energy-kcal_100g'];
+          if (kcal == null || !p.product_name) return null;
+          return {
+            name: p.product_name + (p.brands ? ' · ' + String(p.brands).split(',')[0] : ''),
+            kcal: kcal, p: n.proteins_100g || 0, c: n.carbohydrates_100g || 0, f: n.fat_100g || 0,
+            serving: Number(p.serving_quantity) || 100
+          };
+        }).filter(Boolean);
+        var loadingEl = $('#fr-loading'); if (loadingEl) loadingEl.remove();
+        if (!local.length && !items.length) { results.innerHTML = '<p class="fr-loading">No matches. Try the manual option below.</p>'; return; }
+        appendResults(items);
+      })
+      .catch(function () { var l = $('#fr-loading'); if (l) l.remove(); });
+  }
+
+  function renderResults(list, replace) {
+    var box = $('#food-results');
+    if (replace) box.innerHTML = '';
+    appendResults(list);
+  }
+  function appendResults(list) {
+    var box = $('#food-results');
+    list.forEach(function (f) {
+      var it = el('div', 'fr-item');
+      it.innerHTML = '<div><div class="fr-name">' + esc(f.name) + '</div>' +
+        '<div class="fr-sub">per 100g · P' + Math.round(f.p) + ' C' + Math.round(f.c) + ' F' + Math.round(f.f) + '</div></div>' +
+        '<div class="fr-cal">' + Math.round(f.kcal) + ' kcal</div>';
+      it.addEventListener('click', function () { pickFood(f); });
+      box.appendChild(it);
+    });
+  }
+
+  function pickFood(f) {
+    state.pendingFood = f;
+    $('#p-name').textContent = f.name;
+    $('#p-grams').value = f.serving || 100;
+    updatePortion();
+    showPortionStep();
+  }
+  function updatePortion() {
+    var f = state.pendingFood; if (!f) return;
+    var g = Number($('#p-grams').value) || 0;
+    var k = f.kcal * g / 100, p = f.p * g / 100, c = f.c * g / 100, ft = f.f * g / 100;
+    $('#p-macros').innerHTML =
+      '<div class="pm-chip"><b>' + Math.round(k) + '</b>kcal</div>' +
+      '<div class="pm-chip"><b>' + Math.round(p) + '</b>protein</div>' +
+      '<div class="pm-chip"><b>' + Math.round(c) + '</b>carbs</div>' +
+      '<div class="pm-chip"><b>' + Math.round(ft) + '</b>fat</div>';
+  }
+  function addPortion() {
+    var f = state.pendingFood; if (!f) return;
+    var g = Number($('#p-grams').value) || 0;
+    saveFood({
+      meal: $('#p-meal').value, name: f.name, grams: g,
+      calories: f.kcal * g / 100, protein: f.p * g / 100, carbs: f.c * g / 100, fat: f.f * g / 100
+    });
+  }
+  function addManual() {
+    var name = $('#m-name').value.trim();
+    if (!name) { toast('Enter a food name'); return; }
+    saveFood({
+      meal: $('#p-meal').value || 'Snacks', name: name, grams: 0,
+      calories: Number($('#m-cal').value) || 0, protein: Number($('#m-protein').value) || 0,
+      carbs: Number($('#m-carbs').value) || 0, fat: Number($('#m-fat').value) || 0
+    });
+    $('#m-name').value = $('#m-cal').value = $('#m-protein').value = $('#m-carbs').value = $('#m-fat').value = '';
+  }
+  function saveFood(food) {
+    food.date = todayStr();
+    api('addFood', { food: food }).then(function (data) {
+      state.foods.push(data.food);
+      closeFoodModal();
+      renderDietBody();
+      toast('Added ✓');
+    }).catch(function (e) { toast(e.message); });
+  }
+  function deleteFood(id) {
+    api('deleteFood', { id: id }).then(function () {
+      state.foods = state.foods.filter(function (f) { return f.id !== id; });
+      renderDietBody();
+    }).catch(function (e) { toast(e.message); });
+  }
+
+  /* ----- Diet goals ----- */
+  function bindDietEvents() {
+    $('#food-close').addEventListener('click', closeFoodModal);
+    $('#food-modal').addEventListener('click', function (e) { if (e.target.id === 'food-modal') closeFoodModal(); });
+    $('#food-back').addEventListener('click', showSearchStep);
+    $('#food-search').addEventListener('input', function () {
+      clearTimeout(searchTimer);
+      var q = this.value;
+      searchTimer = setTimeout(function () { runSearch(q); }, 350);
+    });
+    $('#food-manual-toggle').addEventListener('click', function () { $('#food-manual').classList.toggle('hidden'); });
+    $('#m-add').addEventListener('click', addManual);
+    $('#p-grams').addEventListener('input', updatePortion);
+    $('#p-add').addEventListener('click', addPortion);
+    $('#calc-goals').addEventListener('click', calcGoals);
+    $('#save-goals').addEventListener('click', saveGoals);
+  }
+
+  function calcGoals() {
+    var sex = $('#g-sex').value, age = +$('#g-age').value, cm = +$('#g-height').value, kg = +$('#g-weight').value;
+    if (!age || !cm || !kg) { toast('Fill age, height & weight'); return; }
+    var bmr = 10 * kg + 6.25 * cm - 5 * age + (sex === 'female' ? -161 : 5);
+    var act = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, athlete: 1.9 }[$('#g-activity').value] || 1.2;
+    var adj = { lose: -500, maintain: 0, gain: 300 }[$('#g-goaltype').value] || 0;
+    var cal = Math.max(1200, Math.round((bmr * act + adj) / 10) * 10);
+    var protein = Math.round(1.8 * kg);
+    var fat = Math.round(cal * 0.25 / 9);
+    var carbs = Math.max(0, Math.round((cal - protein * 4 - fat * 9) / 4));
+    $('#g-cal').value = cal; $('#g-protein').value = protein; $('#g-carbs').value = carbs; $('#g-fat').value = fat;
+    toast('Targets calculated — tap Save');
+  }
+
+  function saveGoals() {
+    var profile = {
+      sex: $('#g-sex').value, age: +$('#g-age').value || '', heightCm: +$('#g-height').value || '',
+      weightKg: +$('#g-weight').value || '', activity: $('#g-activity').value, goalType: $('#g-goaltype').value,
+      calorieGoal: +$('#g-cal').value || 0, proteinGoal: +$('#g-protein').value || 0,
+      carbGoal: +$('#g-carbs').value || 0, fatGoal: +$('#g-fat').value || 0
+    };
+    api('saveGoals', { profile: profile }).then(function (data) {
+      state.profile = data.profile || profile;
+      toast('Diet goals saved ✓');
+    }).catch(function (e) { toast(e.message); });
+  }
+
+  function prefillGoals() {
+    var p = state.profile || {};
+    if (p.sex) $('#g-sex').value = p.sex;
+    if (p.activity) $('#g-activity').value = p.activity;
+    if (p.goalType) $('#g-goaltype').value = p.goalType;
+    $('#g-age').value = p.age || '';
+    $('#g-height').value = p.heightCm || '';
+    $('#g-weight').value = p.weightKg || '';
+    $('#g-cal').value = p.calorieGoal || '';
+    $('#g-protein').value = p.proteinGoal || '';
+    $('#g-carbs').value = p.carbGoal || '';
+    $('#g-fat').value = p.fatGoal || '';
   }
 
   /* ---------------- Start ---------------- */

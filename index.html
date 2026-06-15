@@ -108,6 +108,27 @@
         <p class="muted tiny center">Your progress saves automatically as you tap. The button just forces a sync.</p>
       </div>
 
+      <!-- DIET -->
+      <div id="view-diet" class="view hidden">
+        <h2 class="view-title">Diet &amp; Calories</h2>
+
+        <div class="card diet-summary">
+          <div class="cal-head">
+            <div>
+              <div class="cal-big"><span id="cal-eaten">0</span> <span class="muted">/ <span id="cal-goal">—</span> kcal</span></div>
+              <div class="muted tiny"><span id="cal-left">—</span> remaining today</div>
+            </div>
+            <div class="cal-ring-wrap">
+              <svg viewBox="0 0 80 80" class="ring small"><circle class="ring-bg" cx="40" cy="40" r="34"></circle><circle id="cal-ring" class="ring-fg" cx="40" cy="40" r="34"></circle></svg>
+            </div>
+          </div>
+          <div id="macro-bars" class="macro-bars"></div>
+          <p id="goal-hint" class="muted tiny center hidden">Set your calorie goal in <b>Settings → Diet goals</b> for targets.</p>
+        </div>
+
+        <div id="meals"></div>
+      </div>
+
       <!-- CALENDAR -->
       <div id="view-calendar" class="view hidden">
         <h2 class="view-title">75-Day Journey</h2>
@@ -147,6 +168,49 @@
           <button id="save-profile" class="btn block">Save name</button>
         </div>
         <div class="card">
+          <h3>Diet goals</h3>
+          <p class="muted tiny">Enter your details to auto-calculate a daily calorie target, or just type your own below.</p>
+          <div class="goal-grid">
+            <label>Sex
+              <select id="g-sex"><option value="male">Male</option><option value="female">Female</option></select>
+            </label>
+            <label>Age
+              <input id="g-age" type="number" inputmode="numeric" placeholder="29" />
+            </label>
+            <label>Height (cm)
+              <input id="g-height" type="number" inputmode="numeric" placeholder="175" />
+            </label>
+            <label>Weight (kg)
+              <input id="g-weight" type="number" inputmode="numeric" placeholder="72" />
+            </label>
+            <label>Activity
+              <select id="g-activity">
+                <option value="sedentary">Sedentary</option>
+                <option value="light">Lightly active</option>
+                <option value="moderate" selected>Moderately active</option>
+                <option value="active">Very active</option>
+                <option value="athlete">Athlete</option>
+              </select>
+            </label>
+            <label>Goal
+              <select id="g-goaltype">
+                <option value="lose">Lose weight</option>
+                <option value="maintain" selected>Maintain</option>
+                <option value="gain">Gain muscle</option>
+              </select>
+            </label>
+          </div>
+          <button id="calc-goals" class="btn block">Calculate for me</button>
+          <div class="goal-targets">
+            <label>Calories<input id="g-cal" type="number" inputmode="numeric" /></label>
+            <label>Protein (g)<input id="g-protein" type="number" inputmode="numeric" /></label>
+            <label>Carbs (g)<input id="g-carbs" type="number" inputmode="numeric" /></label>
+            <label>Fat (g)<input id="g-fat" type="number" inputmode="numeric" /></label>
+          </div>
+          <button id="save-goals" class="btn primary block">Save diet goals</button>
+        </div>
+
+        <div class="card">
           <h3>Start over</h3>
           <p class="muted tiny">Broke a rule? 75 Hard means restarting from Day 1. This resets your start date to today.</p>
           <button id="reset-challenge" class="btn danger block">I failed — restart from Day 1</button>
@@ -161,12 +225,56 @@
 
     <nav class="bottom-nav">
       <button class="nav-btn active" data-view="today"><span class="ico">✓</span><span>Today</span></button>
+      <button class="nav-btn" data-view="diet"><span class="ico">🍽️</span><span>Diet</span></button>
       <button class="nav-btn" data-view="calendar"><span class="ico">▦</span><span>Journey</span></button>
       <button class="nav-btn" data-view="stats"><span class="ico">📊</span><span>Stats</span></button>
       <button class="nav-btn" data-view="board"><span class="ico">🏆</span><span>Board</span></button>
       <button class="nav-btn" data-view="settings"><span class="ico">⚙</span><span>Settings</span></button>
     </nav>
   </section>
+
+  <!-- Food search modal -->
+  <div id="food-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <b id="food-modal-title">Add food</b>
+        <button id="food-close" class="icon-btn">✕</button>
+      </div>
+
+      <!-- Step 1: search -->
+      <div id="food-step-search">
+        <input id="food-search" placeholder="Search food (e.g. banana, dal, paneer, oats)" autocapitalize="none" />
+        <div id="food-results" class="food-results"></div>
+        <button id="food-manual-toggle" class="btn block">+ Add a custom food manually</button>
+        <div id="food-manual" class="manual-box hidden">
+          <label>Food name<input id="m-name" placeholder="e.g. Homemade smoothie" /></label>
+          <div class="manual-grid">
+            <label>Calories<input id="m-cal" type="number" inputmode="numeric" /></label>
+            <label>Protein g<input id="m-protein" type="number" inputmode="numeric" /></label>
+            <label>Carbs g<input id="m-carbs" type="number" inputmode="numeric" /></label>
+            <label>Fat g<input id="m-fat" type="number" inputmode="numeric" /></label>
+          </div>
+          <button id="m-add" class="btn primary block">Add this food</button>
+        </div>
+      </div>
+
+      <!-- Step 2: portion -->
+      <div id="food-step-portion" class="hidden">
+        <button id="food-back" class="btn link-btn">‹ Back to search</button>
+        <div class="portion-name" id="p-name">Food</div>
+        <label>Amount (grams)
+          <input id="p-grams" type="number" inputmode="numeric" value="100" />
+        </label>
+        <div class="portion-macros" id="p-macros"></div>
+        <label>Meal
+          <select id="p-meal">
+            <option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snacks</option>
+          </select>
+        </label>
+        <button id="p-add" class="btn primary block">Add to diary</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Toast -->
   <div id="toast" class="toast hidden"></div>

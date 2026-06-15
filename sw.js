@@ -1,5 +1,5 @@
 /* Simple offline cache for the app shell. */
-var CACHE = '75hard-v1';
+var CACHE = '75hard-v2';
 var ASSETS = [
   './',
   './index.html',
@@ -24,8 +24,9 @@ self.addEventListener('activate', function (e) {
 
 self.addEventListener('fetch', function (e) {
   var req = e.request;
-  // Never cache API calls to Apps Script.
-  if (req.method !== 'GET' || req.url.indexOf('script.google.com') !== -1) return;
+  // Only handle same-origin GETs (the app shell). Let API calls to Apps Script
+  // and food-database lookups (Open Food Facts) always go straight to the network.
+  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
   e.respondWith(
     caches.match(req).then(function (hit) {
       return hit || fetch(req).then(function (res) {

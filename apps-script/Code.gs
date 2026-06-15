@@ -19,9 +19,15 @@ var CHALLENGE_LENGTH = 75;        // days
 var USERS_SHEET = 'Users';
 var LOGS_SHEET = 'Logs';
 
+var FOOD_SHEET = 'Food';
+var PROFILE_SHEET = 'Profiles';
+
 var USER_HEADERS = ['username', 'displayName', 'passwordHash', 'salt', 'token', 'startDate', 'createdAt'];
 var LOG_HEADERS = ['username', 'date', 'dayNumber', 'workout1', 'workout2', 'outdoor',
                    'waterOz', 'reading', 'photo', 'diet', 'noAlcohol', 'completed', 'notes', 'updatedAt'];
+var FOOD_HEADERS = ['id', 'username', 'date', 'meal', 'name', 'grams',
+                    'calories', 'protein', 'carbs', 'fat', 'createdAt'];
+var PROFILE_HEADERS = ['username', 'dataJson', 'updatedAt'];
 
 /* ----------------------------------------------------------------------- *
  *  HTTP entry points
@@ -49,6 +55,10 @@ function doPost(e) {
       case 'reset':      data = handleReset(body);     break;
       case 'leaderboard':data = handleLeaderboard(body); break;
       case 'updateProfile': data = handleUpdateProfile(body); break;
+      case 'saveGoals':  data = handleSaveGoals(body);  break;
+      case 'getFood':    data = handleGetFood(body);    break;
+      case 'addFood':    data = handleAddFood(body);    break;
+      case 'deleteFood': data = handleDeleteFood(body); break;
       default:
         return jsonOutput({ ok: false, error: 'Unknown action: ' + action });
     }
@@ -111,9 +121,106 @@ function handleGetState(body) {
   var user = authUser(body);
   return {
     user: publicUser(user.username, user.displayName, user.startDate),
-    logs: getUserLogs(user.username)
+    logs: getUserLogs(user.username),
+    profile: getProfile(user.username)
   };
 }
+
+/* ---------------- Diet: goals + food log ---------------- */
+
+function getProfile(username) {
+  var sheet = getSheet(PROFILE_SHEET, PROFILE_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (normalizeUsername(values[i][0]) === username) {
+      try { return JSON.parse(values[i][1] || '{}'); } catch (e) { return {}; }
+    }
+  }
+  return {};
+}
+
+function handleSaveGoals(body) {
+  var user = authUser(body);
+  var profile = body.profile || {};
+  var sheet = getSheet(PROFILE_SHEET, PROFILE_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var json = JSON.stringify(profile);
+  for (var i = 1; i < values.length; i++) {
+    if (normalizeUsername(values[i][0]) === user.username) {
+      sheet.getRange(i + 1, 1, 1, 3).setValues([[user.username, json, new Date().toISOString()]]);
+      return { profile: profile };
+    }
+  }
+  sheet.appendRow([user.username, json, new Date().toISOString()]);
+  return { profile: profile };
+}
+
+function handleGetFood(body) {
+  var user = authUser(body);
+  var date = String(body.date || todayStr());
+  var sheet = getSheet(FOOD_SHEET, FOOD_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(FOOD_HEADERS);
+  var out = [];
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    if (normalizeUsername(r[idx.username]) !== user.username) continue;
+    if (formatDate(r[idx.date]) !== date) continue;
+    out.push(foodFromRow(r, idx));
+  }
+  return { foods: out };
+}
+
+function handleAddFood(body) {
+  var user = authUser(body);
+  var f = body.food || {};
+  var record = {
+    id: Utilities.getUuid(),
+    username: user.username,
+    date: String(f.date || todayStr()),
+    meal: String(f.meal || 'Other'),
+    name: String(f.name || 'Food').slice(0, 120),
+    grams: round1(f.grams),
+    calories: Math.round(Number(f.calories) || 0),
+    protein: round1(f.protein),
+    carbs: round1(f.carbs),
+    fat: round1(f.fat),
+    createdAt: new Date().toISOString()
+  };
+  var sheet = getSheet(FOOD_SHEET, FOOD_HEADERS);
+  sheet.appendRow(FOOD_HEADERS.map(function (h) { return record[h]; }));
+  return { food: record };
+}
+
+function handleDeleteFood(body) {
+  var user = authUser(body);
+  var id = String(body.id || '');
+  var sheet = getSheet(FOOD_SHEET, FOOD_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][0]) === id && normalizeUsername(values[i][1]) === user.username) {
+      sheet.deleteRow(i + 1);
+      return { deleted: id };
+    }
+  }
+  return { deleted: null };
+}
+
+function foodFromRow(r, idx) {
+  return {
+    id: String(r[idx.id]),
+    date: formatDate(r[idx.date]),
+    meal: String(r[idx.meal]),
+    name: String(r[idx.name]),
+    grams: Number(r[idx.grams]) || 0,
+    calories: Number(r[idx.calories]) || 0,
+    protein: Number(r[idx.protein]) || 0,
+    carbs: Number(r[idx.carbs]) || 0,
+    fat: Number(r[idx.fat]) || 0
+  };
+}
+
+function round1(v) { var n = Number(v) || 0; return Math.round(n * 10) / 10; }
 
 function handleSaveDay(body) {
   var user = authUser(body);
@@ -380,4 +487,6 @@ function jsonOutput(obj) {
 function setup() {
   getSheet(USERS_SHEET, USER_HEADERS);
   getSheet(LOGS_SHEET, LOG_HEADERS);
+  getSheet(FOOD_SHEET, FOOD_HEADERS);
+  getSheet(PROFILE_SHEET, PROFILE_HEADERS);
 }

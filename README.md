@@ -21,6 +21,10 @@ Miss any task and 75 Hard says you restart from Day 1 — there's a one-tap **re
 ## Features
 
 - **Today screen** with a live completion ring, big tap targets, and a glass-by-glass water tracker
+- **Diet & calorie tracker** (FatSecret-style) — search foods, log meals (breakfast/lunch/dinner/snacks),
+  track calories + protein/carbs/fat against a daily goal, with a built-in TDEE goal calculator.
+  Food search uses the free [Open Food Facts](https://world.openfoodfacts.org) database plus a built-in
+  quick-list of common staples; you can also add custom foods manually.
 - **75-day journey** calendar (done / missed / today / upcoming)
 - **Stats** — current & best streak, days completed, gallons of water, per-task consistency bars
 - **Leaderboard** — everyone using your sheet, ranked by completed days (great for doing it with friends)
@@ -82,6 +86,15 @@ Friends just open the same URL and create their own usernames; everyone shows up
 
 ---
 
+## Updating the backend after a code change
+
+When `apps-script/Code.gs` changes (e.g. new features like the diet tracker), update your deployed script:
+
+1. Open your sheet → **Extensions → Apps Script**, select all in `Code.gs`, delete, and paste the new `Code.gs`.
+2. **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.**
+
+The URL stays the same, so nothing in the app needs to change. New tabs (`Food`, `Profiles`) are created automatically.
+
 ## How the data is stored
 
 Everything lives in your Google Sheet, in two tabs:
@@ -95,6 +108,16 @@ Everything lives in your Google Sheet, in two tabs:
 
 | username | date | dayNumber | workout1 | workout2 | outdoor | waterOz | reading | photo | diet | noAlcohol | completed | notes | updatedAt |
 |----------|------|-----------|----------|----------|---------|---------|---------|-------|------|-----------|-----------|-------|-----------|
+
+**`Food`** (one row per logged food, for the diet tracker)
+
+| id | username | date | meal | name | grams | calories | protein | carbs | fat | createdAt |
+|----|----------|------|------|------|-------|----------|---------|-------|-----|-----------|
+
+**`Profiles`** (each user's saved diet goals/body stats, as JSON)
+
+| username | dataJson | updatedAt |
+|----------|----------|-----------|
 
 You can open the sheet any time to view, chart, or export your data — the app writes to it live.
 

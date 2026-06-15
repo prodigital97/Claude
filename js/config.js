@@ -14,5 +14,5 @@ window.APP_CONFIG = {
   CHALLENGE_LENGTH: 75,
   WATER_GOAL_OZ: 128,   // 1 US gallon
   GLASS_OZ: 16,         // size of one tappable glass (8 glasses = 1 gallon)
-  APP_VERSION: "1.0.0"
+  APP_VERSION: "1.1.0"
 };
