@@ -8,8 +8,8 @@
 
   var CFG = window.APP_CONFIG;
   var LEN = CFG.CHALLENGE_LENGTH;
-  var WATER_GOAL = CFG.WATER_GOAL_OZ;
-  var GLASS = CFG.GLASS_OZ;
+  var WATER_GOAL = CFG.WATER_GOAL_ML;
+  var GLASS = CFG.GLASS_ML;
   var GLASS_COUNT = Math.round(WATER_GOAL / GLASS);
   var OFFLINE = !CFG.API_URL;
 
@@ -107,7 +107,7 @@
     var d = db();
     function pub(u) {
       return { username: u.username, displayName: u.displayName, startDate: u.startDate,
-        currentDay: dayNumber(u.startDate, todayStr()), challengeLength: LEN, waterGoalOz: WATER_GOAL };
+        currentDay: dayNumber(u.startDate, todayStr()), challengeLength: LEN, waterGoalMl: WATER_GOAL };
     }
     function userLogs(un) { return (d.logs[un] || []).slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; }); }
 
@@ -177,12 +177,12 @@
   /* ---------------- domain helpers ---------------- */
   function isComplete(d) {
     return d.workout1 && d.workout2 && d.outdoor && d.reading &&
-           d.photo && d.diet && d.noAlcohol && (Number(d.waterOz) >= WATER_GOAL);
+           d.photo && d.diet && d.noAlcohol && (Number(d.waterMl) >= WATER_GOAL);
   }
   function completedCount(d) {
     var c = 0;
     TASKS.forEach(function (t) { if (d[t.key]) c++; });
-    if (Number(d.waterOz) >= WATER_GOAL) c++;
+    if (Number(d.waterMl) >= WATER_GOAL) c++;
     return c;
   }
   function streakOf(logs) {
@@ -192,7 +192,7 @@
   }
   function emptyDay(date) {
     return { date: date, dayNumber: state.user ? dayNumber(state.user.startDate, date) : 1,
-      workout1: false, workout2: false, outdoor: false, waterOz: 0,
+      workout1: false, workout2: false, outdoor: false, waterMl: 0,
       reading: false, photo: false, diet: false, noAlcohol: false, completed: false, notes: '' };
   }
   function logFor(date) {
@@ -349,26 +349,30 @@
     $('#streak-line').textContent = '🔥 ' + streakOf(state.logs) + ' day streak';
   }
 
+  function litres(ml) {
+    return (ml / 1000).toFixed(1).replace(/\.0$/, '');
+  }
+
   function renderWater(d) {
     var wrap = el('div', 'task water-task');
-    var oz = Number(d.waterOz) || 0;
-    var goalMet = oz >= WATER_GOAL;
+    var ml = Number(d.waterMl) || 0;
+    var goalMet = ml >= WATER_GOAL;
     wrap.innerHTML =
       '<div class="water-head">' +
         '<div class="check"' + (goalMet ? ' style="background:#4aa8ff;border-color:#4aa8ff;color:#04223f"' : '') + '>✓</div>' +
         '<div class="t-emoji">💧</div>' +
-        '<div class="t-body"><div class="t-title">Drink 1 gallon</div>' +
-        '<div class="t-sub">Tap a glass each time you drink (' + GLASS + ' oz each)</div></div>' +
+        '<div class="t-body"><div class="t-title">Drink ' + litres(WATER_GOAL) + ' L of water</div>' +
+        '<div class="t-sub">Tap a glass each time you drink (' + GLASS + ' ml each)</div></div>' +
       '</div>';
     var glasses = el('div', 'glasses');
-    var filled = Math.round(oz / GLASS);
+    var filled = Math.round(ml / GLASS);
     for (var i = 0; i < GLASS_COUNT; i++) {
       var g = el('div', 'glass' + (i < filled ? ' full' : ''));
       (function (idx) {
         g.addEventListener('click', function () {
           // tapping a glass sets the level to that glass (toggle last one off)
           var newFilled = (idx + 1 === filled) ? idx : idx + 1;
-          state.today.waterOz = newFilled * GLASS;
+          state.today.waterMl = newFilled * GLASS;
           renderToday(); queueSave();
         });
       })(i);
@@ -376,7 +380,7 @@
     }
     wrap.appendChild(glasses);
     var amt = el('div', 'water-amount');
-    amt.innerHTML = '<b>' + oz + ' oz</b> / ' + WATER_GOAL + ' oz';
+    amt.innerHTML = '<b>' + litres(ml) + ' L</b> / ' + litres(WATER_GOAL) + ' L';
     wrap.appendChild(amt);
     return wrap;
   }
@@ -433,8 +437,8 @@
     var done = logs.filter(function (l) { return l.completed; }).length;
     var curDay = Math.max(1, state.user.currentDay);
     var remaining = Math.max(0, LEN - curDay + (state.user.currentDay > 0 ? 0 : 0));
-    var totalWater = logs.reduce(function (s, l) { return s + (Number(l.waterOz) || 0); }, 0);
-    var gallons = (totalWater / WATER_GOAL).toFixed(1);
+    var totalWater = logs.reduce(function (s, l) { return s + (Number(l.waterMl) || 0); }, 0);
+    var totalLitres = Math.round(totalWater / 1000);
     var best = bestStreak(logs);
 
     var grid = $('#stats-grid');
@@ -445,7 +449,7 @@
       ['Current streak', streakOf(logs) + '🔥'],
       ['Best streak', best],
       ['Days left', Math.max(0, LEN - Math.min(curDay, LEN))],
-      ['Water drank', gallons + ' gal']
+      ['Water drank', totalLitres + ' L']
     ].forEach(function (s) {
       var c = el('div', 'stat');
       c.innerHTML = '<div class="num">' + s[1] + '</div><div class="lbl">' + s[0] + '</div>';
@@ -456,10 +460,10 @@
     var elapsed = logs.length || 1;
     var bars = $('#task-bars');
     bars.innerHTML = '';
-    var defs = TASKS.concat([{ key: '__water', title: '💧 1 gallon water' }]);
+    var defs = TASKS.concat([{ key: '__water', title: '💧 Water goal' }]);
     defs.forEach(function (t) {
       var hit = logs.filter(function (l) {
-        return t.key === '__water' ? Number(l.waterOz) >= WATER_GOAL : l[t.key];
+        return t.key === '__water' ? Number(l.waterMl) >= WATER_GOAL : l[t.key];
       }).length;
       var pct = Math.round((hit / elapsed) * 100);
       var row = el('div', 'bar-row');
@@ -504,6 +508,7 @@
     $('#set-displayname').value = state.user.displayName;
     $('#set-username').textContent = state.user.username;
     prefillGoals();
+    renderThemes();
   }
   function saveProfile() {
     var name = $('#set-displayname').value.trim();
@@ -814,8 +819,40 @@
     $('#g-fat').value = p.fatGoal || '';
   }
 
+  /* ---------------- Themes ---------------- */
+  var THEMES = [
+    { id: 'midnight', name: 'Midnight',  bg: '#0b1220', accent: '#ff5a3c' },
+    { id: 'neon',     name: 'Neon Lime', bg: '#0a0a0a', accent: '#c8ff00' },
+    { id: 'violet',   name: 'Violet',    bg: '#0c0a14', accent: '#a855f7' },
+    { id: 'ocean',    name: 'Ocean',     bg: '#04141b', accent: '#22d3ee' },
+    { id: 'crimson',  name: 'Crimson',   bg: '#140a0d', accent: '#ff4d5e' },
+    { id: 'pastel',   name: 'Pastel',    bg: '#f3f1ee', accent: '#b07cff' }
+  ];
+  function currentTheme() { return localStorage.getItem('hard_theme') || CFG.DEFAULT_THEME || 'midnight'; }
+  function applyTheme(id) {
+    var t = THEMES.filter(function (x) { return x.id === id; })[0] || THEMES[0];
+    if (t.id === 'midnight') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', t.id);
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', t.bg);
+    localStorage.setItem('hard_theme', t.id);
+  }
+  function renderThemes() {
+    var grid = $('#theme-grid'); if (!grid) return;
+    var active = currentTheme();
+    grid.innerHTML = '';
+    THEMES.forEach(function (t) {
+      var s = el('button', 'swatch' + (t.id === active ? ' active' : ''));
+      s.innerHTML = '<span class="sw-preview" style="background:' + t.bg + '">' +
+        '<i style="background:' + t.accent + '"></i></span><span class="sw-name">' + t.name + '</span>';
+      s.addEventListener('click', function () { applyTheme(t.id); renderThemes(); });
+      grid.appendChild(s);
+    });
+  }
+
   /* ---------------- Start ---------------- */
   function boot() {
+    applyTheme(currentTheme());
     initAuth();
     var splash = $('#splash');
     setTimeout(function () { splash.classList.add('fade'); }, 600);

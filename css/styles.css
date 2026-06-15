@@ -11,16 +11,51 @@
   --green: #2fd47a;
   --red: #ff5470;
   --amber: #ffc24b;
+  --on-primary: #ffffff;
+  --nav-bg: rgba(13, 21, 38, .92);
+  --bg-grad: #16243f;
   --radius: 18px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ============ Themes ============ */
+[data-theme="neon"] {
+  --bg: #0a0a0a; --bg-soft: #151515; --card: #1a1a1a; --card-2: #242424; --line: #2f2f2f;
+  --text: #f4f4f4; --muted: #9b9b9b; --primary: #c8ff00; --primary-2: #aef000;
+  --green: #c8ff00; --red: #ff5470; --amber: #e9ff7a;
+  --on-primary: #0a0a0a; --nav-bg: rgba(10,10,10,.94); --bg-grad: #1e1e10;
+}
+[data-theme="violet"] {
+  --bg: #0c0a14; --bg-soft: #161226; --card: #1b1630; --card-2: #251d42; --line: #2f2654;
+  --text: #efeaff; --muted: #a99fce; --primary: #a855f7; --primary-2: #c07cff;
+  --green: #34d399; --red: #fb7185; --amber: #fbbf24;
+  --on-primary: #ffffff; --nav-bg: rgba(12,10,20,.92); --bg-grad: #241546;
+}
+[data-theme="ocean"] {
+  --bg: #04141b; --bg-soft: #0a2330; --card: #0d2a3a; --card-2: #123a4f; --line: #1b4b63;
+  --text: #e7f6fb; --muted: #8fb6c6; --primary: #22d3ee; --primary-2: #38e0c4;
+  --green: #2dd4bf; --red: #ff6b81; --amber: #fbbf24;
+  --on-primary: #04141b; --nav-bg: rgba(4,20,27,.92); --bg-grad: #0a3a4a;
+}
+[data-theme="crimson"] {
+  --bg: #140a0d; --bg-soft: #211216; --card: #28161b; --card-2: #341d24; --line: #44272f;
+  --text: #fbeaee; --muted: #c79aa4; --primary: #ff4d5e; --primary-2: #ff7a4d;
+  --green: #34d399; --red: #ff4d5e; --amber: #ffb347;
+  --on-primary: #ffffff; --nav-bg: rgba(20,10,13,.92); --bg-grad: #3a1018;
+}
+[data-theme="pastel"] {
+  --bg: #f3f1ee; --bg-soft: #ffffff; --card: #ffffff; --card-2: #f6f1ff; --line: #e6e1da;
+  --text: #211d2b; --muted: #76707f; --primary: #b07cff; --primary-2: #d2a8ff;
+  --green: #57c785; --red: #ef5d7a; --amber: #efb83d;
+  --on-primary: #ffffff; --nav-bg: rgba(255,255,255,.92); --bg-grad: #efe7ff;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; padding: 0; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background: radial-gradient(1200px 600px at 50% -10%, #16243f 0%, var(--bg) 55%);
+  background: radial-gradient(1200px 600px at 50% -10%, var(--bg-grad) 0%, var(--bg) 55%);
   color: var(--text);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
@@ -89,7 +124,7 @@ textarea { resize: vertical; }
 }
 .btn:active { transform: scale(.98); }
 .btn.block { width: 100%; }
-.btn.primary { background: linear-gradient(135deg, var(--primary), var(--primary-2)); border: 0; color: #fff; }
+.btn.primary { background: linear-gradient(135deg, var(--primary), var(--primary-2)); border: 0; color: var(--on-primary); }
 .btn.danger { background: transparent; border-color: var(--red); color: var(--red); }
 .icon-btn {
   width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--line);
@@ -245,6 +280,14 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .goal-grid, .goal-targets { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
 .goal-targets { grid-template-columns: 1fr 1fr; }
 
+/* ---------- Theme picker ---------- */
+.theme-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
+.swatch { border: 1px solid var(--line); background: var(--bg-soft); border-radius: 14px; padding: 8px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 7px; }
+.swatch.active { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary) inset; }
+.sw-preview { width: 100%; height: 42px; border-radius: 9px; display: flex; align-items: center; justify-content: flex-end; padding-right: 8px; border: 1px solid rgba(255,255,255,.08); }
+.sw-preview i { width: 16px; height: 16px; border-radius: 50%; }
+.sw-name { font-size: 12px; font-weight: 700; color: var(--text); }
+
 /* ---------- Modal ---------- */
 .modal { position: fixed; inset: 0; z-index: 60; background: rgba(4,9,18,.7); display: flex; align-items: flex-end; justify-content: center; }
 .modal-card {
@@ -274,7 +317,7 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
   display: flex; justify-content: space-around;
   padding: 8px 6px calc(8px + var(--safe-bottom));
-  background: rgba(13,21,38,.92); backdrop-filter: blur(12px); border-top: 1px solid var(--line);
+  background: var(--nav-bg); backdrop-filter: blur(12px); border-top: 1px solid var(--line);
 }
 .nav-btn {
   flex: 1; border: 0; background: transparent; color: var(--muted);

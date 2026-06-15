@@ -7,14 +7,14 @@
  * SHEETS (auto-created on first run):
  *   Users : username | displayName | passwordHash | salt | token | startDate | createdAt
  *   Logs  : username | date | dayNumber | workout1 | workout2 | outdoor |
- *           waterOz | reading | photo | diet | noAlcohol | completed | notes | updatedAt
+ *           waterMl | reading | photo | diet | noAlcohol | completed | notes | updatedAt
  *
  * Deploy:  Deploy > New deployment > Web app
  *          Execute as: Me   |   Who has access: Anyone
  *          Copy the /exec URL into js/config.js (API_URL).
  */
 
-var WATER_GOAL_OZ = 128;          // 1 US gallon
+var WATER_GOAL_ML = 4000;         // 4 L (comfortably meets the 1-gallon rule)
 var CHALLENGE_LENGTH = 75;        // days
 var USERS_SHEET = 'Users';
 var LOGS_SHEET = 'Logs';
@@ -24,7 +24,7 @@ var PROFILE_SHEET = 'Profiles';
 
 var USER_HEADERS = ['username', 'displayName', 'passwordHash', 'salt', 'token', 'startDate', 'createdAt'];
 var LOG_HEADERS = ['username', 'date', 'dayNumber', 'workout1', 'workout2', 'outdoor',
-                   'waterOz', 'reading', 'photo', 'diet', 'noAlcohol', 'completed', 'notes', 'updatedAt'];
+                   'waterMl', 'reading', 'photo', 'diet', 'noAlcohol', 'completed', 'notes', 'updatedAt'];
 var FOOD_HEADERS = ['id', 'username', 'date', 'meal', 'name', 'grams',
                     'calories', 'protein', 'carbs', 'fat', 'createdAt'];
 var PROFILE_HEADERS = ['username', 'dataJson', 'updatedAt'];
@@ -237,7 +237,7 @@ function handleSaveDay(body) {
     workout1: !!day.workout1,
     workout2: !!day.workout2,
     outdoor: !!day.outdoor,
-    waterOz: Number(day.waterOz) || 0,
+    waterMl: Number(day.waterMl) || 0,
     reading: !!day.reading,
     photo: !!day.photo,
     diet: !!day.diet,
@@ -333,7 +333,7 @@ function publicUser(username, displayName, startDate) {
     startDate: String(startDate),
     currentDay: dayNumberFor(startDate, todayStr()),
     challengeLength: CHALLENGE_LENGTH,
-    waterGoalOz: WATER_GOAL_OZ
+    waterGoalMl: WATER_GOAL_ML
   };
 }
 
@@ -378,7 +378,7 @@ function logFromRow(r, idx) {
     workout1: toBool(r[idx.workout1]),
     workout2: toBool(r[idx.workout2]),
     outdoor: toBool(r[idx.outdoor]),
-    waterOz: Number(r[idx.waterOz]) || 0,
+    waterMl: Number(r[idx.waterMl]) || 0,
     reading: toBool(r[idx.reading]),
     photo: toBool(r[idx.photo]),
     diet: toBool(r[idx.diet]),
@@ -402,7 +402,7 @@ function findLogRow(sheet, username, date) {
 
 function isDayComplete(d) {
   return d.workout1 && d.workout2 && d.outdoor && d.reading &&
-         d.photo && d.diet && d.noAlcohol && (Number(d.waterOz) >= WATER_GOAL_OZ);
+         d.photo && d.diet && d.noAlcohol && (Number(d.waterMl) >= WATER_GOAL_ML);
 }
 
 function currentStreak(logs) {

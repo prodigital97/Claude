@@ -1,13 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#ffc24b"/>
-      <stop offset="1" stop-color="#ff5a3c"/>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff8a1e"/>
+      <stop offset=".55" stop-color="#ff3d5a"/>
+      <stop offset="1" stop-color="#b5179e"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff2c2"/>
+      <stop offset="1" stop-color="#ffd24a"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="112" fill="#0b1220"/>
-  <text x="256" y="300" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
-        font-size="220" font-weight="900" fill="url(#g)">75</text>
-  <text x="256" y="380" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
-        font-size="76" font-weight="800" letter-spacing="10" fill="#8da3c4">HARD</text>
+
+  <rect width="512" height="512" rx="116" fill="url(#tile)"/>
+
+  <!-- dynamic energy ring -->
+  <circle cx="256" cy="256" r="196" fill="none" stroke="#ffffff" stroke-opacity=".16"
+          stroke-width="20" stroke-linecap="round"
+          stroke-dasharray="170 1231" transform="rotate(-90 256 256)"/>
+
+  <!-- flame -->
+  <path d="M256 96 C300 150 318 188 296 226 C330 214 332 168 322 142
+           C352 178 372 226 372 272 C372 338 320 384 256 384
+           C192 384 140 338 140 272 C140 214 178 160 232 132
+           C220 168 226 196 248 210 C232 176 232 134 256 96 Z"
+        fill="url(#flame)" opacity=".95"/>
+
+  <!-- 75 monogram -->
+  <text x="256" y="312" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+        font-size="150" font-weight="900" fill="#3a0a18">75</text>
 </svg>

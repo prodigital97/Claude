@@ -12,7 +12,8 @@ window.APP_CONFIG = {
   API_URL: "https://script.google.com/macros/s/AKfycbyFvGswUWCeMn-jBjZcI06ajOVYmwaDp96EmOtOxA5difjG1F6gNaY0LbgCeLfSj4JphA/exec",
 
   CHALLENGE_LENGTH: 75,
-  WATER_GOAL_OZ: 128,   // 1 US gallon
-  GLASS_OZ: 16,         // size of one tappable glass (8 glasses = 1 gallon)
-  APP_VERSION: "1.1.0"
+  WATER_GOAL_ML: 4000,  // 4 L — comfortably meets the 1-gallon (3.8 L) rule
+  GLASS_ML: 500,        // one tap = 500 ml (8 taps = 4 L)
+  DEFAULT_THEME: "midnight",
+  APP_VERSION: "1.2.0"
 };

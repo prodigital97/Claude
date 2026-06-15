@@ -10,7 +10,7 @@ Every day you must complete **all** of:
 
 - 🏋️ **Workout 1** — 45 minutes
 - 🏃 **Workout 2** — 45 minutes (**one of the two must be outdoors** 🌳)
-- 💧 **Drink 1 gallon of water** (128 oz) — tap a glass each time you drink
+- 💧 **Drink your daily water** — tracked in **litres**, one tap = **500 ml** (goal 4 L, which covers the 1-gallon rule)
 - 📖 **Read 10 pages** of a non-fiction / self-improvement book
 - 📸 **Take a progress photo**
 - 🥗 **Follow a diet** — no cheat meals
@@ -28,6 +28,7 @@ Miss any task and 75 Hard says you restart from Day 1 — there's a one-tap **re
 - **75-day journey** calendar (done / missed / today / upcoming)
 - **Stats** — current & best streak, days completed, gallons of water, per-task consistency bars
 - **Leaderboard** — everyone using your sheet, ranked by completed days (great for doing it with friends)
+- **Themes** — pick from Midnight, Neon Lime, Violet, Ocean, Crimson, or Pastel in Settings (saved on your device)
 - **Multi-user** sign-up / login (passwords are salted + SHA-256 hashed in the sheet)
 - **Auto-save** — every tap syncs; works offline and re-syncs
 - **Installable** to your phone home screen, works full-screen
@@ -106,7 +107,7 @@ Everything lives in your Google Sheet, in two tabs:
 
 **`Logs`** (one row per user per day, updated automatically as you tap)
 
-| username | date | dayNumber | workout1 | workout2 | outdoor | waterOz | reading | photo | diet | noAlcohol | completed | notes | updatedAt |
+| username | date | dayNumber | workout1 | workout2 | outdoor | waterMl | reading | photo | diet | noAlcohol | completed | notes | updatedAt |
 |----------|------|-----------|----------|----------|---------|---------|---------|-------|------|-----------|-----------|-------|-----------|
 
 **`Food`** (one row per logged food, for the diet tracker)
