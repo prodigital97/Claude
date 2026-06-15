@@ -1,0 +1,119 @@
+# 75 Hard Tracker 💪
+
+A clean, **mobile-first** web app to track the official [75 Hard](https://andyfrisella.com/pages/75hard-info) challenge from your phone. It supports **multiple users** (each person signs up with a username) and stores **all data in a Google Sheet** that updates automatically. Installs to your home screen like a native app (PWA).
+
+> Your challenge starts the day you sign up. Pick your start date on the sign-up screen.
+
+## What it tracks (official 75 Hard rules)
+
+Every day you must complete **all** of:
+
+- 🏋️ **Workout 1** — 45 minutes
+- 🏃 **Workout 2** — 45 minutes (**one of the two must be outdoors** 🌳)
+- 💧 **Drink 1 gallon of water** (128 oz) — tap a glass each time you drink
+- 📖 **Read 10 pages** of a non-fiction / self-improvement book
+- 📸 **Take a progress photo**
+- 🥗 **Follow a diet** — no cheat meals
+- 🚫 **No alcohol**
+
+Miss any task and 75 Hard says you restart from Day 1 — there's a one-tap **restart** button in Settings.
+
+## Features
+
+- **Today screen** with a live completion ring, big tap targets, and a glass-by-glass water tracker
+- **75-day journey** calendar (done / missed / today / upcoming)
+- **Stats** — current & best streak, days completed, gallons of water, per-task consistency bars
+- **Leaderboard** — everyone using your sheet, ranked by completed days (great for doing it with friends)
+- **Multi-user** sign-up / login (passwords are salted + SHA-256 hashed in the sheet)
+- **Auto-save** — every tap syncs; works offline and re-syncs
+- **Installable** to your phone home screen, works full-screen
+
+---
+
+## Setup (about 10 minutes, all free)
+
+There are two halves: the **Google Sheet backend** and the **web app hosting**.
+
+### Part A — Google Sheet + Apps Script backend
+
+1. Go to <https://sheets.google.com> and create a **new blank spreadsheet**. Name it e.g. `75 Hard Data`.
+2. In the menu choose **Extensions → Apps Script**.
+3. Delete any starter code, then **paste the entire contents of [`apps-script/Code.gs`](apps-script/Code.gs)** into the editor.
+4. (Optional) Click the ▶ **Run** button with `setup` selected to pre-create the `Users` and `Logs` tabs, and approve the permission prompt once.
+5. Click **Deploy → New deployment**.
+   - Click the gear ⚙ and choose **Web app**.
+   - **Description:** `75 Hard API`
+   - **Execute as:** **Me**
+   - **Who has access:** **Anyone**
+   - Click **Deploy**, approve access, and **copy the Web app URL** (ends in `/exec`).
+
+> The `Users` and `Logs` tabs are created automatically the first time someone signs up.
+
+### Part B — Connect the app to your sheet
+
+1. Open [`js/config.js`](js/config.js).
+2. Paste your Web app URL into `API_URL`:
+   ```js
+   API_URL: "https://script.google.com/macros/s/AKfy....../exec",
+   ```
+3. Commit the change.
+
+> If you leave `API_URL` empty, the app still runs in **offline demo mode** (data lives only in that phone's browser) so you can try the interface before wiring up the sheet.
+
+### Part C — Host on GitHub Pages
+
+This repo ships with a workflow at `.github/workflows/deploy-pages.yml` that publishes automatically.
+
+1. In your GitHub repo go to **Settings → Pages**.
+2. Under **Build and deployment → Source**, choose **GitHub Actions**.
+3. Push to the branch (it deploys on every push). Within a minute the **Actions** tab shows a deployment with your public URL, e.g.
+   `https://<your-username>.github.io/<repo>/`.
+
+### Part D — Put it on your phone
+
+1. Open the Pages URL in **Safari (iOS)** or **Chrome (Android)**.
+2. **iPhone:** Share → **Add to Home Screen**.
+   **Android:** menu ⋮ → **Add to Home screen / Install app**.
+3. Open it from the icon — it runs full-screen like a native app.
+4. **Sign up** with a username + password and your start date. Done — go get Day 1. 🔥
+
+Friends just open the same URL and create their own usernames; everyone shows up on the leaderboard.
+
+---
+
+## How the data is stored
+
+Everything lives in your Google Sheet, in two tabs:
+
+**`Users`**
+
+| username | displayName | passwordHash | salt | token | startDate | createdAt |
+|----------|-------------|--------------|------|-------|-----------|-----------|
+
+**`Logs`** (one row per user per day, updated automatically as you tap)
+
+| username | date | dayNumber | workout1 | workout2 | outdoor | waterOz | reading | photo | diet | noAlcohol | completed | notes | updatedAt |
+|----------|------|-----------|----------|----------|---------|---------|---------|-------|------|-----------|-----------|-------|-----------|
+
+You can open the sheet any time to view, chart, or export your data — the app writes to it live.
+
+## Project structure
+
+```
+index.html              App shell (auth + dashboard)
+css/styles.css          Mobile-first styles
+js/config.js            ← put your Apps Script URL here
+js/app.js               App logic + API + offline fallback
+manifest.webmanifest    PWA manifest (home-screen install)
+sw.js                   Service worker (offline cache)
+assets/icon*.svg        App icons
+apps-script/Code.gs     Google Apps Script backend (paste into Apps Script)
+apps-script/appsscript.json
+.github/workflows/deploy-pages.yml   Auto-deploy to GitHub Pages
+```
+
+## Notes & security
+
+- Passwords are **salted and SHA-256 hashed** before being stored — plaintext passwords are never saved. This is a lightweight scheme suitable for a personal/friends tracker, not a high-security system.
+- The Apps Script must be deployed with **"Anyone" access** so your phone (which is not logged into your Google account) can reach the API. The script itself only ever touches your one spreadsheet.
+- To wipe everything, just clear the `Users` and `Logs` tabs in the sheet.

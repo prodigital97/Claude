@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0b1220" />
+  <meta name="description" content="Track your 75 Hard challenge from your phone." />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="75 Hard" />
+  <title>75 Hard Tracker</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/icon.svg" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <!-- Splash / loading -->
+  <div id="splash" class="splash">
+    <div class="splash-logo">75</div>
+    <div class="splash-text">HARD</div>
+  </div>
+
+  <!-- ===================== AUTH ===================== -->
+  <section id="auth-screen" class="screen auth hidden">
+    <div class="auth-card">
+      <div class="brand">
+        <div class="brand-badge">75</div>
+        <h1>75 Hard Tracker</h1>
+        <p class="muted">Mental toughness, one day at a time.</p>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-authtab="login">Log in</button>
+        <button class="tab" data-authtab="register">Sign up</button>
+      </div>
+
+      <form id="login-form" class="auth-form">
+        <label>Username
+          <input name="username" autocomplete="username" autocapitalize="none" required />
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="current-password" required />
+        </label>
+        <button class="btn primary block" type="submit">Log in</button>
+      </form>
+
+      <form id="register-form" class="auth-form hidden">
+        <label>Display name
+          <input name="displayName" autocomplete="name" placeholder="e.g. Pronoy" required />
+        </label>
+        <label>Username
+          <input name="username" autocomplete="username" autocapitalize="none" placeholder="lowercase, no spaces" required />
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="new-password" required />
+        </label>
+        <label>Start date
+          <input name="startDate" type="date" required />
+        </label>
+        <button class="btn primary block" type="submit">Start my 75 Hard</button>
+      </form>
+
+      <p id="auth-msg" class="form-msg"></p>
+      <p class="muted tiny offline-note hidden">⚠️ Backend not configured — running in local demo mode.</p>
+    </div>
+  </section>
+
+  <!-- ===================== APP ===================== -->
+  <section id="app-screen" class="screen app hidden">
+    <header class="app-header">
+      <div>
+        <div class="hello muted">Let's go, <span id="hdr-name">athlete</span></div>
+        <div class="day-pill">Day <span id="hdr-day">1</span> <span class="muted">/ 75</span></div>
+      </div>
+      <button id="sync-state" class="icon-btn" title="Refresh">⟳</button>
+    </header>
+
+    <main id="views">
+      <!-- TODAY -->
+      <div id="view-today" class="view">
+        <div class="hero card">
+          <div class="hero-ring">
+            <svg viewBox="0 0 120 120" class="ring">
+              <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
+              <circle id="ring-fg" class="ring-fg" cx="60" cy="60" r="52"></circle>
+            </svg>
+            <div class="ring-center">
+              <div id="ring-pct" class="ring-pct">0%</div>
+              <div class="muted tiny">today</div>
+            </div>
+          </div>
+          <div class="hero-meta">
+            <div id="today-date" class="today-date">Today</div>
+            <div id="today-status" class="status-chip pending">In progress</div>
+            <div class="muted tiny" id="streak-line">🔥 0 day streak</div>
+          </div>
+        </div>
+
+        <div id="tasklist" class="tasklist"></div>
+
+        <label class="notes-field card">
+          <span class="muted tiny">Notes for today</span>
+          <textarea id="day-notes" rows="2" placeholder="How did it go?"></textarea>
+        </label>
+
+        <button id="save-day" class="btn primary block save-day">Save today</button>
+        <p class="muted tiny center">Your progress saves automatically as you tap. The button just forces a sync.</p>
+      </div>
+
+      <!-- CALENDAR -->
+      <div id="view-calendar" class="view hidden">
+        <h2 class="view-title">75-Day Journey</h2>
+        <div class="legend">
+          <span><i class="dot done"></i> Done</span>
+          <span><i class="dot miss"></i> Missed</span>
+          <span><i class="dot today"></i> Today</span>
+          <span><i class="dot future"></i> Upcoming</span>
+        </div>
+        <div id="calendar-grid" class="calendar-grid"></div>
+      </div>
+
+      <!-- STATS -->
+      <div id="view-stats" class="view hidden">
+        <h2 class="view-title">Your Stats</h2>
+        <div id="stats-grid" class="stats-grid"></div>
+        <div class="card">
+          <h3>Per-task consistency</h3>
+          <div id="task-bars"></div>
+        </div>
+      </div>
+
+      <!-- COMMUNITY -->
+      <div id="view-board" class="view hidden">
+        <h2 class="view-title">Leaderboard</h2>
+        <p class="muted tiny">Everyone grinding through 75 Hard together.</p>
+        <div id="leaderboard"></div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div id="view-settings" class="view hidden">
+        <h2 class="view-title">Settings</h2>
+        <div class="card">
+          <label>Display name
+            <input id="set-displayname" />
+          </label>
+          <button id="save-profile" class="btn block">Save name</button>
+        </div>
+        <div class="card">
+          <h3>Start over</h3>
+          <p class="muted tiny">Broke a rule? 75 Hard means restarting from Day 1. This resets your start date to today.</p>
+          <button id="reset-challenge" class="btn danger block">I failed — restart from Day 1</button>
+        </div>
+        <div class="card">
+          <div class="muted tiny">Signed in as <strong id="set-username"></strong></div>
+          <button id="logout" class="btn block">Log out</button>
+        </div>
+        <p class="muted tiny center" id="set-version"></p>
+      </div>
+    </main>
+
+    <nav class="bottom-nav">
+      <button class="nav-btn active" data-view="today"><span class="ico">✓</span><span>Today</span></button>
+      <button class="nav-btn" data-view="calendar"><span class="ico">▦</span><span>Journey</span></button>
+      <button class="nav-btn" data-view="stats"><span class="ico">📊</span><span>Stats</span></button>
+      <button class="nav-btn" data-view="board"><span class="ico">🏆</span><span>Board</span></button>
+      <button class="nav-btn" data-view="settings"><span class="ico">⚙</span><span>Settings</span></button>
+    </nav>
+  </section>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
