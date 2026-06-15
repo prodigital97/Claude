@@ -21,6 +21,7 @@ var LOGS_SHEET = 'Logs';
 
 var FOOD_SHEET = 'Food';
 var PROFILE_SHEET = 'Profiles';
+var FAST_SHEET = 'Fasts';
 
 var USER_HEADERS = ['username', 'displayName', 'passwordHash', 'salt', 'token', 'startDate', 'createdAt'];
 var LOG_HEADERS = ['username', 'date', 'dayNumber', 'workout1', 'workout2', 'outdoor',
@@ -28,6 +29,7 @@ var LOG_HEADERS = ['username', 'date', 'dayNumber', 'workout1', 'workout2', 'out
 var FOOD_HEADERS = ['id', 'username', 'date', 'meal', 'name', 'grams',
                     'calories', 'protein', 'carbs', 'fat', 'createdAt'];
 var PROFILE_HEADERS = ['username', 'dataJson', 'updatedAt'];
+var FAST_HEADERS = ['id', 'username', 'startAt', 'endAt', 'goalHours', 'createdAt'];
 
 /* ----------------------------------------------------------------------- *
  *  HTTP entry points
@@ -59,6 +61,9 @@ function doPost(e) {
       case 'getFood':    data = handleGetFood(body);    break;
       case 'addFood':    data = handleAddFood(body);    break;
       case 'deleteFood': data = handleDeleteFood(body); break;
+      case 'startFast':  data = handleStartFast(body);  break;
+      case 'endFast':    data = handleEndFast(body);    break;
+      case 'getFasts':   data = handleGetFasts(body);   break;
       default:
         return jsonOutput({ ok: false, error: 'Unknown action: ' + action });
     }
@@ -122,7 +127,80 @@ function handleGetState(body) {
   return {
     user: publicUser(user.username, user.displayName, user.startDate),
     logs: getUserLogs(user.username),
-    profile: getProfile(user.username)
+    profile: getProfile(user.username),
+    activeFast: getActiveFast(user.username)
+  };
+}
+
+/* ---------------- Intermittent fasting ---------------- */
+
+function getActiveFast(username) {
+  var sheet = getSheet(FAST_SHEET, FAST_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(FAST_HEADERS);
+  for (var i = values.length - 1; i >= 1; i--) {
+    if (normalizeUsername(values[i][idx.username]) === username && !values[i][idx.endAt]) {
+      return fastFromRow(values[i], idx);
+    }
+  }
+  return null;
+}
+
+function handleStartFast(body) {
+  var user = authUser(body);
+  var existing = getActiveFast(user.username);
+  if (existing) return { fast: existing };
+
+  var record = {
+    id: Utilities.getUuid(),
+    username: user.username,
+    startAt: body.startAt ? String(body.startAt) : new Date().toISOString(),
+    endAt: '',
+    goalHours: Number(body.goalHours) || 16,
+    createdAt: new Date().toISOString()
+  };
+  var sheet = getSheet(FAST_SHEET, FAST_HEADERS);
+  sheet.appendRow(FAST_HEADERS.map(function (h) { return record[h]; }));
+  return { fast: record };
+}
+
+function handleEndFast(body) {
+  var user = authUser(body);
+  var sheet = getSheet(FAST_SHEET, FAST_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(FAST_HEADERS);
+  for (var i = values.length - 1; i >= 1; i--) {
+    if (normalizeUsername(values[i][idx.username]) === user.username && !values[i][idx.endAt]) {
+      var endAt = new Date().toISOString();
+      sheet.getRange(i + 1, idx.endAt + 1).setValue(endAt);
+      values[i][idx.endAt] = endAt;
+      return { fast: fastFromRow(values[i], idx) };
+    }
+  }
+  return { fast: null };
+}
+
+function handleGetFasts(body) {
+  var user = authUser(body);
+  var sheet = getSheet(FAST_SHEET, FAST_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(FAST_HEADERS);
+  var active = null, done = [];
+  for (var i = 1; i < values.length; i++) {
+    if (normalizeUsername(values[i][idx.username]) !== user.username) continue;
+    var f = fastFromRow(values[i], idx);
+    if (!f.endAt) active = f; else done.push(f);
+  }
+  done.sort(function (a, b) { return a.startAt < b.startAt ? 1 : -1; });
+  return { active: active, fasts: done.slice(0, 30) };
+}
+
+function fastFromRow(r, idx) {
+  return {
+    id: String(r[idx.id]),
+    startAt: String(r[idx.startAt]),
+    endAt: r[idx.endAt] ? String(r[idx.endAt]) : '',
+    goalHours: Number(r[idx.goalHours]) || 16
   };
 }
 
@@ -533,4 +611,5 @@ function setup() {
   getSheet(LOGS_SHEET, LOG_HEADERS);
   getSheet(FOOD_SHEET, FOOD_HEADERS);
   getSheet(PROFILE_SHEET, PROFILE_HEADERS);
+  getSheet(FAST_SHEET, FAST_HEADERS);
 }

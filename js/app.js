@@ -35,6 +35,8 @@
     foods: [],
     foodsDate: null,
     pendingFood: null,
+    activeFast: null,
+    fastTimer: null,
     saveTimer: null
   };
 
@@ -128,7 +130,24 @@
     var me = d.users[(p.username || '').toLowerCase().trim()];
     if (!me || me.token !== p.token) throw new Error('Session expired. Please log in again.');
 
-    if (action === 'getState') return { user: pub(me), logs: userLogs(me.username), profile: d.profiles && d.profiles[me.username] || {} };
+    function myFasts() { return (d.fasts && d.fasts[me.username]) || []; }
+    function activeFast() { return myFasts().filter(function (f) { return !f.endAt; })[0] || null; }
+
+    if (action === 'getState') return { user: pub(me), logs: userLogs(me.username), profile: d.profiles && d.profiles[me.username] || {}, activeFast: activeFast() };
+    if (action === 'startFast') {
+      var ex = activeFast(); if (ex) return { fast: ex };
+      d.fasts = d.fasts || {}; var fa = d.fasts[me.username] || (d.fasts[me.username] = []);
+      var nf = { id: 'fa_' + Date.now(), startAt: p.startAt || new Date().toISOString(), endAt: '', goalHours: Number(p.goalHours) || 16 };
+      fa.push(nf); saveDb(d); return { fast: nf };
+    }
+    if (action === 'endFast') {
+      var act = activeFast(); if (act) { act.endAt = new Date().toISOString(); saveDb(d); }
+      return { fast: act || null };
+    }
+    if (action === 'getFasts') {
+      var done = myFasts().filter(function (f) { return f.endAt; }).sort(function (a, b) { return a.startAt < b.startAt ? 1 : -1; });
+      return { active: activeFast(), fasts: done.slice(0, 30) };
+    }
     if (action === 'saveGoals') {
       d.profiles = d.profiles || {}; d.profiles[me.username] = p.profile || {}; saveDb(d);
       return { profile: d.profiles[me.username] };
@@ -269,6 +288,7 @@
       state.user = data.user;
       state.logs = data.logs || [];
       state.profile = data.profile || {};
+      state.activeFast = data.activeFast || null;
       var t = logFor(todayStr());
       state.today = t ? Object.assign(emptyDay(todayStr()), t) : emptyDay(todayStr());
       cacheState();
@@ -310,6 +330,7 @@
     document.querySelectorAll('.nav-btn').forEach(function (b) {
       b.classList.toggle('active', b.dataset.view === name);
     });
+    if (name !== 'diet') stopFastTimer();
     if (name === 'diet') renderDiet();
     if (name === 'calendar') renderCalendar();
     if (name === 'stats') renderStats();
@@ -617,6 +638,119 @@
     } else {
       renderDietBody();
     }
+    renderFasting();
+  }
+
+  /* ----- Intermittent fasting ----- */
+  var FAST_PRESETS = [
+    { label: '16:8', hours: 16 }, { label: '18:6', hours: 18 },
+    { label: '20:4', hours: 20 }, { label: 'OMAD', hours: 23 }
+  ];
+  function lastGoalHours() { return Number(localStorage.getItem('hard_fastgoal')) || 16; }
+  function stopFastTimer() { if (state.fastTimer) { clearInterval(state.fastTimer); state.fastTimer = null; } }
+
+  function fmtDur(ms) {
+    if (ms < 0) ms = 0;
+    var s = Math.floor(ms / 1000);
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    return pad(h) + ':' + pad(m) + ':' + pad(sec);
+  }
+  function clockTime(iso) {
+    return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function renderFasting() {
+    stopFastTimer();
+    var box = $('#fasting');
+    if (!box) return;
+    var f = state.activeFast;
+
+    if (f) {
+      box.innerHTML =
+        '<div class="card fast-card active">' +
+          '<div class="fast-head"><span class="fast-title">⏳ Fasting</span>' +
+            '<span class="muted tiny">Goal ' + f.goalHours + ' h</span></div>' +
+          '<div class="fast-ring-wrap">' +
+            '<svg viewBox="0 0 120 120" class="ring"><circle class="ring-bg" cx="60" cy="60" r="52"></circle>' +
+            '<circle id="fast-ring" class="ring-fg" cx="60" cy="60" r="52"></circle></svg>' +
+            '<div class="fast-center"><div id="fast-elapsed" class="fast-elapsed">00:00:00</div>' +
+            '<div id="fast-state" class="muted tiny">elapsed</div></div>' +
+          '</div>' +
+          '<div class="fast-times"><span>Started ' + clockTime(f.startAt) + '</span>' +
+            '<span>Goal at ' + clockTime(new Date(new Date(f.startAt).getTime() + f.goalHours * 3600000).toISOString()) + '</span></div>' +
+          '<button id="fast-end" class="btn danger block">End fast</button>' +
+        '</div>';
+      $('#fast-end').addEventListener('click', endFast);
+      updateFastTimer();
+      state.fastTimer = setInterval(updateFastTimer, 1000);
+    } else {
+      var goal = lastGoalHours();
+      var chips = FAST_PRESETS.map(function (pr) {
+        return '<button class="fast-preset' + (pr.hours === goal ? ' active' : '') + '" data-h="' + pr.hours + '">' + pr.label + '</button>';
+      }).join('');
+      box.innerHTML =
+        '<div class="card fast-card">' +
+          '<div class="fast-head"><span class="fast-title">⏳ Intermittent fasting</span></div>' +
+          '<p class="muted tiny">Pick your window, then start your fast. The timer keeps running even if you close the app.</p>' +
+          '<div class="fast-presets">' + chips + '</div>' +
+          '<button id="fast-start" class="btn primary block">Start ' + goal + ' h fast</button>' +
+          '<div id="fast-history" class="fast-history"></div>' +
+        '</div>';
+      box.querySelectorAll('.fast-preset').forEach(function (b) {
+        b.addEventListener('click', function () {
+          localStorage.setItem('hard_fastgoal', b.dataset.h);
+          renderFasting();
+        });
+      });
+      $('#fast-start').addEventListener('click', function () { startFast(goal); });
+      loadFastHistory();
+    }
+  }
+
+  function updateFastTimer() {
+    var f = state.activeFast; if (!f) { stopFastTimer(); return; }
+    var elapsed = Date.now() - new Date(f.startAt).getTime();
+    var goalMs = f.goalHours * 3600000;
+    var elEl = $('#fast-elapsed'); if (!elEl) { stopFastTimer(); return; }
+    elEl.textContent = fmtDur(elapsed);
+    var ring = $('#fast-ring');
+    var circ = 2 * Math.PI * 52;
+    var frac = Math.min(1, elapsed / goalMs);
+    if (ring) {
+      ring.style.strokeDashoffset = circ * (1 - frac);
+      ring.style.stroke = elapsed >= goalMs ? 'var(--green)' : 'var(--primary)';
+    }
+    var st = $('#fast-state');
+    if (st) st.textContent = elapsed >= goalMs ? 'goal reached 🎉' : (Math.round(frac * 100) + '% · goal ' + f.goalHours + 'h');
+  }
+
+  function startFast(hours) {
+    api('startFast', { goalHours: hours }).then(function (data) {
+      state.activeFast = data.fast; renderFasting(); toast('Fast started — stay strong 💪');
+    }).catch(function (e) { toast(e.message); });
+  }
+  function endFast() {
+    var f = state.activeFast;
+    var elapsed = f ? (Date.now() - new Date(f.startAt).getTime()) : 0;
+    if (!confirm('End your fast? You fasted ' + fmtDur(elapsed).slice(0, 5) + ' (h:m).')) return;
+    api('endFast', {}).then(function () {
+      state.activeFast = null; renderFasting(); toast('Fast ended ✓');
+    }).catch(function (e) { toast(e.message); });
+  }
+  function loadFastHistory() {
+    api('getFasts', {}).then(function (data) {
+      var box = $('#fast-history'); if (!box) return;
+      var list = (data.fasts || []).slice(0, 5);
+      if (!list.length) { box.innerHTML = ''; return; }
+      box.innerHTML = '<div class="muted tiny fh-title">Recent fasts</div>' + list.map(function (f) {
+        var dur = new Date(f.endAt).getTime() - new Date(f.startAt).getTime();
+        var h = Math.floor(dur / 3600000), m = Math.floor((dur % 3600000) / 60000);
+        var hit = dur >= f.goalHours * 3600000;
+        return '<div class="fh-row"><span>' + new Date(f.startAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + '</span>' +
+          '<span>' + h + 'h ' + m + 'm</span>' +
+          '<span>' + (hit ? '✅' : '·') + ' goal ' + f.goalHours + 'h</span></div>';
+      }).join('');
+    }).catch(function () {});
   }
 
   function renderDietBody() {
