@@ -148,6 +148,18 @@
       var done = myFasts().filter(function (f) { return f.endAt; }).sort(function (a, b) { return a.startAt < b.startAt ? 1 : -1; });
       return { active: activeFast(), fasts: done.slice(0, 30) };
     }
+    if (action === 'updateFast') {
+      var fu = myFasts().filter(function (f) { return f.id === p.id; })[0];
+      if (fu) { if (p.startAt) fu.startAt = p.startAt; if (p.endAt != null) fu.endAt = p.endAt; saveDb(d); }
+      return { fast: fu || null };
+    }
+    if (action === 'deleteFast') {
+      if (d.fasts && d.fasts[me.username]) {
+        d.fasts[me.username] = d.fasts[me.username].filter(function (f) { return f.id !== p.id; });
+        saveDb(d);
+      }
+      return { deleted: p.id };
+    }
     if (action === 'saveGoals') {
       d.profiles = d.profiles || {}; d.profiles[me.username] = p.profile || {}; saveDb(d);
       return { profile: d.profiles[me.username] };
@@ -642,11 +654,9 @@
   }
 
   /* ----- Intermittent fasting ----- */
-  var FAST_PRESETS = [
-    { label: '16:8', hours: 16 }, { label: '18:6', hours: 18 },
-    { label: '20:4', hours: 20 }, { label: 'OMAD', hours: 23 }
-  ];
-  function lastGoalHours() { return Number(localStorage.getItem('hard_fastgoal')) || 16; }
+  // Milestones (hours). The "mark" you earn is the highest one you reach.
+  var MILESTONES = [12, 14, 16, 18, 20, 24, 36];
+
   function stopFastTimer() { if (state.fastTimer) { clearInterval(state.fastTimer); state.fastTimer = null; } }
 
   function fmtDur(ms) {
@@ -655,9 +665,29 @@
     var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
     return pad(h) + ':' + pad(m) + ':' + pad(sec);
   }
+  function durLabel(ms) {
+    if (ms < 0) ms = 0;
+    var h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
+    return h + 'h ' + m + 'm';
+  }
   function clockTime(iso) {
     return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   }
+  function milestoneInfo(hours) {
+    var reached = 0, next = null;
+    for (var i = 0; i < MILESTONES.length; i++) {
+      if (hours >= MILESTONES[i]) reached = MILESTONES[i];
+      else { next = MILESTONES[i]; break; }
+    }
+    return { reached: reached, next: next };
+  }
+  // datetime-local <-> ISO helpers (local time)
+  function toLocalInput(iso) {
+    var x = new Date(iso);
+    return x.getFullYear() + '-' + pad(x.getMonth() + 1) + '-' + pad(x.getDate()) +
+      'T' + pad(x.getHours()) + ':' + pad(x.getMinutes());
+  }
+  function fromLocalInput(v) { return new Date(v).toISOString(); }
 
   function renderFasting() {
     stopFastTimer();
@@ -669,40 +699,51 @@
       box.innerHTML =
         '<div class="card fast-card active">' +
           '<div class="fast-head"><span class="fast-title">⏳ Fasting</span>' +
-            '<span class="muted tiny">Goal ' + f.goalHours + ' h</span></div>' +
+            '<span id="fast-mark" class="fast-mark">—</span></div>' +
           '<div class="fast-ring-wrap">' +
             '<svg viewBox="0 0 120 120" class="ring"><circle class="ring-bg" cx="60" cy="60" r="52"></circle>' +
             '<circle id="fast-ring" class="ring-fg" cx="60" cy="60" r="52"></circle></svg>' +
             '<div class="fast-center"><div id="fast-elapsed" class="fast-elapsed">00:00:00</div>' +
             '<div id="fast-state" class="muted tiny">elapsed</div></div>' +
           '</div>' +
-          '<div class="fast-times"><span>Started ' + clockTime(f.startAt) + '</span>' +
-            '<span>Goal at ' + clockTime(new Date(new Date(f.startAt).getTime() + f.goalHours * 3600000).toISOString()) + '</span></div>' +
+          '<div class="fast-times"><span>Started <b id="fast-started">' + clockTime(f.startAt) + '</b></span>' +
+            '<button id="fast-edit-start" class="link-btn">Edit start</button></div>' +
+          '<div id="fast-edit-box" class="fast-edit-box hidden">' +
+            '<label>Start time<input type="datetime-local" id="fast-start-edit"></label>' +
+            '<div class="row-2"><button id="fast-save-start" class="btn primary">Save</button>' +
+            '<button id="fast-cancel-start" class="btn">Cancel</button></div></div>' +
           '<button id="fast-end" class="btn danger block">End fast</button>' +
         '</div>';
       $('#fast-end').addEventListener('click', endFast);
+      $('#fast-edit-start').addEventListener('click', function () {
+        $('#fast-start-edit').value = toLocalInput(f.startAt);
+        $('#fast-edit-box').classList.toggle('hidden');
+      });
+      $('#fast-cancel-start').addEventListener('click', function () { $('#fast-edit-box').classList.add('hidden'); });
+      $('#fast-save-start').addEventListener('click', function () {
+        var v = $('#fast-start-edit').value; if (!v) return;
+        if (new Date(v).getTime() > Date.now()) { toast('Start time can’t be in the future'); return; }
+        api('updateFast', { id: f.id, startAt: fromLocalInput(v) }).then(function (data) {
+          state.activeFast = data.fast; renderFasting(); toast('Start time updated ✓');
+        }).catch(function (e) { toast(e.message); });
+      });
       updateFastTimer();
       state.fastTimer = setInterval(updateFastTimer, 1000);
     } else {
-      var goal = lastGoalHours();
-      var chips = FAST_PRESETS.map(function (pr) {
-        return '<button class="fast-preset' + (pr.hours === goal ? ' active' : '') + '" data-h="' + pr.hours + '">' + pr.label + '</button>';
-      }).join('');
       box.innerHTML =
         '<div class="card fast-card">' +
           '<div class="fast-head"><span class="fast-title">⏳ Intermittent fasting</span></div>' +
-          '<p class="muted tiny">Pick your window, then start your fast. The timer keeps running even if you close the app.</p>' +
-          '<div class="fast-presets">' + chips + '</div>' +
-          '<button id="fast-start" class="btn primary block">Start ' + goal + ' h fast</button>' +
+          '<p class="muted tiny">Start a fast — the timer counts up and logs the milestone you reach when you end it. Adjust the start time if you began earlier.</p>' +
+          '<label>Start time<input type="datetime-local" id="fast-start-input"></label>' +
+          '<button id="fast-start" class="btn primary block">Start fast</button>' +
           '<div id="fast-history" class="fast-history"></div>' +
         '</div>';
-      box.querySelectorAll('.fast-preset').forEach(function (b) {
-        b.addEventListener('click', function () {
-          localStorage.setItem('hard_fastgoal', b.dataset.h);
-          renderFasting();
-        });
+      $('#fast-start-input').value = toLocalInput(new Date().toISOString());
+      $('#fast-start').addEventListener('click', function () {
+        var v = $('#fast-start-input').value;
+        if (v && new Date(v).getTime() > Date.now()) { toast('Start time can’t be in the future'); return; }
+        startFast(v ? fromLocalInput(v) : new Date().toISOString());
       });
-      $('#fast-start').addEventListener('click', function () { startFast(goal); });
       loadFastHistory();
     }
   }
@@ -710,47 +751,97 @@
   function updateFastTimer() {
     var f = state.activeFast; if (!f) { stopFastTimer(); return; }
     var elapsed = Date.now() - new Date(f.startAt).getTime();
-    var goalMs = f.goalHours * 3600000;
+    var hours = elapsed / 3600000;
+    var mi = milestoneInfo(hours);
     var elEl = $('#fast-elapsed'); if (!elEl) { stopFastTimer(); return; }
     elEl.textContent = fmtDur(elapsed);
+
     var ring = $('#fast-ring');
     var circ = 2 * Math.PI * 52;
-    var frac = Math.min(1, elapsed / goalMs);
+    var frac = mi.next ? Math.min(1, hours / mi.next) : 1;
     if (ring) {
       ring.style.strokeDashoffset = circ * (1 - frac);
-      ring.style.stroke = elapsed >= goalMs ? 'var(--green)' : 'var(--primary)';
+      ring.style.stroke = mi.reached >= 16 ? 'var(--green)' : 'var(--primary)';
     }
+    var mark = $('#fast-mark');
+    if (mark) mark.textContent = mi.reached ? mi.reached + 'h mark' : 'warming up';
     var st = $('#fast-state');
-    if (st) st.textContent = elapsed >= goalMs ? 'goal reached 🎉' : (Math.round(frac * 100) + '% · goal ' + f.goalHours + 'h');
+    if (st) st.textContent = mi.next ? ('next: ' + mi.next + 'h') : 'beast mode 🦾';
   }
 
-  function startFast(hours) {
-    api('startFast', { goalHours: hours }).then(function (data) {
+  function startFast(startIso) {
+    api('startFast', { startAt: startIso }).then(function (data) {
       state.activeFast = data.fast; renderFasting(); toast('Fast started — stay strong 💪');
     }).catch(function (e) { toast(e.message); });
   }
   function endFast() {
-    var f = state.activeFast;
-    var elapsed = f ? (Date.now() - new Date(f.startAt).getTime()) : 0;
-    if (!confirm('End your fast? You fasted ' + fmtDur(elapsed).slice(0, 5) + ' (h:m).')) return;
-    api('endFast', {}).then(function () {
-      state.activeFast = null; renderFasting(); toast('Fast ended ✓');
+    var f = state.activeFast; if (!f) return;
+    var elapsed = Date.now() - new Date(f.startAt).getTime();
+    if (!confirm('End your fast? You fasted ' + durLabel(elapsed) + '.')) return;
+    api('endFast', {}).then(function (data) {
+      state.activeFast = null;
+      var done = data.fast;
+      var ms = done ? (new Date(done.endAt).getTime() - new Date(done.startAt).getTime()) : elapsed;
+      var mark = milestoneInfo(ms / 3600000).reached;
+      renderFasting();
+      toast(mark ? ('Fast ended — ' + mark + 'h mark! 🎉') : ('Fast ended — ' + durLabel(ms)));
     }).catch(function (e) { toast(e.message); });
   }
+
   function loadFastHistory() {
     api('getFasts', {}).then(function (data) {
       var box = $('#fast-history'); if (!box) return;
-      var list = (data.fasts || []).slice(0, 5);
-      if (!list.length) { box.innerHTML = ''; return; }
-      box.innerHTML = '<div class="muted tiny fh-title">Recent fasts</div>' + list.map(function (f) {
-        var dur = new Date(f.endAt).getTime() - new Date(f.startAt).getTime();
-        var h = Math.floor(dur / 3600000), m = Math.floor((dur % 3600000) / 60000);
-        var hit = dur >= f.goalHours * 3600000;
-        return '<div class="fh-row"><span>' + new Date(f.startAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + '</span>' +
-          '<span>' + h + 'h ' + m + 'm</span>' +
-          '<span>' + (hit ? '✅' : '·') + ' goal ' + f.goalHours + 'h</span></div>';
-      }).join('');
+      var list = (data.fasts || []).slice(0, 8);
+      box.innerHTML = '';
+      if (!list.length) return;
+      box.appendChild(el('div', 'muted tiny fh-title', 'Recent fasts'));
+      list.forEach(function (f) { box.appendChild(buildFastRow(f)); });
     }).catch(function () {});
+  }
+
+  function buildFastRow(f) {
+    var dur = new Date(f.endAt).getTime() - new Date(f.startAt).getTime();
+    var mark = milestoneInfo(dur / 3600000).reached;
+    var wrap = el('div', 'fh-item');
+    var row = el('div', 'fh-row');
+    row.innerHTML =
+      '<span class="fh-date">' + new Date(f.startAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + '</span>' +
+      '<span class="fh-dur">' + durLabel(dur) + '</span>' +
+      '<span class="fh-mark">' + (mark ? mark + 'h mark' : '—') + '</span>';
+    var edit = el('button', 'fh-btn', '✎');
+    var del = el('button', 'fh-btn', '🗑');
+    row.appendChild(edit); row.appendChild(del);
+
+    var form = el('div', 'fh-edit-form hidden');
+    form.innerHTML =
+      '<label class="tiny">Start<input type="datetime-local" class="fh-s"></label>' +
+      '<label class="tiny">End<input type="datetime-local" class="fh-e"></label>' +
+      '<div class="row-2"><button class="btn primary fh-save">Save</button>' +
+      '<button class="btn fh-cancel">Cancel</button></div>';
+
+    edit.addEventListener('click', function () {
+      form.querySelector('.fh-s').value = toLocalInput(f.startAt);
+      form.querySelector('.fh-e').value = toLocalInput(f.endAt);
+      form.classList.toggle('hidden');
+    });
+    form.querySelector('.fh-cancel').addEventListener('click', function () { form.classList.add('hidden'); });
+    form.querySelector('.fh-save').addEventListener('click', function () {
+      var s = form.querySelector('.fh-s').value, e = form.querySelector('.fh-e').value;
+      if (!s || !e) { toast('Set both times'); return; }
+      if (new Date(e).getTime() <= new Date(s).getTime()) { toast('End must be after start'); return; }
+      api('updateFast', { id: f.id, startAt: fromLocalInput(s), endAt: fromLocalInput(e) })
+        .then(function () { loadFastHistory(); toast('Fast updated ✓'); })
+        .catch(function (err) { toast(err.message); });
+    });
+    del.addEventListener('click', function () {
+      if (!confirm('Delete this fast?')) return;
+      api('deleteFast', { id: f.id })
+        .then(function () { loadFastHistory(); toast('Deleted'); })
+        .catch(function (err) { toast(err.message); });
+    });
+
+    wrap.appendChild(row); wrap.appendChild(form);
+    return wrap;
   }
 
   function renderDietBody() {

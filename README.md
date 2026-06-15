@@ -25,8 +25,10 @@ Miss any task and 75 Hard says you restart from Day 1 — there's a one-tap **re
   track calories + protein/carbs/fat against a daily goal, with a built-in TDEE goal calculator.
   Food search uses the free [Open Food Facts](https://world.openfoodfacts.org) database plus a built-in
   quick-list of common staples; you can also add custom foods manually.
-- **Intermittent fasting timer** — start/stop a fast with 16:8 / 18:6 / 20:4 / OMAD goals, a live
-  countdown ring that keeps running after you close the app, and a history of recent fasts.
+- **Intermittent fasting timer** — start a fast (with an adjustable start time), a live count-up ring
+  that targets the next milestone and keeps running after you close the app. When you end it, the
+  milestone reached (12/14/16/18/20/24/36 h) is derived automatically from how long you fasted. Past
+  fasts can be edited or deleted.
 - **Friends feed** — see everyone's *today* at a glance: tasks done/pending, water, and calories.
 - **75-day journey** calendar (done / missed / today / upcoming)
 - **Stats** — current & best streak, days completed, gallons of water, per-task consistency bars

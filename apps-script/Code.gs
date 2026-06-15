@@ -64,6 +64,8 @@ function doPost(e) {
       case 'startFast':  data = handleStartFast(body);  break;
       case 'endFast':    data = handleEndFast(body);    break;
       case 'getFasts':   data = handleGetFasts(body);   break;
+      case 'updateFast': data = handleUpdateFast(body); break;
+      case 'deleteFast': data = handleDeleteFast(body); break;
       default:
         return jsonOutput({ ok: false, error: 'Unknown action: ' + action });
     }
@@ -156,7 +158,7 @@ function handleStartFast(body) {
     username: user.username,
     startAt: body.startAt ? String(body.startAt) : new Date().toISOString(),
     endAt: '',
-    goalHours: Number(body.goalHours) || 16,
+    goalHours: 0,  // unused — milestone is derived from actual duration
     createdAt: new Date().toISOString()
   };
   var sheet = getSheet(FAST_SHEET, FAST_HEADERS);
@@ -195,12 +197,48 @@ function handleGetFasts(body) {
   return { active: active, fasts: done.slice(0, 30) };
 }
 
+function handleUpdateFast(body) {
+  var user = authUser(body);
+  var id = String(body.id || '');
+  var sheet = getSheet(FAST_SHEET, FAST_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(FAST_HEADERS);
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idx.id]) === id && normalizeUsername(values[i][idx.username]) === user.username) {
+      if (body.startAt) {
+        sheet.getRange(i + 1, idx.startAt + 1).setValue(String(body.startAt));
+        values[i][idx.startAt] = String(body.startAt);
+      }
+      if (body.endAt != null) {
+        sheet.getRange(i + 1, idx.endAt + 1).setValue(String(body.endAt));
+        values[i][idx.endAt] = String(body.endAt);
+      }
+      return { fast: fastFromRow(values[i], idx) };
+    }
+  }
+  throw new Error('Fast not found.');
+}
+
+function handleDeleteFast(body) {
+  var user = authUser(body);
+  var id = String(body.id || '');
+  var sheet = getSheet(FAST_SHEET, FAST_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(FAST_HEADERS);
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idx.id]) === id && normalizeUsername(values[i][idx.username]) === user.username) {
+      sheet.deleteRow(i + 1);
+      return { deleted: id };
+    }
+  }
+  return { deleted: null };
+}
+
 function fastFromRow(r, idx) {
   return {
     id: String(r[idx.id]),
     startAt: String(r[idx.startAt]),
-    endAt: r[idx.endAt] ? String(r[idx.endAt]) : '',
-    goalHours: Number(r[idx.goalHours]) || 16
+    endAt: r[idx.endAt] ? String(r[idx.endAt]) : ''
   };
 }
 
