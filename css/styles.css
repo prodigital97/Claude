@@ -288,6 +288,9 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .macro.p .bar > span { background: #ff7a48; }
 .macro.c .bar > span { background: #4aa8ff; }
 .macro.f .bar > span { background: #ffc24b; }
+.macro.s .bar > span { background: #ff6b9d; }
+.macro.over .ml b { color: var(--red); }
+.macro.over .bar > span { background: var(--red); }
 
 .meal-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
 .meal-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }

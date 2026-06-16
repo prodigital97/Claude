@@ -639,26 +639,26 @@
   /* ---------------- Diet & calories ---------------- */
   // Per 100 g unless the item is naturally counted per piece (then grams = avg weight).
   var COMMON_FOODS = [
-    { name: 'White rice (cooked)', kcal: 130, p: 2.7, c: 28, f: 0.3, serving: 150 },
-    { name: 'Roti / Chapati', kcal: 297, p: 11, c: 50, f: 7, serving: 40 },
-    { name: 'Dal (cooked)', kcal: 116, p: 7, c: 17, f: 1.5, serving: 150 },
-    { name: 'Paneer', kcal: 296, p: 18, c: 4, f: 22, serving: 50 },
-    { name: 'Chicken breast (cooked)', kcal: 165, p: 31, c: 0, f: 3.6, serving: 120 },
-    { name: 'Egg (whole)', kcal: 155, p: 13, c: 1.1, f: 11, serving: 50 },
-    { name: 'Milk (full fat)', kcal: 61, p: 3.2, c: 4.8, f: 3.3, serving: 200 },
-    { name: 'Curd / Yogurt', kcal: 98, p: 11, c: 3.4, f: 4.3, serving: 150 },
-    { name: 'Oats (dry)', kcal: 389, p: 17, c: 66, f: 7, serving: 40 },
-    { name: 'Banana', kcal: 89, p: 1.1, c: 23, f: 0.3, serving: 120 },
-    { name: 'Apple', kcal: 52, p: 0.3, c: 14, f: 0.2, serving: 180 },
-    { name: 'Peanut butter', kcal: 588, p: 25, c: 20, f: 50, serving: 20 },
-    { name: 'Almonds', kcal: 579, p: 21, c: 22, f: 50, serving: 28 },
-    { name: 'Whey protein (scoop)', kcal: 400, p: 80, c: 8, f: 6, serving: 30 },
-    { name: 'Bread (white slice)', kcal: 265, p: 9, c: 49, f: 3.2, serving: 30 },
-    { name: 'Potato (boiled)', kcal: 87, p: 1.9, c: 20, f: 0.1, serving: 150 },
-    { name: 'Chicken curry', kcal: 180, p: 14, c: 6, f: 11, serving: 200 },
-    { name: 'Fish (cooked)', kcal: 206, p: 22, c: 0, f: 12, serving: 120 },
-    { name: 'Mixed vegetables', kcal: 65, p: 2.6, c: 13, f: 0.4, serving: 150 },
-    { name: 'Olive oil', kcal: 884, p: 0, c: 0, f: 100, serving: 10 }
+    { name: 'White rice (cooked)', kcal: 130, p: 2.7, c: 28, f: 0.3, s: 0.1, serving: 150 },
+    { name: 'Roti / Chapati', kcal: 297, p: 11, c: 50, f: 7, s: 1.5, serving: 40 },
+    { name: 'Dal (cooked)', kcal: 116, p: 7, c: 17, f: 1.5, s: 1, serving: 150 },
+    { name: 'Paneer', kcal: 296, p: 18, c: 4, f: 22, s: 1.2, serving: 50 },
+    { name: 'Chicken breast (cooked)', kcal: 165, p: 31, c: 0, f: 3.6, s: 0, serving: 120 },
+    { name: 'Egg (whole)', kcal: 155, p: 13, c: 1.1, f: 11, s: 1.1, serving: 50 },
+    { name: 'Milk (full fat)', kcal: 61, p: 3.2, c: 4.8, f: 3.3, s: 5, serving: 200 },
+    { name: 'Curd / Yogurt', kcal: 98, p: 11, c: 3.4, f: 4.3, s: 4.7, serving: 150 },
+    { name: 'Oats (dry)', kcal: 389, p: 17, c: 66, f: 7, s: 1, serving: 40 },
+    { name: 'Banana', kcal: 89, p: 1.1, c: 23, f: 0.3, s: 12, serving: 120 },
+    { name: 'Apple', kcal: 52, p: 0.3, c: 14, f: 0.2, s: 10, serving: 180 },
+    { name: 'Peanut butter', kcal: 588, p: 25, c: 20, f: 50, s: 9, serving: 20 },
+    { name: 'Almonds', kcal: 579, p: 21, c: 22, f: 50, s: 4, serving: 28 },
+    { name: 'Whey protein (scoop)', kcal: 400, p: 80, c: 8, f: 6, s: 6, serving: 30 },
+    { name: 'Bread (white slice)', kcal: 265, p: 9, c: 49, f: 3.2, s: 5, serving: 30 },
+    { name: 'Potato (boiled)', kcal: 87, p: 1.9, c: 20, f: 0.1, s: 0.8, serving: 150 },
+    { name: 'Chicken curry', kcal: 180, p: 14, c: 6, f: 11, s: 3, serving: 200 },
+    { name: 'Fish (cooked)', kcal: 206, p: 22, c: 0, f: 12, s: 0, serving: 120 },
+    { name: 'Mixed vegetables', kcal: 65, p: 2.6, c: 13, f: 0.4, s: 5, serving: 150 },
+    { name: 'Olive oil', kcal: 884, p: 0, c: 0, f: 100, s: 0, serving: 10 }
   ];
 
   function dietGoals() {
@@ -667,7 +667,8 @@
       cal: Number(p.calorieGoal) || 0,
       protein: Number(p.proteinGoal) || 0,
       carbs: Number(p.carbGoal) || 0,
-      fat: Number(p.fatGoal) || 0
+      fat: Number(p.fatGoal) || 0,
+      sugar: Number(p.sugarGoal) || 0
     };
   }
 
@@ -885,8 +886,8 @@
   function renderDietBody() {
     var g = dietGoals();
     var t = state.foods.reduce(function (s, f) {
-      s.cal += f.calories; s.p += f.protein; s.c += f.carbs; s.f += f.fat; return s;
-    }, { cal: 0, p: 0, c: 0, f: 0 });
+      s.cal += f.calories; s.p += f.protein; s.c += f.carbs; s.f += f.fat; s.s += (f.sugar || 0); return s;
+    }, { cal: 0, p: 0, c: 0, f: 0, s: 0 });
 
     $('#cal-eaten').textContent = Math.round(t.cal);
     $('#cal-goal').textContent = g.cal ? g.cal : '—';
@@ -901,11 +902,14 @@
 
     var bars = $('#macro-bars');
     bars.innerHTML = '';
-    [['p', 'Protein', t.p, g.protein], ['c', 'Carbs', t.c, g.carbs], ['f', 'Fat', t.f, g.fat]].forEach(function (m) {
+    [['p', 'Protein', t.p, g.protein], ['c', 'Carbs', t.c, g.carbs],
+     ['f', 'Fat', t.f, g.fat], ['s', 'Sugar', t.s, g.sugar]].forEach(function (m) {
+      var over = m[3] && m[2] > m[3];
       var pct = m[3] ? Math.min(100, Math.round((m[2] / m[3]) * 100)) : 0;
-      var row = el('div', 'macro ' + m[0]);
+      var row = el('div', 'macro ' + m[0] + (over ? ' over' : ''));
+      var goalTxt = m[3] ? ' / ' + m[3] + 'g' + (m[0] === 's' ? ' max' : '') : '';
       row.innerHTML = '<div class="ml"><span>' + m[1] + '</span><span><b>' + Math.round(m[2]) + 'g</b>' +
-        (m[3] ? ' / ' + m[3] + 'g' : '') + '</span></div>' +
+        goalTxt + '</span></div>' +
         '<div class="bar"><span style="width:' + pct + '%"></span></div>';
       bars.appendChild(row);
     });
@@ -928,7 +932,7 @@
         var it = el('div', 'food-item');
         it.innerHTML =
           '<div class="fi-body"><div class="fi-name">' + esc(f.name) + '</div>' +
-          '<div class="fi-sub">' + Math.round(f.grams) + ' g · P' + Math.round(f.protein) + ' C' + Math.round(f.carbs) + ' F' + Math.round(f.fat) + '</div></div>' +
+          '<div class="fi-sub">' + Math.round(f.grams) + ' g · P' + Math.round(f.protein) + ' C' + Math.round(f.carbs) + ' F' + Math.round(f.fat) + ' S' + Math.round(f.sugar || 0) + '</div></div>' +
           '<div class="fi-cal">' + Math.round(f.calories) + '</div>' +
           '<button class="fi-del" title="Remove">✕</button>';
         it.querySelector('.fi-del').addEventListener('click', function () { deleteFood(f.id); });
@@ -967,7 +971,7 @@
 
     fetch('https://world.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q) +
           '&search_simple=1&action=process&json=1&page_size=20' +
-          '&fields=product_name,brands,nutriments,serving_quantity')
+          '&fields=product_name,brands,nutriments,serving_quantity,sugars_100g')
       .then(function (r) { return r.json(); })
       .then(function (d) {
         var items = (d.products || []).map(function (p) {
@@ -977,6 +981,7 @@
           return {
             name: p.product_name + (p.brands ? ' · ' + String(p.brands).split(',')[0] : ''),
             kcal: kcal, p: n.proteins_100g || 0, c: n.carbohydrates_100g || 0, f: n.fat_100g || 0,
+            s: n.sugars_100g || 0,
             serving: Number(p.serving_quantity) || 100
           };
         }).filter(Boolean);
@@ -1014,19 +1019,20 @@
   function updatePortion() {
     var f = state.pendingFood; if (!f) return;
     var g = Number($('#p-grams').value) || 0;
-    var k = f.kcal * g / 100, p = f.p * g / 100, c = f.c * g / 100, ft = f.f * g / 100;
+    var k = f.kcal * g / 100, p = f.p * g / 100, c = f.c * g / 100, ft = f.f * g / 100, su = (f.s || 0) * g / 100;
     $('#p-macros').innerHTML =
       '<div class="pm-chip"><b>' + Math.round(k) + '</b>kcal</div>' +
       '<div class="pm-chip"><b>' + Math.round(p) + '</b>protein</div>' +
       '<div class="pm-chip"><b>' + Math.round(c) + '</b>carbs</div>' +
-      '<div class="pm-chip"><b>' + Math.round(ft) + '</b>fat</div>';
+      '<div class="pm-chip"><b>' + Math.round(ft) + '</b>fat</div>' +
+      '<div class="pm-chip"><b>' + Math.round(su) + '</b>sugar</div>';
   }
   function addPortion() {
     var f = state.pendingFood; if (!f) return;
     var g = Number($('#p-grams').value) || 0;
     saveFood({
       meal: $('#p-meal').value, name: f.name, grams: g,
-      calories: f.kcal * g / 100, protein: f.p * g / 100, carbs: f.c * g / 100, fat: f.f * g / 100
+      calories: f.kcal * g / 100, protein: f.p * g / 100, carbs: f.c * g / 100, fat: f.f * g / 100, sugar: (f.s || 0) * g / 100
     });
   }
   function addManual() {
@@ -1035,9 +1041,9 @@
     saveFood({
       meal: $('#p-meal').value || 'Snacks', name: name, grams: 0,
       calories: Number($('#m-cal').value) || 0, protein: Number($('#m-protein').value) || 0,
-      carbs: Number($('#m-carbs').value) || 0, fat: Number($('#m-fat').value) || 0
+      carbs: Number($('#m-carbs').value) || 0, fat: Number($('#m-fat').value) || 0, sugar: Number($('#m-sugar').value) || 0
     });
-    $('#m-name').value = $('#m-cal').value = $('#m-protein').value = $('#m-carbs').value = $('#m-fat').value = '';
+    $('#m-name').value = $('#m-cal').value = $('#m-protein').value = $('#m-carbs').value = $('#m-fat').value = $('#m-sugar').value = '';
   }
   function saveFood(food) {
     food.date = todayStr();
@@ -1088,7 +1094,9 @@
     var protein = Math.round(1.8 * kg);
     var fat = Math.round(cal * 0.25 / 9);
     var carbs = Math.max(0, Math.round((cal - protein * 4 - fat * 9) / 4));
+    var sugar = Math.round(cal * 0.10 / 4); // WHO: keep free sugars under ~10% of calories
     $('#g-cal').value = cal; $('#g-protein').value = protein; $('#g-carbs').value = carbs; $('#g-fat').value = fat;
+    $('#g-sugar').value = sugar;
     toast('Targets calculated — tap Save');
   }
 
@@ -1097,7 +1105,7 @@
       sex: $('#g-sex').value, age: +$('#g-age').value || '', heightCm: +$('#g-height').value || '',
       weightKg: +$('#g-weight').value || '', activity: $('#g-activity').value, goalType: $('#g-goaltype').value,
       calorieGoal: +$('#g-cal').value || 0, proteinGoal: +$('#g-protein').value || 0,
-      carbGoal: +$('#g-carbs').value || 0, fatGoal: +$('#g-fat').value || 0
+      carbGoal: +$('#g-carbs').value || 0, fatGoal: +$('#g-fat').value || 0, sugarGoal: +$('#g-sugar').value || 0
     };
     api('saveGoals', { profile: profile }).then(function (data) {
       state.profile = data.profile || profile;
@@ -1117,6 +1125,7 @@
     $('#g-protein').value = p.proteinGoal || '';
     $('#g-carbs').value = p.carbGoal || '';
     $('#g-fat').value = p.fatGoal || '';
+    $('#g-sugar').value = p.sugarGoal || '';
   }
 
   /* ---------------- Themes ---------------- */

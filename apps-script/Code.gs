@@ -26,8 +26,9 @@ var FAST_SHEET = 'Fasts';
 var USER_HEADERS = ['username', 'displayName', 'passwordHash', 'salt', 'token', 'startDate', 'createdAt'];
 var LOG_HEADERS = ['username', 'date', 'dayNumber', 'workout1', 'workout2', 'outdoor',
                    'waterMl', 'reading', 'photo', 'diet', 'noAlcohol', 'completed', 'notes', 'updatedAt'];
+// 'sugar' appended at the end so older Food rows keep their column positions.
 var FOOD_HEADERS = ['id', 'username', 'date', 'meal', 'name', 'grams',
-                    'calories', 'protein', 'carbs', 'fat', 'createdAt'];
+                    'calories', 'protein', 'carbs', 'fat', 'createdAt', 'sugar'];
 var PROFILE_HEADERS = ['username', 'dataJson', 'updatedAt'];
 var FAST_HEADERS = ['id', 'username', 'startAt', 'endAt', 'goalHours', 'createdAt'];
 
@@ -302,6 +303,7 @@ function handleAddFood(body) {
     protein: round1(f.protein),
     carbs: round1(f.carbs),
     fat: round1(f.fat),
+    sugar: round1(f.sugar),
     createdAt: new Date().toISOString()
   };
   var sheet = getSheet(FOOD_SHEET, FOOD_HEADERS);
@@ -333,7 +335,8 @@ function foodFromRow(r, idx) {
     calories: Number(r[idx.calories]) || 0,
     protein: Number(r[idx.protein]) || 0,
     carbs: Number(r[idx.carbs]) || 0,
-    fat: Number(r[idx.fat]) || 0
+    fat: Number(r[idx.fat]) || 0,
+    sugar: Number(r[idx.sugar]) || 0
   };
 }
 
