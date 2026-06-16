@@ -193,6 +193,16 @@
     if (action === 'updateProfile') {
       me.displayName = p.displayName || me.displayName; saveDb(d); return { user: pub(me) };
     }
+    if (action === 'deleteAccount') {
+      if (me.password !== p.password) throw new Error('Password is incorrect.');
+      var un = me.username;
+      delete d.users[un];
+      if (d.logs) delete d.logs[un];
+      if (d.foods) delete d.foods[un];
+      if (d.fasts) delete d.fasts[un];
+      if (d.profiles) delete d.profiles[un];
+      saveDb(d); return { deleted: true };
+    }
     if (action === 'leaderboard') {
       var today = todayStr();
       var board = Object.keys(d.users).map(function (k) {
@@ -332,6 +342,7 @@
     $('#logout').addEventListener('click', logout);
     $('#reset-challenge').addEventListener('click', resetChallenge);
     $('#save-profile').addEventListener('click', saveProfile);
+    $('#delete-account').addEventListener('click', deleteAccount);
     bindDietEvents();
   }
 
@@ -604,6 +615,19 @@
       renderAll(); switchView('today'); toast('Fresh start — Day 1. Go.');
     }).catch(function (e) { toast(e.message); });
   }
+  function deleteAccount() {
+    var pw = $('#del-password').value;
+    if (!pw) { toast('Enter your password to confirm'); return; }
+    if (!confirm('Delete your account and ALL your data permanently? This cannot be undone.')) return;
+    api('deleteAccount', { password: pw }).then(function () {
+      localStorage.removeItem('hard_token');
+      localStorage.removeItem('hard_user');
+      localStorage.removeItem('hard_cache');
+      alert('Your account has been deleted. Take care! 👋');
+      location.reload();
+    }).catch(function (e) { toast(e.message); });
+  }
+
   function logout() {
     localStorage.removeItem('hard_token');
     localStorage.removeItem('hard_user');

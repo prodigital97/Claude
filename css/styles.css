@@ -304,6 +304,9 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .goal-grid, .goal-targets { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
 .goal-targets { grid-template-columns: 1fr 1fr; }
 
+.danger-zone { border-color: rgba(255,84,112,.4); }
+.danger-zone input { margin-bottom: 10px; }
+
 /* ---------- Theme picker ---------- */
 .theme-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
 .swatch { border: 1px solid var(--line); background: var(--bg-soft); border-radius: 14px; padding: 8px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 7px; }

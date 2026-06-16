@@ -34,6 +34,7 @@ Miss any task and 75 Hard says you restart from Day 1 — there's a one-tap **re
 - **Stats** — current & best streak, days completed, gallons of water, per-task consistency bars
 - **Leaderboard** — everyone using your sheet, ranked by completed days (great for doing it with friends)
 - **Themes** — pick from Midnight, Neon Lime, Violet, Ocean, Crimson, or Pastel in Settings (saved on your device)
+- **Delete account** — Settings lets a user permanently remove their account and all their data (password-confirmed)
 - **Multi-user** sign-up / login (passwords are salted + SHA-256 hashed in the sheet)
 - **Auto-save** — every tap syncs; works offline and re-syncs
 - **Installable** to your phone home screen, works full-screen

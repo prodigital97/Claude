@@ -57,6 +57,7 @@ function doPost(e) {
       case 'reset':      data = handleReset(body);     break;
       case 'leaderboard':data = handleLeaderboard(body); break;
       case 'updateProfile': data = handleUpdateProfile(body); break;
+      case 'deleteAccount': data = handleDeleteAccount(body); break;
       case 'saveGoals':  data = handleSaveGoals(body);  break;
       case 'getFood':    data = handleGetFood(body);    break;
       case 'addFood':    data = handleAddFood(body);    break;
@@ -396,6 +397,35 @@ function handleUpdateProfile(body) {
   sheet.getRange(found.row, idx.displayName + 1).setValue(displayName);
 
   return { user: publicUser(user.username, displayName, user.startDate) };
+}
+
+function handleDeleteAccount(body) {
+  var user = authUser(body);
+  var usersSheet = getSheet(USERS_SHEET, USER_HEADERS);
+  var found = findUserRow(usersSheet, user.username);
+  if (!found) throw new Error('Account not found.');
+
+  // Require the correct password before destroying anything.
+  var uidx = colIndex(USER_HEADERS);
+  if (hashPassword(String(body.password || ''), found.values[uidx.salt]) !== found.values[uidx.passwordHash]) {
+    throw new Error('Password is incorrect.');
+  }
+
+  deleteRowsFor(getSheet(LOGS_SHEET, LOG_HEADERS), colIndex(LOG_HEADERS).username, user.username);
+  deleteRowsFor(getSheet(FOOD_SHEET, FOOD_HEADERS), colIndex(FOOD_HEADERS).username, user.username);
+  deleteRowsFor(getSheet(FAST_SHEET, FAST_HEADERS), colIndex(FAST_HEADERS).username, user.username);
+  deleteRowsFor(getSheet(PROFILE_SHEET, PROFILE_HEADERS), 0, user.username);
+
+  // Re-find the user row (indexes are stable here) and remove it last.
+  usersSheet.deleteRow(found.row);
+  return { deleted: true };
+}
+
+function deleteRowsFor(sheet, usernameCol, username) {
+  var values = sheet.getDataRange().getValues();
+  for (var i = values.length - 1; i >= 1; i--) {
+    if (normalizeUsername(values[i][usernameCol]) === username) sheet.deleteRow(i + 1);
+  }
 }
 
 function handleLeaderboard(body) {
