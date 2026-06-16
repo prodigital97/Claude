@@ -480,10 +480,25 @@
 
   /* ---------------- Stats ---------------- */
   function renderStats() {
+    renderStatsBody('…');
+    api('getFasts', {}).then(function (data) {
+      renderStatsBody(avgFastLabel(data.fasts || []));
+    }).catch(function () { renderStatsBody('—'); });
+  }
+
+  function avgFastLabel(fasts) {
+    var done = (fasts || []).filter(function (f) { return f.endAt; });
+    if (!done.length) return '—';
+    var avg = done.reduce(function (s, f) {
+      return s + (new Date(f.endAt).getTime() - new Date(f.startAt).getTime());
+    }, 0) / done.length;
+    return Math.floor(avg / 3600000) + 'h ' + Math.floor((avg % 3600000) / 60000) + 'm';
+  }
+
+  function renderStatsBody(avgFast) {
     var logs = state.logs;
     var done = logs.filter(function (l) { return l.completed; }).length;
     var curDay = Math.max(1, state.user.currentDay);
-    var remaining = Math.max(0, LEN - curDay + (state.user.currentDay > 0 ? 0 : 0));
     var totalWater = logs.reduce(function (s, l) { return s + (Number(l.waterMl) || 0); }, 0);
     var totalLitres = Math.round(totalWater / 1000);
     var best = bestStreak(logs);
@@ -495,8 +510,8 @@
       ['Days completed', done],
       ['Current streak', streakOf(logs) + '🔥'],
       ['Best streak', best],
-      ['Days left', Math.max(0, LEN - Math.min(curDay, LEN))],
-      ['Water drank', totalLitres + ' L']
+      ['Water drank', totalLitres + ' L'],
+      ['Avg fast', avgFast]
     ].forEach(function (s) {
       var c = el('div', 'stat');
       c.innerHTML = '<div class="num">' + s[1] + '</div><div class="lbl">' + s[0] + '</div>';
