@@ -1074,8 +1074,13 @@
   }
 
   function calcGoals() {
-    var sex = $('#g-sex').value, age = +$('#g-age').value, cm = +$('#g-height').value, kg = +$('#g-weight').value;
-    if (!age || !cm || !kg) { toast('Fill age, height & weight'); return; }
+    var sex = $('#g-sex').value;
+    var age = parseFloat($('#g-age').value), cm = parseFloat($('#g-height').value), kg = parseFloat($('#g-weight').value);
+    var missing = [];
+    if (!(age > 0)) missing.push('age');
+    if (!(cm > 0)) missing.push('height');
+    if (!(kg > 0)) missing.push('weight');
+    if (missing.length) { toast('Please enter your ' + missing.join(', ')); return; }
     var bmr = 10 * kg + 6.25 * cm - 5 * age + (sex === 'female' ? -161 : 5);
     var act = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, athlete: 1.9 }[$('#g-activity').value] || 1.2;
     var adj = { lose: -500, maintain: 0, gain: 300 }[$('#g-goaltype').value] || 0;
