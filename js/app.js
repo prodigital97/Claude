@@ -14,13 +14,12 @@
   var OFFLINE = !CFG.API_URL;
 
   var TASKS = [
-    { key: 'workout1',  emoji: '🏋️', title: 'Workout 1',           sub: '45 minutes' },
-    { key: 'workout2',  emoji: '🏃', title: 'Workout 2',           sub: '45 minutes' },
-    { key: 'outdoor',   emoji: '🌳', title: 'One workout outdoors', sub: 'Rain or shine' },
-    { key: 'reading',   emoji: '📖', title: 'Read 10 pages',        sub: 'Non-fiction / self-help' },
-    { key: 'photo',     emoji: '📸', title: 'Progress photo',       sub: 'Snap it today' },
-    { key: 'diet',      emoji: '🥗', title: 'Follow your diet',     sub: 'No cheat meals' },
-    { key: 'noAlcohol', emoji: '🚫', title: 'No alcohol',           sub: 'Zero, none' }
+    { key: 'workout1',  emoji: '🏋️', title: 'Indoor workout',  sub: '45 minutes' },
+    { key: 'outdoor',   emoji: '🌳', title: 'Outdoor workout', sub: '45 minutes · rain or shine' },
+    { key: 'reading',   emoji: '📖', title: 'Read 10 pages',    sub: 'Non-fiction / self-help' },
+    { key: 'photo',     emoji: '📸', title: 'Progress photo',   sub: 'Snap it today' },
+    { key: 'diet',      emoji: '🥗', title: 'Follow your diet', sub: 'No cheat meals' },
+    { key: 'noAlcohol', emoji: '🚫', title: 'No alcohol',       sub: 'Zero, none' }
   ];
   var TOTAL_ITEMS = TASKS.length + 1; // + water
 
@@ -201,7 +200,7 @@
         var tl = lg.filter(function (x) { return x.date === today; })[0];
         var done = 0;
         if (tl) {
-          ['workout1', 'workout2', 'outdoor', 'reading', 'photo', 'diet', 'noAlcohol'].forEach(function (key) { if (tl[key]) done++; });
+          ['workout1', 'outdoor', 'reading', 'photo', 'diet', 'noAlcohol'].forEach(function (key) { if (tl[key]) done++; });
           if (Number(tl.waterMl) >= WATER_GOAL) done++;
         }
         var cals = ((d.foods && d.foods[k]) || []).filter(function (x) { return x.date === today; })
@@ -209,7 +208,7 @@
         return {
           displayName: u.displayName, currentDay: dayNumber(u.startDate, today),
           completedDays: lg.filter(function (x) { return x.completed; }).length, streak: streakOf(lg),
-          todayDone: done, todayTotal: 8, todayComplete: tl ? !!tl.completed : false,
+          todayDone: done, todayTotal: TOTAL_ITEMS, todayComplete: tl ? !!tl.completed : false,
           todayWaterMl: tl ? (Number(tl.waterMl) || 0) : 0,
           todayCalories: Math.round(cals),
           calorieGoal: (d.profiles && d.profiles[k] && d.profiles[k].calorieGoal) || 0
@@ -222,7 +221,7 @@
 
   /* ---------------- domain helpers ---------------- */
   function isComplete(d) {
-    return d.workout1 && d.workout2 && d.outdoor && d.reading &&
+    return d.workout1 && d.outdoor && d.reading &&
            d.photo && d.diet && d.noAlcohol && (Number(d.waterMl) >= WATER_GOAL);
   }
   function completedCount(d) {

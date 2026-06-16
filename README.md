@@ -8,8 +8,8 @@ A clean, **mobile-first** web app to track the official [75 Hard](https://andyfr
 
 Every day you must complete **all** of:
 
-- 🏋️ **Workout 1** — 45 minutes
-- 🏃 **Workout 2** — 45 minutes (**one of the two must be outdoors** 🌳)
+- 🏋️ **Indoor workout** — 45 minutes
+- 🌳 **Outdoor workout** — 45 minutes (rain or shine)
 - 💧 **Drink your daily water** — tracked in **litres**, one tap = **500 ml** (goal 4 L, which covers the 1-gallon rule)
 - 📖 **Read 10 pages** of a non-fiction / self-improvement book
 - 📸 **Take a progress photo**

@@ -444,7 +444,7 @@ function handleLeaderboard(body) {
       completedDays: logs.filter(function (l) { return l.completed; }).length,
       streak: currentStreak(logs),
       todayDone: todayLog ? tasksDoneCount(todayLog) : 0,
-      todayTotal: 8,
+      todayTotal: 7,
       todayComplete: todayLog ? !!todayLog.completed : false,
       todayWaterMl: todayLog ? (Number(todayLog.waterMl) || 0) : 0,
       todayCalories: Math.round(calToday[name] || 0),
@@ -457,7 +457,7 @@ function handleLeaderboard(body) {
 
 function tasksDoneCount(l) {
   var c = 0;
-  ['workout1', 'workout2', 'outdoor', 'reading', 'photo', 'diet', 'noAlcohol'].forEach(function (k) {
+  ['workout1', 'outdoor', 'reading', 'photo', 'diet', 'noAlcohol'].forEach(function (k) {
     if (l[k]) c++;
   });
   if (Number(l.waterMl) >= WATER_GOAL_ML) c++;
@@ -561,7 +561,7 @@ function findLogRow(sheet, username, date) {
 }
 
 function isDayComplete(d) {
-  return d.workout1 && d.workout2 && d.outdoor && d.reading &&
+  return d.workout1 && d.outdoor && d.reading &&
          d.photo && d.diet && d.noAlcohol && (Number(d.waterMl) >= WATER_GOAL_ML);
 }
 
