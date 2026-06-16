@@ -179,6 +179,13 @@
       }
       return { deleted: p.id };
     }
+    if (action === 'foodSummary') {
+      var all = (d.foods && d.foods[me.username]) || [];
+      var total = all.reduce(function (s, x) { return s + (Number(x.calories) || 0); }, 0);
+      var days = {}; all.forEach(function (x) { days[x.date] = true; });
+      var n = Object.keys(days).length;
+      return { totalCalories: Math.round(total), daysLogged: n, avgCalories: n ? Math.round(total / n) : 0 };
+    }
     if (action === 'saveDay') {
       var day = p.day; day.completed = isComplete(day);
       var arr = d.logs[me.username] || (d.logs[me.username] = []);
@@ -491,10 +498,12 @@
 
   /* ---------------- Stats ---------------- */
   function renderStats() {
-    renderStatsBody('…');
-    api('getFasts', {}).then(function (data) {
-      renderStatsBody(avgFastLabel(data.fasts || []));
-    }).catch(function () { renderStatsBody('—'); });
+    renderStatsBody({ avgFast: '…', avgCal: '…' });
+    var fast = api('getFasts', {}).then(function (d) { return avgFastLabel(d.fasts || []); }).catch(function () { return '—'; });
+    var food = api('foodSummary', {}).then(function (d) { return d.avgCalories ? (d.avgCalories + ' kcal') : '—'; }).catch(function () { return '—'; });
+    Promise.all([fast, food]).then(function (res) {
+      renderStatsBody({ avgFast: res[0], avgCal: res[1] });
+    });
   }
 
   function avgFastLabel(fasts) {
@@ -506,7 +515,7 @@
     return Math.floor(avg / 3600000) + 'h ' + Math.floor((avg % 3600000) / 60000) + 'm';
   }
 
-  function renderStatsBody(avgFast) {
+  function renderStatsBody(vals) {
     var logs = state.logs;
     var done = logs.filter(function (l) { return l.completed; }).length;
     var curDay = Math.max(1, state.user.currentDay);
@@ -522,7 +531,8 @@
       ['Current streak', streakOf(logs) + '🔥'],
       ['Best streak', best],
       ['Water drank', totalLitres + ' L'],
-      ['Avg fast', avgFast]
+      ['Avg fast', vals.avgFast],
+      ['Avg calories / day', vals.avgCal]
     ].forEach(function (s) {
       var c = el('div', 'stat');
       c.innerHTML = '<div class="num">' + s[1] + '</div><div class="lbl">' + s[0] + '</div>';

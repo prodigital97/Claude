@@ -63,6 +63,7 @@ function doPost(e) {
       case 'getFood':    data = handleGetFood(body);    break;
       case 'addFood':    data = handleAddFood(body);    break;
       case 'deleteFood': data = handleDeleteFood(body); break;
+      case 'foodSummary':data = handleFoodSummary(body); break;
       case 'startFast':  data = handleStartFast(body);  break;
       case 'endFast':    data = handleEndFast(body);    break;
       case 'getFasts':   data = handleGetFasts(body);   break;
@@ -323,6 +324,21 @@ function handleDeleteFood(body) {
     }
   }
   return { deleted: null };
+}
+
+function handleFoodSummary(body) {
+  var user = authUser(body);
+  var sheet = getSheet(FOOD_SHEET, FOOD_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(FOOD_HEADERS);
+  var total = 0, days = {};
+  for (var i = 1; i < values.length; i++) {
+    if (normalizeUsername(values[i][idx.username]) !== user.username) continue;
+    total += Number(values[i][idx.calories]) || 0;
+    days[formatDate(values[i][idx.date])] = true;
+  }
+  var n = Object.keys(days).length;
+  return { totalCalories: Math.round(total), daysLogged: n, avgCalories: n ? Math.round(total / n) : 0 };
 }
 
 function foodFromRow(r, idx) {
