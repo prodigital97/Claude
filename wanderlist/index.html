@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c1322" />
+  <title>Wanderlist — Travel Saves</title>
+  <meta name="description" content="Save travel spots straight from Instagram and filter them by category." />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/icon.svg" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Header -->
+    <header class="topbar">
+      <div class="brand">
+        <img src="assets/icon.svg" alt="" class="brand-logo" />
+        <div>
+          <h1>Wanderlist</h1>
+          <p class="tagline">Your travel saves, all in one place</p>
+        </div>
+      </div>
+      <button id="addBtn" class="icon-btn" aria-label="Add a saved place">+</button>
+    </header>
+
+    <!-- Search -->
+    <div class="search-wrap">
+      <span class="search-icon">⌕</span>
+      <input id="search" type="search" placeholder="Search saves, places, tags…" autocomplete="off" />
+    </div>
+
+    <!-- Category filter chips -->
+    <nav id="filters" class="filters" aria-label="Filter by category"></nav>
+
+    <!-- Count / sort row -->
+    <div class="meta-row">
+      <span id="count" class="count">0 saves</span>
+      <select id="sort" class="sort" aria-label="Sort saves">
+        <option value="new">Newest first</option>
+        <option value="old">Oldest first</option>
+        <option value="az">Title A–Z</option>
+      </select>
+    </div>
+
+    <!-- Saves list -->
+    <main id="list" class="list" aria-live="polite"></main>
+
+    <!-- Empty state -->
+    <section id="empty" class="empty" hidden>
+      <div class="empty-emoji">🧭</div>
+      <h2>No saves yet</h2>
+      <p>On Instagram, open a post → <b>Share</b> → choose <b>Wanderlist</b>.<br/>
+         Or tap <b>+</b> and paste a link to save it here.</p>
+      <button id="emptyAddBtn" class="btn-primary">Paste a link</button>
+    </section>
+  </div>
+
+  <!-- Add / Review bottom sheet -->
+  <div id="sheet" class="sheet-backdrop" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+      <div class="sheet-handle"></div>
+      <h2 id="sheetTitle">Save a place</h2>
+
+      <label class="field">
+        <span>Instagram link or any URL</span>
+        <input id="f-url" type="url" inputmode="url" placeholder="https://www.instagram.com/p/…" />
+      </label>
+
+      <label class="field">
+        <span>Title</span>
+        <input id="f-title" type="text" placeholder="e.g. Sunset Beach Café" />
+      </label>
+
+      <label class="field">
+        <span>Category</span>
+        <select id="f-category"></select>
+      </label>
+
+      <label class="field">
+        <span>Location</span>
+        <input id="f-location" type="text" placeholder="e.g. Bali, Indonesia" />
+      </label>
+
+      <label class="field">
+        <span>Tags <small>(comma separated)</small></span>
+        <input id="f-tags" type="text" placeholder="seafood, sunset, cheap eats" />
+      </label>
+
+      <label class="field">
+        <span>Notes</span>
+        <textarea id="f-note" rows="2" placeholder="Why you want to go…"></textarea>
+      </label>
+
+      <p id="autohint" class="autohint" hidden></p>
+
+      <div class="sheet-actions">
+        <button id="cancelBtn" class="btn-ghost">Cancel</button>
+        <button id="saveBtn" class="btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

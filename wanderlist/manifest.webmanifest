@@ -1,0 +1,25 @@
+{
+  "name": "Wanderlist — Travel Saves",
+  "short_name": "Wanderlist",
+  "description": "Save travel spots straight from Instagram — beaches, hotels, restaurants, cafes and more — and filter them by category in one place.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0c1322",
+  "theme_color": "#0c1322",
+  "categories": ["travel", "lifestyle", "productivity"],
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "assets/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ],
+  "share_target": {
+    "action": "./index.html",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
+}
