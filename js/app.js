@@ -971,7 +971,7 @@
 
     fetch('https://world.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q) +
           '&search_simple=1&action=process&json=1&page_size=20' +
-          '&fields=product_name,brands,nutriments,serving_quantity,sugars_100g')
+          '&fields=product_name,brands,nutriments,serving_quantity')
       .then(function (r) { return r.json(); })
       .then(function (d) {
         var items = (d.products || []).map(function (p) {
