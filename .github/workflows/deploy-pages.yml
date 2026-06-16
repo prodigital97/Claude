@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [ "claude/75hard-challenge-dashboard-rklbvt", "main" ]
+    branches: [ "claude/75hard-challenge-dashboard-rklbvt", "claude/travel-saves-instagram-app-4w64a7", "main" ]
   workflow_dispatch:
 
 permissions:
