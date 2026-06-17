@@ -33,7 +33,10 @@ Miss any task and 75 Hard says you restart from Day 1 — there's a one-tap **re
 - **75-day journey** calendar (done / missed / today / upcoming)
 - **Stats** — current & best streak, days completed, gallons of water, per-task consistency bars
 - **Leaderboard** — everyone using your sheet, ranked by completed days (great for doing it with friends)
-- **Themes** — pick from Midnight, Neon Lime, Violet, Ocean, Crimson, or Pastel in Settings (saved on your device)
+- **Themes** — pick from Midnight, Neon Lime, Violet, Ocean, Crimson, Pastel, Academia or Arsenal in
+  Settings (saved on your device). Academia and Arsenal use a wallpaper background with frosted cards —
+  to use your own wallpaper, replace `assets/bg-academia.svg` / `assets/bg-arsenal.svg` with your image
+  (keep the same filename, or point the CSS `body::before` rule at your file).
 - **Delete account** — Settings lets a user permanently remove their account and all their data (password-confirmed)
 - **Multi-user** sign-up / login (passwords are salted + SHA-256 hashed in the sheet)
 - **Auto-save** — every tap syncs; works offline and re-syncs

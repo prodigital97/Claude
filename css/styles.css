@@ -63,6 +63,36 @@
   --on-primary: #ffffff; --nav-bg: rgba(255,255,255,.94); --bg-grad: #ffe1e2;
 }
 
+/* ----- Wallpaper themes (background art + frosted cards) ----- */
+[data-theme="academia"] body, [data-theme="arsenal"] body { background: transparent; }
+[data-theme="academia"] body::before,
+[data-theme="arsenal"] body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1;
+  background-size: cover; background-position: center;
+}
+[data-theme="academia"] body::before { background-image: url("../assets/bg-academia.svg"); }
+[data-theme="arsenal"]  body::before { background-image: url("../assets/bg-arsenal.svg"); }
+
+[data-theme="academia"] .card, [data-theme="arsenal"] .card,
+[data-theme="academia"] .task, [data-theme="arsenal"] .task,
+[data-theme="academia"] .stat, [data-theme="arsenal"] .stat,
+[data-theme="academia"] .js-stat, [data-theme="arsenal"] .js-stat,
+[data-theme="academia"] .meal-card, [data-theme="arsenal"] .meal-card,
+[data-theme="academia"] .friend-card, [data-theme="arsenal"] .friend-card,
+[data-theme="academia"] .lb-row, [data-theme="arsenal"] .lb-row,
+[data-theme="academia"] .cal-cell, [data-theme="arsenal"] .cal-cell,
+[data-theme="academia"] .modal-card, [data-theme="arsenal"] .modal-card,
+[data-theme="academia"] .auth-card, [data-theme="arsenal"] .auth-card {
+  background: color-mix(in srgb, var(--card) 80%, transparent);
+  backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px);
+}
+/* Tint the emoji icons to match each theme */
+[data-theme="academia"] .t-emoji, [data-theme="academia"] .nav-btn .ico,
+[data-theme="academia"] .fast-title, [data-theme="academia"] .brand-badge {
+  filter: sepia(0.5) saturate(0.8) brightness(0.96);
+}
+[data-theme="arsenal"] .nav-btn .ico { filter: saturate(1.1); }
+
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; padding: 0; }
 body {
