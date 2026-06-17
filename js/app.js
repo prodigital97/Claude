@@ -1272,7 +1272,7 @@
     { id: 'crimson',  name: 'Crimson',   bg: '#140a0d', accent: '#ff4d5e' },
     { id: 'pastel',   name: 'Pastel',    bg: '#f3f1ee', accent: '#b07cff' },
     { id: 'academia', name: 'Academia',  bg: '#241c14', accent: '#c8a86a' },
-    { id: 'arsenal',  name: 'Arsenal',   bg: '#150a0c', accent: '#ef0107' }
+    { id: 'arsenal',  name: 'Arsenal',   bg: '#ffffff', accent: '#ef0107' }
   ];
   function currentTheme() { return localStorage.getItem('hard_theme') || CFG.DEFAULT_THEME || 'midnight'; }
   function applyTheme(id) {

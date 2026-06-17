@@ -57,10 +57,10 @@
   --on-primary: #2a2013; --nav-bg: rgba(36,28,20,.94); --bg-grad: #3c2d1c;
 }
 [data-theme="arsenal"] {
-  --bg: #150a0c; --bg-soft: #241115; --card: #2a1418; --card-2: #371a1f; --line: #4a2329;
-  --text: #fff5f6; --muted: #d2a3a9; --primary: #ef0107; --primary-2: #ff3b40;
-  --green: #3ddc84; --red: #ef0107; --amber: #ffcf3f;
-  --on-primary: #ffffff; --nav-bg: rgba(21,10,12,.94); --bg-grad: #3a0d12;
+  --bg: #f4f5f7; --bg-soft: #ffffff; --card: #ffffff; --card-2: #fff1f2; --line: #e8e2e3;
+  --text: #1a1416; --muted: #897e80; --primary: #ef0107; --primary-2: #ff3b40;
+  --green: #1f9d57; --red: #ef0107; --amber: #e2952a;
+  --on-primary: #ffffff; --nav-bg: rgba(255,255,255,.94); --bg-grad: #ffe1e2;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
