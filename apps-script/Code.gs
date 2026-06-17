@@ -539,7 +539,7 @@ function publicUser(username, displayName, startDate) {
   return {
     username: username,
     displayName: displayName,
-    startDate: String(startDate),
+    startDate: formatDate(startDate),
     currentDay: dayNumberFor(startDate, todayStr()),
     challengeLength: CHALLENGE_LENGTH,
     waterGoalMl: WATER_GOAL_ML
@@ -615,12 +615,14 @@ function isDayComplete(d) {
 }
 
 function currentStreak(logs) {
-  var streak = 0;
-  for (var i = logs.length - 1; i >= 0; i--) {
-    if (logs[i].completed) streak++;
-    else break;
-  }
-  return streak;
+  // Consecutive complete days ending today (or yesterday if today's in progress).
+  var set = {};
+  logs.forEach(function (l) { if (l.completed) set[l.date] = true; });
+  var d = parseDate(todayStr());
+  if (!set[formatDate(d)]) d.setDate(d.getDate() - 1);
+  var s = 0;
+  while (set[formatDate(d)]) { s++; d.setDate(d.getDate() - 1); }
+  return s;
 }
 
 /* ----------------------------------------------------------------------- *

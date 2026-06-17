@@ -71,8 +71,12 @@
   }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function parse(s) {
-    var p = String(s).slice(0, 10).split('-');
-    return new Date(+p[0], +p[1] - 1, +p[2]);
+    if (s instanceof Date) return s;
+    var str = String(s);
+    var p = str.slice(0, 10).split('-');
+    if (p.length === 3 && p[0].length === 4) return new Date(+p[0], +p[1] - 1, +p[2]);
+    var d = new Date(str); // tolerate "Tue Jun 16 2026 …" style strings from Sheets
+    return isNaN(d.getTime()) ? new Date() : d;
   }
   function addDays(s, n) {
     var d = parse(s); d.setDate(d.getDate() + n); return fmt(d);
@@ -251,8 +255,14 @@
     return c;
   }
   function streakOf(logs) {
+    // Count consecutive complete days ending today (or yesterday if today's
+    // still in progress, so an unfinished today doesn't zero your streak).
+    var set = {};
+    logs.forEach(function (l) { if (isComplete(l)) set[l.date] = true; });
+    var d = todayStr();
+    if (!set[d]) d = addDays(d, -1);
     var s = 0;
-    for (var i = logs.length - 1; i >= 0; i--) { if (isComplete(logs[i])) s++; else break; }
+    while (set[d]) { s++; d = addDays(d, -1); }
     return s;
   }
   function emptyDay(date) {
@@ -1260,7 +1270,9 @@
     { id: 'violet',   name: 'Violet',    bg: '#0c0a14', accent: '#a855f7' },
     { id: 'ocean',    name: 'Ocean',     bg: '#04141b', accent: '#22d3ee' },
     { id: 'crimson',  name: 'Crimson',   bg: '#140a0d', accent: '#ff4d5e' },
-    { id: 'pastel',   name: 'Pastel',    bg: '#f3f1ee', accent: '#b07cff' }
+    { id: 'pastel',   name: 'Pastel',    bg: '#f3f1ee', accent: '#b07cff' },
+    { id: 'academia', name: 'Academia',  bg: '#241c14', accent: '#c8a86a' },
+    { id: 'arsenal',  name: 'Arsenal',   bg: '#150a0c', accent: '#ef0107' }
   ];
   function currentTheme() { return localStorage.getItem('hard_theme') || CFG.DEFAULT_THEME || 'midnight'; }
   function applyTheme(id) {

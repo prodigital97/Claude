@@ -50,6 +50,18 @@
   --green: #57c785; --red: #ef5d7a; --amber: #efb83d;
   --on-primary: #ffffff; --nav-bg: rgba(255,255,255,.92); --bg-grad: #efe7ff;
 }
+[data-theme="academia"] {
+  --bg: #241c14; --bg-soft: #2f2519; --card: #34291c; --card-2: #3f3324; --line: #4c3d2a;
+  --text: #efe5d2; --muted: #b6a384; --primary: #c8a86a; --primary-2: #ddbf86;
+  --green: #9fae66; --red: #c8705a; --amber: #e0b964;
+  --on-primary: #2a2013; --nav-bg: rgba(36,28,20,.94); --bg-grad: #3c2d1c;
+}
+[data-theme="arsenal"] {
+  --bg: #150a0c; --bg-soft: #241115; --card: #2a1418; --card-2: #371a1f; --line: #4a2329;
+  --text: #fff5f6; --muted: #d2a3a9; --primary: #ef0107; --primary-2: #ff3b40;
+  --green: #3ddc84; --red: #ef0107; --amber: #ffcf3f;
+  --on-primary: #ffffff; --nav-bg: rgba(21,10,12,.94); --bg-grad: #3a0d12;
+}
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; padding: 0; }
