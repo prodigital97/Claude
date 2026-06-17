@@ -22,7 +22,10 @@
           <p class="tagline">Your travel saves, all in one place</p>
         </div>
       </div>
-      <button id="addBtn" class="icon-btn" aria-label="Add a saved place">+</button>
+      <div class="topbar-actions">
+        <button id="helpBtn" class="icon-btn ghost" aria-label="How to share from Instagram">↗</button>
+        <button id="addBtn" class="icon-btn" aria-label="Add a saved place">+</button>
+      </div>
     </header>
 
     <!-- Search -->
@@ -51,9 +54,12 @@
     <section id="empty" class="empty" hidden>
       <div class="empty-emoji">🧭</div>
       <h2>No saves yet</h2>
-      <p>On Instagram, open a post → <b>Share</b> → choose <b>Wanderlist</b>.<br/>
-         Or tap <b>+</b> and paste a link to save it here.</p>
-      <button id="emptyAddBtn" class="btn-primary">Paste a link</button>
+      <p>Set up one-tap saving from Instagram's <b>Share</b> sheet,<br/>
+         or just tap <b>+</b> to paste a link.</p>
+      <div class="empty-actions">
+        <button id="emptyHelpBtn" class="btn-primary">Set up Instagram sharing</button>
+        <button id="emptyAddBtn" class="btn-ghost">Paste a link</button>
+      </div>
     </section>
   </div>
 
@@ -98,6 +104,43 @@
       <div class="sheet-actions">
         <button id="cancelBtn" class="btn-ghost">Cancel</button>
         <button id="saveBtn" class="btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Help: set up Instagram sharing -->
+  <div id="help" class="sheet-backdrop" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+      <div class="sheet-handle"></div>
+      <h2 id="helpTitle">Share from Instagram → Wanderlist</h2>
+      <p class="help-lead">iPhones only let <b>Shortcuts</b> (not websites) appear in the Share sheet.
+        Set this up once and you'll get a one-tap <b>Share → Wanderlist</b> from Instagram.</p>
+
+      <ol class="help-steps">
+        <li>Open the <b>Shortcuts</b> app → tap <b>+</b> to create a new shortcut.</li>
+        <li>Tap the <b>ⓘ / settings</b> icon → turn on <b>Show in Share Sheet</b>. Under
+            <b>Share Sheet Types</b> keep <b>URLs</b> (and Safari web pages) on.</li>
+        <li>Add the action <b>Open URLs</b> (search "Open URLs").</li>
+        <li>In the URL box, paste the line below, then place your cursor right after
+            <code>url=</code> and tap the <b>Shortcut Input</b> variable to insert it:</li>
+      </ol>
+
+      <div class="copybox">
+        <code id="shortcutUrl">https://prodigital97.github.io/Claude/wanderlist/index.html?autosave=1&amp;url=</code>
+        <button id="copyUrlBtn" class="btn-ghost copy-btn">Copy</button>
+      </div>
+
+      <ol class="help-steps" start="5">
+        <li>Name it <b>Wanderlist</b> (and pick the app icon if you like) → <b>Done</b>.</li>
+        <li>In Instagram: open a post → <b>Share (paper-plane)</b> → <b>Share to…</b> →
+            scroll to <b>Wanderlist</b>. It saves automatically. 🎉</li>
+      </ol>
+
+      <p class="help-note">Tip: remove <code>autosave=1&amp;</code> from the link if you'd rather
+        review &amp; edit each save (category, notes) before it's added.</p>
+
+      <div class="sheet-actions">
+        <button id="helpCloseBtn" class="btn-primary" style="flex:1">Got it</button>
       </div>
     </div>
   </div>

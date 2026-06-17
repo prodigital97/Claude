@@ -55,6 +55,33 @@ html, body {
   transition: transform .12s ease;
 }
 .icon-btn:active { transform: scale(0.92); }
+.topbar-actions { display: flex; gap: 8px; }
+.icon-btn.ghost {
+  background: var(--bg-2);
+  color: var(--accent);
+  border: 1px solid var(--line);
+  box-shadow: none;
+  font-size: 20px;
+}
+
+/* Help modal */
+.help-lead { font-size: 14px; color: var(--muted); line-height: 1.5; margin: 0 0 14px; }
+.help-steps { margin: 0 0 14px; padding-left: 20px; }
+.help-steps li { font-size: 14px; line-height: 1.55; color: var(--text); margin-bottom: 9px; }
+.help-steps b { color: var(--text); }
+.help-note { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin: 4px 0 14px; }
+code {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 6px; padding: 1px 6px; font-size: 12.5px;
+  word-break: break-all;
+}
+.copybox {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; padding: 10px 12px; margin: 0 0 14px;
+}
+.copybox code { background: none; border: none; padding: 0; color: var(--accent); flex: 1; }
+.copy-btn { padding: 8px 14px; font-size: 13px; flex: 0 0 auto; }
 
 /* Search */
 .search-wrap { position: relative; margin-bottom: 14px; }
@@ -187,6 +214,8 @@ html, body {
 .empty h2 { color: var(--text); margin: 6px 0; }
 .empty p { font-size: 14px; line-height: 1.5; }
 .empty .btn-primary { margin-top: 16px; }
+.empty-actions { display: flex; flex-direction: column; gap: 10px; align-items: center; margin-top: 16px; }
+.empty-actions .btn-primary, .empty-actions .btn-ghost { width: 100%; max-width: 280px; margin-top: 0; }
 
 /* Buttons */
 .btn-primary {

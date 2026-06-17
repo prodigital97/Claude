@@ -1,5 +1,5 @@
 /* Offline cache for the Wanderlist app shell. */
-var CACHE = 'wanderlist-v1';
+var CACHE = 'wanderlist-v2';
 var ASSETS = [
   './',
   './index.html',

@@ -322,9 +322,22 @@
       text: p.get('text') || '',
       url: p.get('url') || ''
     });
+    var auto = p.get('autosave') === '1';
 
     // Clean the URL so a refresh doesn't re-trigger the sheet.
     history.replaceState({}, '', location.pathname);
+
+    // From the iOS Shortcut we may want zero-tap saving: store it straight away
+    // and just confirm with a toast instead of opening the review sheet.
+    if (auto && (draft.url || draft.title)) {
+      draft.id = uid();
+      draft.createdAt = Date.now();
+      saves.unshift(draft);
+      persist();
+      toast('Saved from share ✓');
+      return true;
+    }
+
     openSheet(draft, true);
     return true;
   }
@@ -359,8 +372,23 @@
   searchEl.addEventListener('input', function () { query = searchEl.value; render(); });
   sortEl.addEventListener('change', function () { sortBy = sortEl.value; render(); });
 
+  var helpEl = $('help');
+  $('helpBtn').addEventListener('click', function () { helpEl.hidden = false; });
+  $('helpCloseBtn').addEventListener('click', function () { helpEl.hidden = true; });
+  helpEl.addEventListener('click', function (e) { if (e.target === helpEl) helpEl.hidden = true; });
+  $('copyUrlBtn').addEventListener('click', function () {
+    var text = $('shortcutUrl').textContent;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast('Link copied ✓'); })
+        .catch(function () { toast('Copy failed — long-press to copy'); });
+    } else {
+      toast('Long-press the link to copy');
+    }
+  });
+
   $('addBtn').addEventListener('click', function () { openSheet(null, false); });
   $('emptyAddBtn').addEventListener('click', function () { openSheet(null, false); });
+  $('emptyHelpBtn').addEventListener('click', function () { helpEl.hidden = false; });
   $('cancelBtn').addEventListener('click', closeSheet);
   $('saveBtn').addEventListener('click', saveFromSheet);
   sheetEl.addEventListener('click', function (e) { if (e.target === sheetEl) closeSheet(); });

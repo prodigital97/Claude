@@ -27,20 +27,45 @@ python3 -m http.server 8000
 You'll see a few demo saves and the category filter chips. Tap **+** to add one
 by pasting a link, or test the share flow below.
 
-## Test the "share from Instagram" flow
+## Share from Instagram
 
-The app registers a **Web Share Target**, so once it's installed to a phone it
-shows up in the Android share sheet like a native app.
+### iPhone — via an iOS Shortcut (no App Store needed)
 
-**On an Android phone (the real thing):**
-1. Host the folder over HTTPS (e.g. GitHub Pages — see below) and open it in Chrome.
-2. Menu ⋮ → **Install app / Add to Home screen**.
-3. In Instagram, open a post → **Share** (paper-plane / `⋯ → Share to`) →
-   pick **Wanderlist** from the system share sheet.
-4. The review sheet opens, pre-filled — confirm and save.
+iOS only lets **Shortcuts** (not websites) appear in the Share sheet, so on
+iPhone you add a tiny shortcut once. The app's in-app **↗ Help** button walks
+through this on the phone; the steps are:
 
-**On any device (no install needed)** you can simulate exactly what the share
-sheet hands the app by hitting the share URL directly:
+1. Open the **Shortcuts** app → **+** to create a new shortcut.
+2. Tap **ⓘ / settings** → enable **Show in Share Sheet**; keep **URLs** on under
+   *Share Sheet Types*.
+3. Add the action **Open URLs**.
+4. In the URL field paste:
+   ```
+   https://<your-host>/wanderlist/index.html?autosave=1&url=
+   ```
+   then put the cursor right after `url=` and insert the **Shortcut Input** variable.
+5. Name it **Wanderlist** → **Done**.
+6. In Instagram: post → **Share** → **Share to…** → **Wanderlist**. Done.
+
+`?autosave=1` saves silently and shows a toast. Drop `autosave=1&` if you'd
+rather review/edit (category, notes) each time before saving.
+
+> Because Instagram only hands the **URL** (not the caption) to a Shortcut,
+> auto-categorisation from the caption isn't possible this way — add the optional
+> backend (below) to fetch captions via Instagram oEmbed for richer auto-fill.
+
+### Android — Web Share Target (PWA)
+
+On Android the installed PWA registers a **Web Share Target** and shows up in the
+share sheet natively:
+1. Open the hosted app in Chrome → menu ⋮ → **Install app / Add to Home screen**.
+2. In Instagram: post → **Share** → pick **Wanderlist**.
+3. The review sheet opens pre-filled — confirm and save.
+
+### Any device — simulate the share
+
+You can hit the share URL directly to see exactly what the app does with shared
+content:
 
 ```
 index.html?title=Sunset%20Beach%20Cafe&text=📍%20Canggu,%20Bali%20best%20beach%20cafe%20%23sunset%20%23coffee&url=https://www.instagram.com/p/abc123/
