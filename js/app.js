@@ -229,9 +229,12 @@
         }
         var cals = ((d.foods && d.foods[k]) || []).filter(function (x) { return x.date === today; })
           .reduce(function (s, x) { return s + (Number(x.calories) || 0); }, 0);
+        var start = u.startDate;
+        var doneDates = {};
+        lg.forEach(function (x) { if (x.completed && x.date >= start && x.date <= today) doneDates[x.date] = true; });
         return {
           displayName: u.displayName, currentDay: dayNumber(u.startDate, today),
-          completedDays: lg.filter(function (x) { return x.completed; }).length, streak: streakOf(lg),
+          completedDays: Object.keys(doneDates).length, streak: streakOf(lg),
           todayDone: done, todayTotal: TOTAL_ITEMS, todayComplete: tl ? !!tl.completed : false,
           todayWaterMl: tl ? (Number(tl.waterMl) || 0) : 0,
           todayCalories: Math.round(cals),

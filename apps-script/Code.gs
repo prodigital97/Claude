@@ -487,10 +487,16 @@ function handleLeaderboard(body) {
     if (!name) continue;
     var logs = (logsByUser[name] || []).sort(function (x, y) { return x.date < y.date ? -1 : 1; });
     var todayLog = logs.filter(function (l) { return l.date === today; })[0];
+    // Count distinct complete days within the challenge window (ignores stray/duplicate rows).
+    var startDay = formatDate(u[uIdx.startDate]);
+    var doneDates = {};
+    logs.forEach(function (l) {
+      if (l.completed && l.date >= startDay && l.date <= today) doneDates[l.date] = true;
+    });
     board.push({
       displayName: u[uIdx.displayName] || name,
       currentDay: dayNumberFor(u[uIdx.startDate], today),
-      completedDays: logs.filter(function (l) { return l.completed; }).length,
+      completedDays: Object.keys(doneDates).length,
       streak: currentStreak(logs),
       todayDone: todayLog ? tasksDoneCount(todayLog) : 0,
       todayTotal: 7,
