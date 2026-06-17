@@ -33,9 +33,12 @@
     profile: {},
     foods: [],
     foodsDate: null,
+    dietDate: null,
     pendingFood: null,
     activeFast: null,
     fastTimer: null,
+    journeyWindow: 75,
+    editDay: null,
     saveTimer: null
   };
 
@@ -249,7 +252,7 @@
   }
   function streakOf(logs) {
     var s = 0;
-    for (var i = logs.length - 1; i >= 0; i--) { if (logs[i].completed) s++; else break; }
+    for (var i = logs.length - 1; i >= 0; i--) { if (isComplete(logs[i])) s++; else break; }
     return s;
   }
   function emptyDay(date) {
@@ -350,6 +353,17 @@
     $('#reset-challenge').addEventListener('click', resetChallenge);
     $('#save-profile').addEventListener('click', saveProfile);
     $('#delete-account').addEventListener('click', deleteAccount);
+    // Journey window buttons + day editor modal
+    document.querySelectorAll('#journey-windows [data-w]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        state.journeyWindow = +b.dataset.w;
+        document.querySelectorAll('#journey-windows [data-w]').forEach(function (x) { x.classList.toggle('active', x === b); });
+        renderCalendar();
+      });
+    });
+    $('#day-close').addEventListener('click', function () { hide('#day-modal'); });
+    $('#day-modal').addEventListener('click', function (e) { if (e.target.id === 'day-modal') hide('#day-modal'); });
+    $('#day-save').addEventListener('click', saveDayEditor);
     bindDietEvents();
   }
 
@@ -432,7 +446,7 @@
     var glasses = el('div', 'glasses');
     var filled = Math.round(ml / GLASS);
     for (var i = 0; i < GLASS_COUNT; i++) {
-      var g = el('div', 'glass' + (i < filled ? ' full' : ''));
+      var g = el('div', 'glass' + (i < filled ? ' full' : ''), '🥛');
       (function (idx) {
         g.addEventListener('click', function () {
           // tapping a glass sets the level to that glass (toggle last one off)
@@ -479,21 +493,103 @@
   }
 
   /* ---------------- Calendar ---------------- */
+  function shortDate(date) {
+    return parse(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
   function renderCalendar() {
+    renderJourneySummary();
     var grid = $('#calendar-grid');
     grid.innerHTML = '';
     var today = todayStr();
     for (var n = 1; n <= LEN; n++) {
       var date = addDays(state.user.startDate, n - 1);
       var log = logFor(date);
+      var done = log && isComplete(log);
       var cell = el('div', 'cal-cell');
-      cell.textContent = n;
+      cell.innerHTML = '<span class="cc-num">' + n + '</span><span class="cc-date">' + shortDate(date) + '</span>';
       if (date === today) cell.classList.add('today');
-      if (log && log.completed) cell.classList.add('done');
+      if (done) cell.classList.add('done');
       else if (date < today) cell.classList.add('miss');
-      cell.title = prettyDate(date);
+      if (date <= today) {
+        cell.classList.add('editable');
+        (function (dt) { cell.addEventListener('click', function () { openDayEditor(dt); }); })(date);
+      }
       grid.appendChild(cell);
     }
+  }
+
+  function renderJourneySummary() {
+    var box = $('#journey-summary'); if (!box) return;
+    var win = state.journeyWindow || LEN;
+    var today = todayStr();
+    var curDay = Math.max(1, state.user.currentDay);
+    var n = Math.min(win, curDay); // only count elapsed days
+    var completed = 0, taskHits = 0, taskTotal = 0;
+    for (var i = 0; i < n; i++) {
+      var date = addDays(state.user.startDate, curDay - 1 - i);
+      if (date > today || date < state.user.startDate) continue;
+      var log = logFor(date);
+      if (log && isComplete(log)) completed++;
+      taskTotal += TOTAL_ITEMS;
+      if (log) taskHits += completedCount(log);
+    }
+    var rate = taskTotal ? Math.round((taskHits / taskTotal) * 100) : 0;
+    box.innerHTML =
+      '<div class="js-stat"><b>' + completed + ' / ' + n + '</b><span>days complete</span></div>' +
+      '<div class="js-stat"><b>' + rate + '%</b><span>tasks done</span></div>';
+  }
+
+  /* ----- Day editor (edit any date from Journey) ----- */
+  function openDayEditor(date) {
+    state.editDay = Object.assign(emptyDay(date), logFor(date) || {});
+    state.editDay.date = date;
+    $('#day-modal-title').textContent = 'Day ' + dayNumber(state.user.startDate, date) + ' · ' + prettyDate(date);
+    renderDayEditorBody();
+    show('#day-modal');
+  }
+  function renderDayEditorBody() {
+    var d = state.editDay;
+    var list = $('#day-editor-list');
+    list.innerHTML = '';
+    TASKS.forEach(function (t) {
+      var row = el('div', 'task' + (d[t.key] ? ' done' : ''));
+      row.innerHTML = '<div class="check">✓</div><div class="t-emoji">' + t.emoji + '</div>' +
+        '<div class="t-body"><div class="t-title">' + t.title + '</div><div class="t-sub">' + t.sub + '</div></div>';
+      row.addEventListener('click', function () { d[t.key] = !d[t.key]; renderDayEditorBody(); });
+      list.appendChild(row);
+    });
+    // water stepper
+    var ml = Number(d.waterMl) || 0;
+    var w = el('div', 'task water-edit');
+    w.innerHTML =
+      '<div class="check"' + (ml >= WATER_GOAL ? ' style="background:#4aa8ff;border-color:#4aa8ff;color:#04223f"' : '') + '>✓</div>' +
+      '<div class="t-emoji">💧</div>' +
+      '<div class="t-body"><div class="t-title">Water</div><div class="t-sub">' + litres(ml) + ' L / ' + litres(WATER_GOAL) + ' L</div></div>' +
+      '<button class="wstep" data-d="-1">–</button><button class="wstep" data-d="1">＋</button>';
+    w.querySelectorAll('.wstep').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        d.waterMl = Math.max(0, Math.min(WATER_GOAL, (Number(d.waterMl) || 0) + (+b.dataset.d) * GLASS));
+        renderDayEditorBody();
+      });
+    });
+    list.appendChild(w);
+  }
+  function saveDayEditor() {
+    var d = state.editDay;
+    d.completed = isComplete(d);
+    api('saveDay', { day: d }).then(function () {
+      var i = state.logs.findIndex(function (l) { return l.date === d.date; });
+      var copy = Object.assign({}, d);
+      if (i >= 0) state.logs[i] = copy; else state.logs.push(copy);
+      state.logs.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+      cacheState();
+      if (d.date === todayStr()) { state.today = Object.assign(emptyDay(todayStr()), d); }
+      hide('#day-modal');
+      renderCalendar(); renderAll();
+      toast('Saved ' + shortDate(d.date) + ' ✓');
+    }).catch(function (e) { toast(e.message); });
   }
 
   /* ---------------- Stats ---------------- */
@@ -517,7 +613,7 @@
 
   function renderStatsBody(vals) {
     var logs = state.logs;
-    var done = logs.filter(function (l) { return l.completed; }).length;
+    var done = logs.filter(function (l) { return isComplete(l); }).length;
     var curDay = Math.max(1, state.user.currentDay);
     var totalWater = logs.reduce(function (s, l) { return s + (Number(l.waterMl) || 0); }, 0);
     var totalLitres = Math.round(totalWater / 1000);
@@ -558,7 +654,7 @@
   }
   function bestStreak(logs) {
     var best = 0, cur = 0;
-    logs.forEach(function (l) { if (l.completed) { cur++; best = Math.max(best, cur); } else cur = 0; });
+    logs.forEach(function (l) { if (isComplete(l)) { cur++; best = Math.max(best, cur); } else cur = 0; });
     return best;
   }
 
@@ -690,7 +786,12 @@
   }
 
   function renderDiet() {
-    var date = todayStr();
+    if (!state.dietDate) state.dietDate = todayStr();
+    var date = state.dietDate;
+    var di = $('#diet-date');
+    if (di) { di.value = date; di.max = todayStr(); }
+    var lbl = $('#diet-date-label');
+    if (lbl) lbl.textContent = (date === todayStr()) ? 'Today' : prettyDate(date);
     if (state.foodsDate !== date) {
       $('#meals').innerHTML = '<p class="muted tiny center">Loading…</p>';
       loadFoods(date).then(renderDietBody).catch(function (e) {
@@ -700,6 +801,11 @@
       renderDietBody();
     }
     renderFasting();
+  }
+  function setDietDate(date) {
+    if (date > todayStr()) return;
+    state.dietDate = date;
+    renderDiet();
   }
 
   /* ----- Intermittent fasting ----- */
@@ -980,7 +1086,7 @@
     results.insertAdjacentHTML('beforeend', '<p class="fr-loading" id="fr-loading">Searching database…</p>');
 
     fetch('https://world.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q) +
-          '&search_simple=1&action=process&json=1&page_size=20' +
+          '&search_simple=1&action=process&json=1&page_size=40' +
           '&fields=product_name,brands,nutriments,serving_quantity')
       .then(function (r) { return r.json(); })
       .then(function (d) {
@@ -1045,18 +1151,23 @@
       calories: f.kcal * g / 100, protein: f.p * g / 100, carbs: f.c * g / 100, fat: f.f * g / 100, sugar: (f.s || 0) * g / 100
     });
   }
-  function addManual() {
+  // Custom food entered per 100 g/ml -> go to the portion step to set the amount.
+  function manualNext() {
     var name = $('#m-name').value.trim();
     if (!name) { toast('Enter a food name'); return; }
-    saveFood({
-      meal: $('#p-meal').value || 'Snacks', name: name, grams: 0,
-      calories: Number($('#m-cal').value) || 0, protein: Number($('#m-protein').value) || 0,
-      carbs: Number($('#m-carbs').value) || 0, fat: Number($('#m-fat').value) || 0, sugar: Number($('#m-sugar').value) || 0
+    pickFood({
+      name: name,
+      kcal: Number($('#m-cal').value) || 0,
+      p: Number($('#m-protein').value) || 0,
+      c: Number($('#m-carbs').value) || 0,
+      f: Number($('#m-fat').value) || 0,
+      s: Number($('#m-sugar').value) || 0,
+      serving: 100
     });
     $('#m-name').value = $('#m-cal').value = $('#m-protein').value = $('#m-carbs').value = $('#m-fat').value = $('#m-sugar').value = '';
   }
   function saveFood(food) {
-    food.date = todayStr();
+    food.date = state.dietDate || todayStr();
     api('addFood', { food: food }).then(function (data) {
       state.foods.push(data.food);
       closeFoodModal();
@@ -1082,11 +1193,15 @@
       searchTimer = setTimeout(function () { runSearch(q); }, 350);
     });
     $('#food-manual-toggle').addEventListener('click', function () { $('#food-manual').classList.toggle('hidden'); });
-    $('#m-add').addEventListener('click', addManual);
+    $('#m-next').addEventListener('click', manualNext);
     $('#p-grams').addEventListener('input', updatePortion);
     $('#p-add').addEventListener('click', addPortion);
     $('#calc-goals').addEventListener('click', calcGoals);
     $('#save-goals').addEventListener('click', saveGoals);
+    // Diet date navigation
+    $('#diet-prev').addEventListener('click', function () { setDietDate(addDays(state.dietDate || todayStr(), -1)); });
+    $('#diet-next').addEventListener('click', function () { setDietDate(addDays(state.dietDate || todayStr(), 1)); });
+    $('#diet-date').addEventListener('change', function () { if (this.value) setDietDate(this.value); });
   }
 
   function calcGoals() {

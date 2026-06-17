@@ -192,20 +192,34 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 /* Water task */
 .water-task { display: block; cursor: default; }
 .water-head { display: flex; align-items: center; gap: 14px; }
-.glasses { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.glasses { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
 .glass {
-  width: 38px; height: 46px; border-radius: 6px 6px 9px 9px;
-  border: 2px solid var(--line); background: var(--bg-soft);
-  position: relative; cursor: pointer; overflow: hidden;
+  font-size: 30px; line-height: 1; cursor: pointer; user-select: none;
+  filter: grayscale(1); opacity: .35; transition: opacity .15s, transform .1s, filter .15s;
 }
-.glass.full { border-color: #4aa8ff; background: linear-gradient(180deg, #6cc0ff, #2f86ff); }
-.glass:active { transform: scale(.9); }
+.glass.full { filter: none; opacity: 1; }
+.glass:active { transform: scale(.82); }
 .water-amount { font-size: 12px; color: var(--muted); margin-top: 10px; text-align: center; }
 .water-amount b { color: #6cc0ff; }
 
 .notes-field { display: block; }
 .notes-field textarea { margin-top: 6px; }
 .save-day { margin-bottom: 6px; }
+
+/* ---------- Date bar (diet) ---------- */
+.date-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.date-bar-mid { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.date-bar-mid input[type=date] { width: 100%; text-align: center; padding: 9px; }
+.date-bar-mid .muted { margin-top: 0; }
+
+/* ---------- Segmented control / Journey ---------- */
+.seg { display: flex; gap: 6px; background: var(--bg-soft); padding: 4px; border-radius: 12px; margin-bottom: 12px; }
+.seg button { flex: 1; border: 0; background: transparent; color: var(--muted); padding: 9px 4px; border-radius: 9px; font-weight: 700; font-size: 13px; cursor: pointer; }
+.seg button.active { background: var(--card-2); color: var(--text); }
+.journey-summary { display: flex; gap: 12px; margin-bottom: 12px; }
+.js-stat { flex: 1; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; text-align: center; }
+.js-stat b { display: block; font-size: 22px; font-weight: 900; }
+.js-stat span { font-size: 12px; color: var(--muted); }
 
 /* ---------- Calendar ---------- */
 .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 14px; font-size: 12px; color: var(--muted); }
@@ -214,11 +228,16 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .dot.miss { background: var(--red); }
 .dot.today { background: var(--amber); }
 .dot.future { background: var(--bg-soft); border: 1px solid var(--line); }
-.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; }
 .cal-cell {
-  aspect-ratio: 1; border-radius: 12px; display: grid; place-items: center;
-  font-weight: 800; font-size: 14px; background: var(--bg-soft); border: 1px solid var(--line); color: var(--muted);
+  aspect-ratio: 1; border-radius: 11px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px;
+  background: var(--bg-soft); border: 1px solid var(--line); color: var(--muted);
 }
+.cal-cell .cc-num { font-weight: 800; font-size: 14px; line-height: 1; }
+.cal-cell .cc-date { font-size: 8px; opacity: .7; line-height: 1; }
+.cal-cell.editable { cursor: pointer; }
+.cal-cell.editable:active { transform: scale(.94); }
 .cal-cell.done { background: linear-gradient(135deg, var(--green), #1aa75c); color: #04210f; border: 0; }
 .cal-cell.miss { background: rgba(255,84,112,.18); color: var(--red); border-color: rgba(255,84,112,.4); }
 .cal-cell.today { outline: 2px solid var(--amber); color: var(--text); }
@@ -309,6 +328,14 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 
 .danger-zone { border-color: rgba(255,84,112,.4); }
 .danger-zone input { margin-bottom: 10px; }
+
+/* ---------- Day editor water stepper ---------- */
+.water-edit { display: flex; align-items: center; gap: 12px; }
+.water-edit .wstep {
+  width: 38px; height: 38px; flex: none; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--bg-soft); color: var(--text); font-size: 20px; font-weight: 700; cursor: pointer;
+}
+.water-edit .wstep:active { transform: scale(.9); }
 
 /* ---------- Theme picker ---------- */
 .theme-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }

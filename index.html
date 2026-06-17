@@ -114,11 +114,20 @@
 
         <div id="fasting"></div>
 
+        <div class="date-bar">
+          <button id="diet-prev" class="icon-btn">‹</button>
+          <div class="date-bar-mid">
+            <input type="date" id="diet-date" />
+            <span id="diet-date-label" class="muted tiny">Today</span>
+          </div>
+          <button id="diet-next" class="icon-btn">›</button>
+        </div>
+
         <div class="card diet-summary">
           <div class="cal-head">
             <div>
               <div class="cal-big"><span id="cal-eaten">0</span> <span class="muted">/ <span id="cal-goal">—</span> kcal</span></div>
-              <div class="muted tiny"><span id="cal-left">—</span> remaining today</div>
+              <div class="muted tiny"><span id="cal-left">—</span> remaining</div>
             </div>
             <div class="cal-ring-wrap">
               <svg viewBox="0 0 80 80" class="ring small"><circle class="ring-bg" cx="40" cy="40" r="34"></circle><circle id="cal-ring" class="ring-fg" cx="40" cy="40" r="34"></circle></svg>
@@ -134,6 +143,14 @@
       <!-- CALENDAR -->
       <div id="view-calendar" class="view hidden">
         <h2 class="view-title">75-Day Journey</h2>
+        <div class="seg" id="journey-windows">
+          <button data-w="5">5 days</button>
+          <button data-w="10">10 days</button>
+          <button data-w="25">25 days</button>
+          <button data-w="75" class="active">All</button>
+        </div>
+        <div id="journey-summary" class="journey-summary"></div>
+        <p class="muted tiny" style="margin:2px 2px 12px">Tap any day up to today to add or fix that day’s tasks.</p>
         <div class="legend">
           <span><i class="dot done"></i> Done</span>
           <span><i class="dot miss"></i> Missed</span>
@@ -265,14 +282,15 @@
         <button id="food-manual-toggle" class="btn block">+ Add a custom food manually</button>
         <div id="food-manual" class="manual-box hidden">
           <label>Food name<input id="m-name" placeholder="e.g. Homemade smoothie" /></label>
+          <p class="muted tiny">Enter the values printed on the label <b>per 100 g / 100 ml</b>. You’ll set how much you actually had on the next step.</p>
           <div class="manual-grid">
-            <label>Calories<input id="m-cal" type="number" inputmode="numeric" /></label>
-            <label>Protein g<input id="m-protein" type="number" inputmode="numeric" /></label>
-            <label>Carbs g<input id="m-carbs" type="number" inputmode="numeric" /></label>
-            <label>Fat g<input id="m-fat" type="number" inputmode="numeric" /></label>
-            <label>Sugar g<input id="m-sugar" type="number" inputmode="numeric" /></label>
+            <label>Calories /100<input id="m-cal" type="number" inputmode="decimal" /></label>
+            <label>Protein g /100<input id="m-protein" type="number" inputmode="decimal" /></label>
+            <label>Carbs g /100<input id="m-carbs" type="number" inputmode="decimal" /></label>
+            <label>Fat g /100<input id="m-fat" type="number" inputmode="decimal" /></label>
+            <label>Sugar g /100<input id="m-sugar" type="number" inputmode="decimal" /></label>
           </div>
-          <button id="m-add" class="btn primary block">Add this food</button>
+          <button id="m-next" class="btn primary block">Next: set amount</button>
         </div>
       </div>
 
@@ -280,8 +298,8 @@
       <div id="food-step-portion" class="hidden">
         <button id="food-back" class="btn link-btn">‹ Back to search</button>
         <div class="portion-name" id="p-name">Food</div>
-        <label>Amount (grams)
-          <input id="p-grams" type="number" inputmode="numeric" value="100" />
+        <label>Amount you had (g / ml)
+          <input id="p-grams" type="number" inputmode="decimal" value="100" />
         </label>
         <div class="portion-macros" id="p-macros"></div>
         <label>Meal
@@ -291,6 +309,18 @@
         </label>
         <button id="p-add" class="btn primary block">Add to diary</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Day editor modal (edit any date from Journey) -->
+  <div id="day-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <b id="day-modal-title">Edit day</b>
+        <button id="day-close" class="icon-btn">✕</button>
+      </div>
+      <div id="day-editor-list" class="tasklist"></div>
+      <button id="day-save" class="btn primary block">Save this day</button>
     </div>
   </div>
 
