@@ -273,6 +273,15 @@
   function logFor(date) {
     return state.logs.filter(function (l) { return l.date === date; })[0];
   }
+  // Keep one log per date (the most complete), guarding against duplicate rows.
+  function dedupeLogs(logs) {
+    var m = {};
+    logs.forEach(function (l) {
+      var ex = m[l.date];
+      if (!ex || (isComplete(l) && !isComplete(ex))) m[l.date] = l;
+    });
+    return Object.keys(m).sort().map(function (k) { return m[k]; });
+  }
 
   /* ---------------- Auth UI ---------------- */
   function initAuth() {
@@ -327,7 +336,8 @@
   function loadState() {
     return api('getState', {}).then(function (data) {
       state.user = data.user;
-      state.logs = data.logs || [];
+      state.logs = dedupeLogs(data.logs || []);
+      state.user.currentDay = dayNumber(state.user.startDate, todayStr());
       state.profile = data.profile || {};
       state.activeFast = data.activeFast || null;
       var t = logFor(todayStr());
@@ -362,6 +372,7 @@
     $('#logout').addEventListener('click', logout);
     $('#reset-challenge').addEventListener('click', resetChallenge);
     $('#save-profile').addEventListener('click', saveProfile);
+    $('#save-startdate').addEventListener('click', saveStartDate);
     $('#delete-account').addEventListener('click', deleteAccount);
     // Journey window buttons + day editor modal
     document.querySelectorAll('#journey-windows [data-w]').forEach(function (b) {
@@ -623,20 +634,21 @@
 
   function renderStatsBody(vals) {
     var logs = state.logs;
-    var done = logs.filter(function (l) { return isComplete(l); }).length;
     var curDay = Math.max(1, state.user.currentDay);
-    var totalWater = logs.reduce(function (s, l) { return s + (Number(l.waterMl) || 0); }, 0);
-    var totalLitres = Math.round(totalWater / 1000);
-    var best = bestStreak(logs);
+    var start = fmt(parse(state.user.startDate));
+    var today = todayStr();
+    // Count complete days only within the challenge window (ignores stray logs).
+    var done = logs.filter(function (l) {
+      return l.date >= start && l.date <= today && isComplete(l);
+    }).length;
 
     var grid = $('#stats-grid');
     grid.innerHTML = '';
     [
       ['Current day', Math.min(curDay, LEN) + ' / ' + LEN],
+      ['Streak', streakOf(logs) + '🔥'],
       ['Days completed', done],
-      ['Current streak', streakOf(logs) + '🔥'],
-      ['Best streak', best],
-      ['Water drank', totalLitres + ' L'],
+      ['Days left', Math.max(0, LEN - Math.min(curDay, LEN))],
       ['Avg fast', vals.avgFast],
       ['Avg calories / day', vals.avgCal]
     ].forEach(function (s) {
@@ -713,8 +725,22 @@
   function renderSettings() {
     $('#set-displayname').value = state.user.displayName;
     $('#set-username').textContent = state.user.username;
+    $('#set-startdate').value = fmt(parse(state.user.startDate));
+    $('#set-startdate').max = todayStr();
     prefillGoals();
     renderThemes();
+  }
+  function saveStartDate() {
+    var v = $('#set-startdate').value;
+    if (!v) { toast('Pick a date'); return; }
+    if (v > todayStr()) { toast('Start date can’t be in the future'); return; }
+    api('reset', { startDate: v }).then(function (data) {
+      state.user = data.user;
+      state.user.currentDay = dayNumber(v, todayStr());
+      state.logs = dedupeLogs(data.logs || state.logs);
+      cacheState();
+      renderAll(); toast('Start date updated ✓');
+    }).catch(function (e) { toast(e.message); });
   }
   function saveProfile() {
     var name = $('#set-displayname').value.trim();
