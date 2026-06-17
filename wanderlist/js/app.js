@@ -43,6 +43,13 @@
   var sheetEl = $('sheet');
   var catSelect = $('f-category');
 
+  // Null-safe event binding: a missing optional element must never stop the rest
+  // of the wiring (e.g. if a cached HTML shell lacks a newer button).
+  function on(id, evt, fn) {
+    var el = typeof id === 'string' ? $(id) : id;
+    if (el) el.addEventListener(evt, fn);
+  }
+
   /* ----------------------------------------------------------------- utils */
 
   function load() {
@@ -373,11 +380,14 @@
   sortEl.addEventListener('change', function () { sortBy = sortEl.value; render(); });
 
   var helpEl = $('help');
-  $('helpBtn').addEventListener('click', function () { helpEl.hidden = false; });
-  $('helpCloseBtn').addEventListener('click', function () { helpEl.hidden = true; });
-  helpEl.addEventListener('click', function (e) { if (e.target === helpEl) helpEl.hidden = true; });
-  $('copyUrlBtn').addEventListener('click', function () {
-    var text = $('shortcutUrl').textContent;
+  function openHelp() { if (helpEl) helpEl.hidden = false; }
+  function closeHelp() { if (helpEl) helpEl.hidden = true; }
+  on('helpBtn', 'click', openHelp);
+  on('helpCloseBtn', 'click', closeHelp);
+  on(helpEl, 'click', function (e) { if (e.target === helpEl) closeHelp(); });
+  on('copyUrlBtn', 'click', function () {
+    var node = $('shortcutUrl');
+    var text = node ? node.textContent : '';
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(function () { toast('Link copied ✓'); })
         .catch(function () { toast('Copy failed — long-press to copy'); });
@@ -386,15 +396,16 @@
     }
   });
 
-  $('addBtn').addEventListener('click', function () { openSheet(null, false); });
-  $('emptyAddBtn').addEventListener('click', function () { openSheet(null, false); });
-  $('emptyHelpBtn').addEventListener('click', function () { helpEl.hidden = false; });
-  $('cancelBtn').addEventListener('click', closeSheet);
-  $('saveBtn').addEventListener('click', saveFromSheet);
-  sheetEl.addEventListener('click', function (e) { if (e.target === sheetEl) closeSheet(); });
+  on('addBtn', 'click', function () { openSheet(null, false); });
+  on('emptyAddBtn', 'click', function () { openSheet(null, false); });
+  on('emptyHelpBtn', 'click', openHelp);
+  on('cancelBtn', 'click', closeSheet);
+  on('sheetClose', 'click', closeSheet);
+  on('saveBtn', 'click', saveFromSheet);
+  on(sheetEl, 'click', function (e) { if (e.target === sheetEl) closeSheet(); });
 
   // Live auto-read while pasting a link/caption into the URL field.
-  $('f-url').addEventListener('input', function () {
+  on('f-url', 'input', function () {
     var val = $('f-url').value;
     if (!val || (val.indexOf('http') === -1 && val.length < 8)) return;
     var draft = parseShared({ url: extractUrl(val) || val, text: val });

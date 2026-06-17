@@ -240,6 +240,9 @@ code {
   display: flex; align-items: flex-end; justify-content: center;
   z-index: 50;
 }
+/* The `hidden` attribute must win over the display:flex above, otherwise the
+   sheet can never be dismissed (and shows on load). */
+.sheet-backdrop[hidden] { display: none !important; }
 .sheet {
   width: 100%; max-width: 720px;
   background: var(--bg-2);
@@ -254,7 +257,16 @@ code {
   width: 42px; height: 5px; border-radius: 999px;
   background: var(--line); margin: 4px auto 12px;
 }
-.sheet h2 { margin: 0 0 14px; font-size: 19px; }
+.sheet { position: relative; }
+.sheet-close {
+  position: absolute; top: 12px; right: 14px;
+  width: 34px; height: 34px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card); color: var(--muted);
+  font-size: 15px; cursor: pointer; line-height: 1;
+}
+.sheet-close:active { transform: scale(.92); }
+.sheet h2 { margin: 0 0 14px; font-size: 19px; padding-right: 40px; }
 
 .field { display: block; margin-bottom: 13px; }
 .field > span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
