@@ -476,6 +476,14 @@ function testFatSecret() {
   if (token) Logger.log(JSON.stringify(fatsecretSearch('amul butter')));
 }
 
+/* Run this a bunch of times (over a day) to discover the outbound IPs Apps
+ * Script uses, then add each unique one to FatSecret's IP whitelist slots. */
+function myOutboundIp() {
+  var resp = UrlFetchApp.fetch('https://api.ipify.org', { muteHttpExceptions: true });
+  Logger.log('Outbound IP: ' + resp.getContentText());
+  return resp.getContentText();
+}
+
 function handleFoodSummary(body) {
   var user = authUser(body);
   var sheet = getSheet(FOOD_SHEET, FOOD_HEADERS);
