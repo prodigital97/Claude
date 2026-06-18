@@ -603,6 +603,50 @@ function setAllStartDates() {
   }
 }
 
+/* ONE-SHOT REPAIR for the year-2000 bug.
+ * For every user whose start date is corrupt (year < 2024), this sets the
+ * start date to NEW_START (as text) AND shifts that user's broken (year<2024)
+ * day-logs onto the matching new dates, so completed days are preserved.
+ * Edit NEW_START to your real Day 1, then Run this once. */
+function healStartAndLogs() {
+  var NEW_START = '2026-06-16';   // <-- your real Day 1
+
+  var usersSheet = getSheet(USERS_SHEET, USER_HEADERS);
+  var uidx = colIndex(USER_HEADERS);
+  var users = usersSheet.getDataRange().getValues();
+
+  var logsSheet = getSheet(LOGS_SHEET, LOG_HEADERS);
+  var lidx = colIndex(LOG_HEADERS);
+  var logVals = logsSheet.getDataRange().getValues();
+
+  for (var u = 1; u < users.length; u++) {
+    var name = normalizeUsername(users[u][uidx.username]);
+    if (!name) continue;
+    var oldStart = formatDate(users[u][uidx.startDate]);
+    if (Number(oldStart.split('-')[0]) >= 2024) continue;   // already fine
+    var offset = daysBetweenIso(oldStart, NEW_START);
+
+    for (var r = 1; r < logVals.length; r++) {
+      if (normalizeUsername(logVals[r][lidx.username]) !== name) continue;
+      var d = formatDate(logVals[r][lidx.date]);
+      if (Number(d.split('-')[0]) >= 2024) continue;        // only shift broken logs
+      var nd = addDaysIso(d, offset);
+      logsSheet.getRange(r + 1, lidx.date + 1).setNumberFormat('@').setValue(nd);
+      logVals[r][lidx.date] = nd;
+    }
+    setStartDateCell(usersSheet, u + 1, uidx.startDate + 1, NEW_START);
+  }
+}
+
+function daysBetweenIso(aIso, bIso) {
+  return Math.round((parseDate(bIso) - parseDate(aIso)) / 86400000);
+}
+function addDaysIso(iso, n) {
+  var d = parseDate(iso); d.setDate(d.getDate() + n);
+  return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+}
+
+
 
 function handleUpdateProfile(body) {
   var user = authUser(body);
