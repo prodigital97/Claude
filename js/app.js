@@ -1206,22 +1206,52 @@
     $('#p-meal').value = meal;
     showSearchStep();
     $('#food-search').value = '';
-    $('#food-results').innerHTML = '<p class="fr-loading">Type to search foods…</p>';
+    showRecents();
     $('#food-manual').classList.add('hidden');
     show('#food-modal');
     setTimeout(function () { $('#food-search').focus(); }, 100);
+  }
+
+  /* Recently-logged foods (per device), shown before you type. */
+  function getRecents() {
+    try { return JSON.parse(localStorage.getItem('hard_recents') || '[]'); } catch (e) { return []; }
+  }
+  function addRecent(food) {
+    if (!food || !food.name) return;
+    var r = getRecents().filter(function (x) { return x.name.toLowerCase() !== food.name.toLowerCase(); });
+    r.unshift({ name: food.name, kcal: food.kcal, p: food.p, c: food.c, f: food.f, s: food.s, serving: food.serving || 100 });
+    localStorage.setItem('hard_recents', JSON.stringify(r.slice(0, 20)));
+  }
+  function showRecents() {
+    var box = $('#food-results');
+    var r = getRecents();
+    box.innerHTML = '<div class="fr-head muted tiny">' + (r.length ? 'Recent' : 'Popular') + '</div>';
+    appendResults(r.length ? r : COMMON_FOODS.slice(0, 12));
   }
   function closeFoodModal() { hide('#food-modal'); state.pendingFood = null; }
   function showSearchStep() { $('#food-step-search').classList.remove('hidden'); $('#food-step-portion').classList.add('hidden'); }
   function showPortionStep() { $('#food-step-search').classList.add('hidden'); $('#food-step-portion').classList.remove('hidden'); }
 
+  // Token-based match: every result must contain at least one query word,
+  // ranked by how many words it matches (so "chicken boiled" surfaces all chicken).
+  function localMatches(q) {
+    var tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+    var pool = COMMON_FOODS.concat(state.customFoods || []);
+    return pool.map(function (f) {
+      var n = f.name.toLowerCase();
+      var score = 0;
+      tokens.forEach(function (t) { if (n.indexOf(t) !== -1) score++; });
+      return { f: f, score: score };
+    }).filter(function (x) { return x.score > 0; })
+      .sort(function (a, b) { return b.score - a.score; })
+      .map(function (x) { return x.f; });
+  }
+
   function runSearch(q) {
     q = q.trim();
     var results = $('#food-results');
-    if (!q) { results.innerHTML = '<p class="fr-loading">Type to search foods…</p>'; return; }
-    var pool = COMMON_FOODS.concat(state.customFoods || []);
-    var ql = q.toLowerCase();
-    var local = pool.filter(function (f) { return f.name.toLowerCase().indexOf(ql) !== -1; });
+    if (!q) { showRecents(); return; }
+    var local = localMatches(q);
     renderResults(local, true);
     results.insertAdjacentHTML('beforeend', '<p class="fr-loading" id="fr-loading">Searching database…</p>');
 
@@ -1310,6 +1340,7 @@
   function addPortion() {
     var f = state.pendingFood; if (!f) return;
     var g = Number($('#p-grams').value) || 0;
+    addRecent(f);
     saveFood({
       meal: $('#p-meal').value, name: f.name, grams: g,
       calories: f.kcal * g / 100, protein: f.p * g / 100, carbs: f.c * g / 100, fat: f.f * g / 100, sugar: (f.s || 0) * g / 100

@@ -403,6 +403,7 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .fr-sub { font-size: 11px; color: var(--muted); }
 .fr-cal { font-size: 13px; font-weight: 700; white-space: nowrap; }
 .fr-loading { color: var(--muted); font-size: 13px; text-align: center; padding: 8px; }
+.fr-head { text-transform: uppercase; letter-spacing: .04em; margin: 2px 2px 2px; font-weight: 700; }
 .manual-box { margin-top: 10px; }
 .manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
 .link-btn { background: transparent; border: 0; color: var(--primary); padding: 4px 0; margin-bottom: 8px; }
