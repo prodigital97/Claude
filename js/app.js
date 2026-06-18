@@ -34,6 +34,7 @@
     foods: [],
     foodsDate: null,
     dietDate: null,
+    customFoods: [],
     pendingFood: null,
     activeFast: null,
     fastTimer: null,
@@ -185,6 +186,20 @@
         saveDb(d);
       }
       return { deleted: p.id };
+    }
+    if (action === 'getCustomFoods') {
+      return { foods: (d.customFoods || []) };
+    }
+    if (action === 'addCustomFood') {
+      d.customFoods = d.customFoods || [];
+      var nm = String(p.food.name || '').trim();
+      var dup = d.customFoods.some(function (x) { return x.name.toLowerCase() === nm.toLowerCase(); });
+      if (!dup && nm) {
+        d.customFoods.push({ id: 'c_' + Date.now(), name: nm, kcal: Math.round(p.food.kcal || 0),
+          protein: p.food.p || 0, carbs: p.food.c || 0, fat: p.food.f || 0, sugar: p.food.s || 0 });
+        saveDb(d);
+      }
+      return { food: p.food };
     }
     if (action === 'foodSummary') {
       var all = (d.foods && d.foods[me.username]) || [];
@@ -356,8 +371,17 @@
     hide('#auth-screen'); show('#app-screen');
     $('#set-version').textContent = '75 Hard Tracker v' + CFG.APP_VERSION + (OFFLINE ? ' · demo mode' : '');
     bindAppEvents();
+    loadCustomFoods();
     renderAll();
     switchView('today');
+  }
+
+  function loadCustomFoods() {
+    api('getCustomFoods', {}).then(function (data) {
+      state.customFoods = (data.foods || []).map(function (f) {
+        return { name: f.name, kcal: f.kcal, p: f.protein, c: f.carbs, f: f.fat, s: f.sugar, serving: 100, shared: true };
+      });
+    }).catch(function () {});
   }
 
   function bindAppEvents() {
@@ -1195,7 +1219,9 @@
     q = q.trim();
     var results = $('#food-results');
     if (!q) { results.innerHTML = '<p class="fr-loading">Type to search foods…</p>'; return; }
-    var local = COMMON_FOODS.filter(function (f) { return f.name.toLowerCase().indexOf(q.toLowerCase()) !== -1; });
+    var pool = COMMON_FOODS.concat(state.customFoods || []);
+    var ql = q.toLowerCase();
+    var local = pool.filter(function (f) { return f.name.toLowerCase().indexOf(ql) !== -1; });
     renderResults(local, true);
     results.insertAdjacentHTML('beforeend', '<p class="fr-loading" id="fr-loading">Searching database…</p>');
 
@@ -1289,11 +1315,11 @@
       calories: f.kcal * g / 100, protein: f.p * g / 100, carbs: f.c * g / 100, fat: f.f * g / 100, sugar: (f.s || 0) * g / 100
     });
   }
-  // Custom food entered per 100 g/ml -> go to the portion step to set the amount.
+  // Custom food entered per 100 g/ml -> share it, then set the amount.
   function manualNext() {
     var name = $('#m-name').value.trim();
     if (!name) { toast('Enter a food name'); return; }
-    pickFood({
+    var food = {
       name: name,
       kcal: Number($('#m-cal').value) || 0,
       p: Number($('#m-protein').value) || 0,
@@ -1301,8 +1327,15 @@
       f: Number($('#m-fat').value) || 0,
       s: Number($('#m-sugar').value) || 0,
       serving: 100
-    });
+    };
+    saveCustomFood(food);   // share with everyone so it's searchable
+    pickFood(food);
     $('#m-name').value = $('#m-cal').value = $('#m-protein').value = $('#m-carbs').value = $('#m-fat').value = $('#m-sugar').value = '';
+  }
+  function saveCustomFood(food) {
+    var exists = (state.customFoods || []).some(function (f) { return f.name.toLowerCase() === food.name.toLowerCase(); });
+    if (!exists) state.customFoods.push({ name: food.name, kcal: food.kcal, p: food.p, c: food.c, f: food.f, s: food.s, serving: 100, shared: true });
+    api('addCustomFood', { food: { name: food.name, kcal: food.kcal, p: food.p, c: food.c, f: food.f, s: food.s } }).catch(function () {});
   }
   function saveFood(food) {
     food.date = state.dietDate || todayStr();

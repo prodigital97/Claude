@@ -22,6 +22,7 @@ var LOGS_SHEET = 'Logs';
 var FOOD_SHEET = 'Food';
 var PROFILE_SHEET = 'Profiles';
 var FAST_SHEET = 'Fasts';
+var CUSTOM_SHEET = 'CustomFoods';
 
 var USER_HEADERS = ['username', 'displayName', 'passwordHash', 'salt', 'token', 'startDate', 'createdAt'];
 var LOG_HEADERS = ['username', 'date', 'dayNumber', 'workout1', 'workout2', 'outdoor',
@@ -31,6 +32,7 @@ var FOOD_HEADERS = ['id', 'username', 'date', 'meal', 'name', 'grams',
                     'calories', 'protein', 'carbs', 'fat', 'createdAt', 'sugar'];
 var PROFILE_HEADERS = ['username', 'dataJson', 'updatedAt'];
 var FAST_HEADERS = ['id', 'username', 'startAt', 'endAt', 'goalHours', 'createdAt'];
+var CUSTOM_HEADERS = ['id', 'name', 'kcal', 'protein', 'carbs', 'fat', 'sugar', 'createdBy', 'createdAt'];
 
 /* ----------------------------------------------------------------------- *
  *  HTTP entry points
@@ -64,6 +66,8 @@ function doPost(e) {
       case 'addFood':    data = handleAddFood(body);    break;
       case 'deleteFood': data = handleDeleteFood(body); break;
       case 'foodSummary':data = handleFoodSummary(body); break;
+      case 'getCustomFoods': data = handleGetCustomFoods(body); break;
+      case 'addCustomFood':  data = handleAddCustomFood(body);  break;
       case 'startFast':  data = handleStartFast(body);  break;
       case 'endFast':    data = handleEndFast(body);    break;
       case 'getFasts':   data = handleGetFasts(body);   break;
@@ -327,6 +331,56 @@ function handleDeleteFood(body) {
     }
   }
   return { deleted: null };
+}
+
+/* ---------------- Shared custom foods (visible to all users) ---------------- */
+
+function handleGetCustomFoods(body) {
+  authUser(body);
+  var sheet = getSheet(CUSTOM_SHEET, CUSTOM_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(CUSTOM_HEADERS);
+  var out = [], seen = {};
+  for (var i = 1; i < values.length; i++) {
+    if (!values[i][idx.name]) continue;
+    var key = String(values[i][idx.name]).trim().toLowerCase();
+    if (seen[key]) continue;
+    seen[key] = true;
+    out.push(customFromRow(values[i], idx));
+  }
+  return { foods: out };
+}
+
+function handleAddCustomFood(body) {
+  var user = authUser(body);
+  var f = body.food || {};
+  var name = String(f.name || '').trim();
+  if (!name) throw new Error('Food name required.');
+
+  var sheet = getSheet(CUSTOM_SHEET, CUSTOM_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(CUSTOM_HEADERS);
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idx.name]).trim().toLowerCase() === name.toLowerCase()) {
+      return { food: customFromRow(values[i], idx) };   // already shared
+    }
+  }
+  var rec = {
+    id: Utilities.getUuid(), name: name,
+    kcal: Math.round(Number(f.kcal) || 0),
+    protein: round1(f.p), carbs: round1(f.c), fat: round1(f.f), sugar: round1(f.s),
+    createdBy: user.username, createdAt: new Date().toISOString()
+  };
+  sheet.appendRow(CUSTOM_HEADERS.map(function (h) { return rec[h]; }));
+  return { food: rec };
+}
+
+function customFromRow(r, idx) {
+  return {
+    id: String(r[idx.id]), name: String(r[idx.name]),
+    kcal: Number(r[idx.kcal]) || 0, protein: Number(r[idx.protein]) || 0,
+    carbs: Number(r[idx.carbs]) || 0, fat: Number(r[idx.fat]) || 0, sugar: Number(r[idx.sugar]) || 0
+  };
 }
 
 function handleFoodSummary(body) {
@@ -750,4 +804,5 @@ function setup() {
   getSheet(FOOD_SHEET, FOOD_HEADERS);
   getSheet(PROFILE_SHEET, PROFILE_HEADERS);
   getSheet(FAST_SHEET, FAST_HEADERS);
+  getSheet(CUSTOM_SHEET, CUSTOM_HEADERS);
 }

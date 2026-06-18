@@ -134,6 +134,11 @@ Everything lives in your Google Sheet, in two tabs:
 | id | username | startAt | endAt | goalHours | createdAt |
 |----|----------|---------|-------|-----------|-----------|
 
+**`CustomFoods`** (shared custom foods — once anyone adds one, everyone can search it)
+
+| id | name | kcal | protein | carbs | fat | sugar | createdBy | createdAt |
+|----|------|------|---------|-------|-----|-------|-----------|-----------|
+
 You can open the sheet any time to view, chart, or export your data — the app writes to it live.
 
 ## Project structure
