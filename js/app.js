@@ -728,22 +728,25 @@
   function renderSettings() {
     $('#set-displayname').value = state.user.displayName;
     $('#set-username').textContent = state.user.username;
-    $('#set-startdate').value = fmt(parse(state.user.startDate));
-    $('#set-startdate').max = todayStr();
+    var sd = fmt(parse(state.user.startDate));
+    // Guard against a corrupted/ancient stored date (e.g. year 2000) — show today instead.
+    if (sd < '2025-01-01' || sd > todayStr()) sd = todayStr();
+    var inp = $('#set-startdate');
+    inp.value = sd; inp.min = '2025-01-01'; inp.max = todayStr();
     prefillGoals();
     renderThemes();
   }
   function saveStartDate() {
     var v = $('#set-startdate').value;
     if (!v) { toast('Pick a date'); return; }
-    if (v > todayStr()) { toast('Start date can’t be in the future'); return; }
-    api('reset', { startDate: v }).then(function (data) {
-      state.user = data.user;
-      state.user.currentDay = dayNumber(v, todayStr());
-      state.logs = dedupeLogs(data.logs || state.logs);
-      cacheState();
-      renderAll(); toast('Start date updated ✓');
-    }).catch(function (e) { toast(e.message); });
+    if (v < '2025-01-01' || v > todayStr()) { toast('Pick a valid recent date (this year)'); return; }
+    api('reset', { startDate: v })
+      .then(function () { return loadState(); }) // re-read to confirm it persisted
+      .then(function () {
+        renderAll(); renderSettings();
+        toast('Start date saved ✓ — Day ' + Math.max(1, state.user.currentDay));
+      })
+      .catch(function (e) { toast(e.message); });
   }
   function saveProfile() {
     var name = $('#set-displayname').value.trim();
