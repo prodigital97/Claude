@@ -797,26 +797,88 @@
   /* ---------------- Diet & calories ---------------- */
   // Per 100 g unless the item is naturally counted per piece (then grams = avg weight).
   var COMMON_FOODS = [
+    // Grains & breads
     { name: 'White rice (cooked)', kcal: 130, p: 2.7, c: 28, f: 0.3, s: 0.1, serving: 150 },
+    { name: 'Brown rice (cooked)', kcal: 123, p: 2.7, c: 26, f: 1, s: 0.4, serving: 150 },
     { name: 'Roti / Chapati', kcal: 297, p: 11, c: 50, f: 7, s: 1.5, serving: 40 },
-    { name: 'Dal (cooked)', kcal: 116, p: 7, c: 17, f: 1.5, s: 1, serving: 150 },
-    { name: 'Paneer', kcal: 296, p: 18, c: 4, f: 22, s: 1.2, serving: 50 },
-    { name: 'Chicken breast (cooked)', kcal: 165, p: 31, c: 0, f: 3.6, s: 0, serving: 120 },
-    { name: 'Egg (whole)', kcal: 155, p: 13, c: 1.1, f: 11, s: 1.1, serving: 50 },
-    { name: 'Milk (full fat)', kcal: 61, p: 3.2, c: 4.8, f: 3.3, s: 5, serving: 200 },
-    { name: 'Curd / Yogurt', kcal: 98, p: 11, c: 3.4, f: 4.3, s: 4.7, serving: 150 },
+    { name: 'Paratha (plain)', kcal: 320, p: 6, c: 40, f: 14, s: 1.5, serving: 60 },
+    { name: 'Aloo paratha', kcal: 280, p: 5, c: 38, f: 11, s: 2, serving: 100 },
+    { name: 'Naan', kcal: 310, p: 9, c: 50, f: 8, s: 3, serving: 90 },
+    { name: 'Bread (white slice)', kcal: 265, p: 9, c: 49, f: 3.2, s: 5, serving: 30 },
+    { name: 'Brown bread (slice)', kcal: 247, p: 13, c: 41, f: 4, s: 4, serving: 30 },
     { name: 'Oats (dry)', kcal: 389, p: 17, c: 66, f: 7, s: 1, serving: 40 },
+    { name: 'Poha (cooked)', kcal: 130, p: 2.5, c: 27, f: 1.5, s: 1, serving: 150 },
+    { name: 'Upma', kcal: 145, p: 3, c: 24, f: 4, s: 1, serving: 150 },
+    { name: 'Idli', kcal: 130, p: 4, c: 25, f: 0.8, s: 0.5, serving: 80 },
+    { name: 'Dosa (plain)', kcal: 168, p: 3.9, c: 30, f: 3.7, s: 1, serving: 80 },
+    // Noodles / pasta / wraps
+    { name: 'Pasta (cooked)', kcal: 131, p: 5, c: 25, f: 1.1, s: 0.6, serving: 150 },
+    { name: 'Hakka noodles (cooked)', kcal: 138, p: 4, c: 25, f: 2, s: 1, serving: 150 },
+    { name: 'Rice vermicelli (cooked)', kcal: 109, p: 1.8, c: 24, f: 0.2, s: 0, serving: 150 },
+    { name: 'Shirataki noodles (cooked)', kcal: 10, p: 0.2, c: 3, f: 0, s: 0, serving: 100 },
+    { name: 'Rice paper / spring roll wrapper', kcal: 330, p: 0.9, c: 81, f: 0.2, s: 0.5, serving: 10 },
+    // Dals, legumes, soy
+    { name: 'Dal (cooked)', kcal: 116, p: 7, c: 17, f: 1.5, s: 1, serving: 150 },
+    { name: 'Dal makhani', kcal: 230, p: 9, c: 20, f: 13, s: 3, serving: 150 },
+    { name: 'Rajma (cooked)', kcal: 127, p: 8.7, c: 22, f: 0.5, s: 0.6, serving: 150 },
+    { name: 'Chole / chana masala', kcal: 180, p: 8, c: 22, f: 7, s: 3, serving: 150 },
+    { name: 'Boiled chana', kcal: 164, p: 8.9, c: 27, f: 2.6, s: 5, serving: 100 },
+    { name: 'Tofu', kcal: 76, p: 8, c: 1.9, f: 4.8, s: 0.6, serving: 100 },
+    { name: 'Soya chunks (dry)', kcal: 345, p: 52, c: 33, f: 0.5, s: 9, serving: 30 },
+    // Dairy & fats
+    { name: 'Milk (full fat)', kcal: 61, p: 3.2, c: 4.8, f: 3.3, s: 5, serving: 200 },
+    { name: 'Milk (toned)', kcal: 47, p: 3.1, c: 4.7, f: 1.5, s: 5, serving: 200 },
+    { name: 'Curd / Yogurt', kcal: 98, p: 11, c: 3.4, f: 4.3, s: 4.7, serving: 150 },
+    { name: 'Greek yogurt', kcal: 97, p: 9, c: 4, f: 5, s: 4, serving: 150 },
+    { name: 'Buttermilk', kcal: 40, p: 3.3, c: 4.8, f: 0.9, s: 4.8, serving: 200 },
+    { name: 'Paneer', kcal: 296, p: 18, c: 4, f: 22, s: 1.2, serving: 50 },
+    { name: 'Cheddar cheese', kcal: 402, p: 25, c: 1.3, f: 33, s: 0.5, serving: 30 },
+    { name: 'Mozzarella', kcal: 280, p: 28, c: 3.1, f: 17, s: 1, serving: 30 },
+    { name: 'Fresh cream', kcal: 292, p: 2.1, c: 3, f: 30, s: 3, serving: 30 },
+    { name: 'Butter', kcal: 717, p: 0.9, c: 0.1, f: 81, s: 0.1, serving: 10 },
+    { name: 'Ghee', kcal: 900, p: 0, c: 0, f: 100, s: 0, serving: 10 },
+    { name: 'Coconut oil', kcal: 862, p: 0, c: 0, f: 100, s: 0, serving: 10 },
+    { name: 'Mustard oil', kcal: 884, p: 0, c: 0, f: 100, s: 0, serving: 10 },
+    { name: 'Olive oil', kcal: 884, p: 0, c: 0, f: 100, s: 0, serving: 10 },
+    { name: 'Peanut butter', kcal: 588, p: 25, c: 20, f: 50, s: 9, serving: 20 },
+    // Proteins
+    { name: 'Egg (whole)', kcal: 155, p: 13, c: 1.1, f: 11, s: 1.1, serving: 50 },
+    { name: 'Egg white', kcal: 52, p: 11, c: 0.7, f: 0.2, s: 0.7, serving: 33 },
+    { name: 'Chicken breast (cooked)', kcal: 165, p: 31, c: 0, f: 3.6, s: 0, serving: 120 },
+    { name: 'Chicken curry', kcal: 180, p: 14, c: 6, f: 11, s: 3, serving: 200 },
+    { name: 'Butter chicken', kcal: 240, p: 14, c: 8, f: 16, s: 4, serving: 200 },
+    { name: 'Fish (cooked)', kcal: 206, p: 22, c: 0, f: 12, s: 0, serving: 120 },
+    { name: 'Mutton (cooked)', kcal: 258, p: 25, c: 0, f: 17, s: 0, serving: 120 },
+    { name: 'Whey protein (scoop)', kcal: 400, p: 80, c: 8, f: 6, s: 6, serving: 30 },
+    // Veg, fruit
+    { name: 'Mixed vegetables', kcal: 65, p: 2.6, c: 13, f: 0.4, s: 5, serving: 150 },
+    { name: 'Mixed veg sabzi', kcal: 110, p: 3, c: 12, f: 6, s: 4, serving: 150 },
+    { name: 'Palak paneer', kcal: 180, p: 8, c: 8, f: 13, s: 3, serving: 150 },
+    { name: 'Potato (boiled)', kcal: 87, p: 1.9, c: 20, f: 0.1, s: 0.8, serving: 150 },
+    { name: 'Spinach (cooked)', kcal: 23, p: 2.9, c: 3.6, f: 0.4, s: 0.4, serving: 100 },
+    { name: 'Cucumber', kcal: 15, p: 0.7, c: 3.6, f: 0.1, s: 1.7, serving: 100 },
+    { name: 'Tomato', kcal: 18, p: 0.9, c: 3.9, f: 0.2, s: 2.6, serving: 100 },
     { name: 'Banana', kcal: 89, p: 1.1, c: 23, f: 0.3, s: 12, serving: 120 },
     { name: 'Apple', kcal: 52, p: 0.3, c: 14, f: 0.2, s: 10, serving: 180 },
-    { name: 'Peanut butter', kcal: 588, p: 25, c: 20, f: 50, s: 9, serving: 20 },
+    { name: 'Mango', kcal: 60, p: 0.8, c: 15, f: 0.4, s: 14, serving: 150 },
+    // Nuts
     { name: 'Almonds', kcal: 579, p: 21, c: 22, f: 50, s: 4, serving: 28 },
-    { name: 'Whey protein (scoop)', kcal: 400, p: 80, c: 8, f: 6, s: 6, serving: 30 },
-    { name: 'Bread (white slice)', kcal: 265, p: 9, c: 49, f: 3.2, s: 5, serving: 30 },
-    { name: 'Potato (boiled)', kcal: 87, p: 1.9, c: 20, f: 0.1, s: 0.8, serving: 150 },
-    { name: 'Chicken curry', kcal: 180, p: 14, c: 6, f: 11, s: 3, serving: 200 },
-    { name: 'Fish (cooked)', kcal: 206, p: 22, c: 0, f: 12, s: 0, serving: 120 },
-    { name: 'Mixed vegetables', kcal: 65, p: 2.6, c: 13, f: 0.4, s: 5, serving: 150 },
-    { name: 'Olive oil', kcal: 884, p: 0, c: 0, f: 100, s: 0, serving: 10 }
+    { name: 'Peanuts', kcal: 567, p: 26, c: 16, f: 49, s: 4, serving: 30 },
+    { name: 'Cashews', kcal: 553, p: 18, c: 30, f: 44, s: 6, serving: 30 },
+    { name: 'Walnuts', kcal: 654, p: 15, c: 14, f: 65, s: 2.6, serving: 30 },
+    // Snacks, sweets, drinks
+    { name: 'Samosa', kcal: 308, p: 5, c: 32, f: 18, s: 2, serving: 50 },
+    { name: 'Veg biryani', kcal: 180, p: 4, c: 28, f: 6, s: 2, serving: 200 },
+    { name: 'Chicken biryani', kcal: 200, p: 9, c: 26, f: 7, s: 2, serving: 200 },
+    { name: 'Curd rice', kcal: 150, p: 4, c: 22, f: 5, s: 3, serving: 200 },
+    { name: 'Dark chocolate', kcal: 546, p: 4.9, c: 61, f: 31, s: 48, serving: 20 },
+    { name: 'Honey', kcal: 304, p: 0.3, c: 82, f: 0, s: 82, serving: 20 },
+    { name: 'Jaggery', kcal: 383, p: 0.4, c: 98, f: 0.1, s: 97, serving: 10 },
+    { name: 'Sugar', kcal: 387, p: 0, c: 100, f: 0, s: 100, serving: 5 },
+    { name: 'Tea with milk & sugar', kcal: 40, p: 1, c: 6, f: 1, s: 5, serving: 150 },
+    { name: 'Black coffee (no sugar)', kcal: 1, p: 0.1, c: 0, f: 0, s: 0, serving: 240 },
+    { name: 'Cola / soft drink', kcal: 42, p: 0, c: 10.6, f: 0, s: 10.6, serving: 330 },
+    { name: 'Orange juice', kcal: 45, p: 0.7, c: 10, f: 0.2, s: 8, serving: 200 }
   ];
 
   function dietGoals() {
@@ -1137,27 +1199,51 @@
     renderResults(local, true);
     results.insertAdjacentHTML('beforeend', '<p class="fr-loading" id="fr-loading">Searching database…</p>');
 
-    fetch('https://world.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q) +
-          '&search_simple=1&action=process&json=1&page_size=40' +
-          '&fields=product_name,brands,nutriments,serving_quantity')
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        var items = (d.products || []).map(function (p) {
-          var n = p.nutriments || {};
-          var kcal = n['energy-kcal_100g'];
-          if (kcal == null || !p.product_name) return null;
-          return {
-            name: p.product_name + (p.brands ? ' · ' + String(p.brands).split(',')[0] : ''),
-            kcal: kcal, p: n.proteins_100g || 0, c: n.carbohydrates_100g || 0, f: n.fat_100g || 0,
-            s: n.sugars_100g || 0,
-            serving: Number(p.serving_quantity) || 100
-          };
-        }).filter(Boolean);
-        var loadingEl = $('#fr-loading'); if (loadingEl) loadingEl.remove();
-        if (!local.length && !items.length) { results.innerHTML = '<p class="fr-loading">No matches. Try the manual option below.</p>'; return; }
-        appendResults(items);
-      })
-      .catch(function () { var l = $('#fr-loading'); if (l) l.remove(); });
+    searchOFF(q).then(function (items) {
+      var l = $('#fr-loading'); if (l) l.remove();
+      var seen = {};
+      local.forEach(function (x) { seen[x.name.toLowerCase()] = true; });
+      var add = items.filter(function (x) {
+        var k = x.name.toLowerCase();
+        if (seen[k]) return false; seen[k] = true; return true;
+      });
+      if (!local.length && !add.length) {
+        results.innerHTML = '<p class="fr-loading">No matches in the database. Use “+ Add a custom food” below to enter it from the label.</p>';
+        return;
+      }
+      appendResults(add);
+    });
+  }
+
+  function mapProduct(p) {
+    var n = p.nutriments || {};
+    var kcal = n['energy-kcal_100g'];
+    if (kcal == null) kcal = n['energy-kcal'];
+    if (kcal == null || !p.product_name) return null;
+    return {
+      name: p.product_name + (p.brands ? ' · ' + String(p.brands).split(',')[0] : ''),
+      kcal: kcal, p: n.proteins_100g || 0, c: n.carbohydrates_100g || 0, f: n.fat_100g || 0,
+      s: n.sugars_100g || 0, serving: Number(p.serving_quantity) || 100
+    };
+  }
+
+  // Newer Open Food Facts search first; fall back to the legacy endpoint.
+  function searchOFF(q) {
+    var sal = 'https://search.openfoodfacts.org/search?q=' + encodeURIComponent(q) +
+      '&page_size=30&fields=product_name,brands,nutriments,serving_quantity';
+    return fetch(sal).then(function (r) { return r.json(); }).then(function (d) {
+      var hits = d.hits || d.products || [];
+      var items = hits.map(mapProduct).filter(Boolean);
+      return items.length ? items : legacySearch(q);
+    }).catch(function () { return legacySearch(q); });
+  }
+  function legacySearch(q) {
+    var url = 'https://world.openfoodfacts.org/cgi/search.pl?search_terms=' + encodeURIComponent(q) +
+      '&search_simple=1&action=process&json=1&page_size=40' +
+      '&fields=product_name,brands,nutriments,serving_quantity';
+    return fetch(url).then(function (r) { return r.json(); })
+      .then(function (d) { return (d.products || []).map(mapProduct).filter(Boolean); })
+      .catch(function () { return []; });
   }
 
   function renderResults(list, replace) {
