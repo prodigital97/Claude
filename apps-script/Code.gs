@@ -86,7 +86,7 @@ function handleRegister(body) {
   var username = normalizeUsername(body.username);
   var password = String(body.password || '');
   var displayName = String(body.displayName || username).trim() || username;
-  var startDate = body.startDate ? String(body.startDate) : todayStr();
+  var startDate = normIso(body.startDate) || todayStr();
 
   if (username.length < 3) throw new Error('Username must be at least 3 characters.');
   if (password.length < 4) throw new Error('Password must be at least 4 characters.');
@@ -96,9 +96,12 @@ function handleRegister(body) {
 
   var salt = Utilities.getUuid();
   var token = Utilities.getUuid();
+  var idx = colIndex(USER_HEADERS);
   sheet.appendRow([
     username, displayName, hashPassword(password, salt), salt, token, startDate, new Date().toISOString()
   ]);
+  // Force the start-date cell to plain text so Sheets can never re-interpret it.
+  setStartDateCell(sheet, sheet.getLastRow(), idx.startDate + 1, startDate);
 
   return { token: token, user: publicUser(username, displayName, startDate) };
 }
@@ -396,15 +399,55 @@ function handleSaveDay(body) {
 
 function handleReset(body) {
   var user = authUser(body);
-  var newStart = body.startDate ? String(body.startDate) : todayStr();
+  var newStart = normIso(body.startDate) || todayStr();
 
   var sheet = getSheet(USERS_SHEET, USER_HEADERS);
   var found = findUserRow(sheet, user.username);
   var idx = colIndex(USER_HEADERS);
-  sheet.getRange(found.row, idx.startDate + 1).setValue(newStart);
+  setStartDateCell(sheet, found.row, idx.startDate + 1, newStart);
 
   return { user: publicUser(user.username, user.displayName, newStart), logs: getUserLogs(user.username) };
 }
+
+/* Writes a start date as PLAIN TEXT so Google Sheets never converts it to a
+ * date serial (which is what was corrupting years to ~2000). */
+function setStartDateCell(sheet, row, col, isoDate) {
+  sheet.getRange(row, col).setNumberFormat('@').setValue(String(isoDate));
+}
+
+/* Returns a clean yyyy-MM-dd string for a plausible date, else null. */
+function normIso(s) {
+  if (s == null || s === '') return null;
+  var str = formatDate(s);                 // handles Date objects + slices strings
+  var p = str.split('-');
+  if (p.length === 3 && p[0].length === 4) {
+    var y = Number(p[0]);
+    if (y >= 2024 && y <= 2100) return p[0] + '-' + pad2(p[1]) + '-' + pad2(p[2]);
+  }
+  var d = new Date(s);
+  if (!isNaN(d.getTime()) && d.getFullYear() >= 2024) {
+    return Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  return null;
+}
+function pad2(x) { x = String(x); return x.length < 2 ? '0' + x : x; }
+
+/* ----------------------------------------------------------------------- *
+ *  MAINTENANCE — run once from the Apps Script editor to repair accounts.
+ *  Edit the date below, pick this function in the toolbar, click Run.
+ *  It rewrites EVERY user's start date (as text) so corrupted year-2000
+ *  dates are fixed in one shot.
+ * ----------------------------------------------------------------------- */
+function setAllStartDates() {
+  var ISO_DATE = '2026-06-16';   // <-- change to your real Day 1, then Run
+  var sheet = getSheet(USERS_SHEET, USER_HEADERS);
+  var idx = colIndex(USER_HEADERS);
+  var last = sheet.getLastRow();
+  for (var r = 2; r <= last; r++) {
+    setStartDateCell(sheet, r, idx.startDate + 1, ISO_DATE);
+  }
+}
+
 
 function handleUpdateProfile(body) {
   var user = authUser(body);

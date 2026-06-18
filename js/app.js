@@ -409,7 +409,17 @@
   /* ---------------- Render: header + today ---------------- */
   function renderAll() {
     $('#hdr-name').textContent = firstName(state.user.displayName);
-    $('#hdr-day').textContent = Math.max(1, state.user.currentDay);
+    var cd = state.user.currentDay;
+    var pill = $('.day-pill');
+    if (cd > LEN + 30 || cd < 0) {
+      // Start date is clearly wrong (e.g. the year-2000 bug) — nudge to fix it.
+      pill.innerHTML = '⚠️ Set start date';
+      pill.style.cursor = 'pointer';
+      pill.onclick = function () { switchView('settings'); };
+    } else {
+      pill.innerHTML = 'Day <span id="hdr-day">' + Math.max(1, cd) + '</span> <span class="muted">/ ' + LEN + '</span>';
+      pill.onclick = null; pill.style.cursor = '';
+    }
     renderToday();
   }
   function firstName(n) { return String(n || 'athlete').split(' ')[0]; }
