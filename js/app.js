@@ -1255,7 +1255,7 @@
     renderResults(local, true);
     results.insertAdjacentHTML('beforeend', '<p class="fr-loading" id="fr-loading">Searching database…</p>');
 
-    searchOFF(q).then(function (items) {
+    searchRemote(q).then(function (items) {
       var l = $('#fr-loading'); if (l) l.remove();
       var seen = {};
       local.forEach(function (x) { seen[x.name.toLowerCase()] = true; });
@@ -1281,6 +1281,14 @@
       kcal: kcal, p: n.proteins_100g || 0, c: n.carbohydrates_100g || 0, f: n.fat_100g || 0,
       s: n.sugars_100g || 0, serving: Number(p.serving_quantity) || 100
     };
+  }
+
+  // FatSecret (via our backend proxy) first; fall back to Open Food Facts.
+  function searchRemote(q) {
+    return api('foodSearch', { q: q }).then(function (d) {
+      var items = (d && d.foods) || [];
+      return items.length ? items : searchOFF(q);
+    }).catch(function () { return searchOFF(q); });
   }
 
   // Newer Open Food Facts search first; fall back to the legacy endpoint.

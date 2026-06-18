@@ -96,6 +96,25 @@ Friends just open the same URL and create their own usernames; everyone shows up
 
 ---
 
+## Optional: FatSecret food search
+
+The app searches [Open Food Facts](https://world.openfoodfacts.org) by default. You can additionally plug in
+the **FatSecret** API (better branded/Indian coverage). FatSecret can't be called from the browser, so the
+Apps Script backend proxies it.
+
+1. In your FatSecret developer dashboard, get your **OAuth 2.0 Client ID** and **Client Secret**.
+   - Under your app's **IP restrictions**, allow all / disable the whitelist — Apps Script's outbound IPs are
+     dynamic and can't be whitelisted, so a locked-down IP list will block it.
+2. In the Apps Script editor: **Project Settings (⚙) → Script properties → Add script property** twice:
+   - `FATSECRET_CLIENT_ID` = your client id
+   - `FATSECRET_CLIENT_SECRET` = your client secret
+3. Paste the latest `apps-script/Code.gs`, then run the `testFatSecret` function once (Run ▶ with it selected)
+   and check **View → Logs** — you should see `Token OK` and a sample "amul butter" result.
+4. **Deploy → Manage deployments → ✏️ → New version → Deploy.**
+
+Now searches hit FatSecret first and fall back to Open Food Facts automatically. If the properties aren't set,
+the app just uses Open Food Facts as before.
+
 ## Updating the backend after a code change
 
 When `apps-script/Code.gs` changes (e.g. new features like the diet tracker), update your deployed script:

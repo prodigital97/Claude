@@ -68,6 +68,7 @@ function doPost(e) {
       case 'foodSummary':data = handleFoodSummary(body); break;
       case 'getCustomFoods': data = handleGetCustomFoods(body); break;
       case 'addCustomFood':  data = handleAddCustomFood(body);  break;
+      case 'foodSearch':     data = handleFoodSearch(body);     break;
       case 'startFast':  data = handleStartFast(body);  break;
       case 'endFast':    data = handleEndFast(body);    break;
       case 'getFasts':   data = handleGetFasts(body);   break;
@@ -381,6 +382,98 @@ function customFromRow(r, idx) {
     kcal: Number(r[idx.kcal]) || 0, protein: Number(r[idx.protein]) || 0,
     carbs: Number(r[idx.carbs]) || 0, fat: Number(r[idx.fat]) || 0, sugar: Number(r[idx.sugar]) || 0
   };
+}
+
+/* ---------------- FatSecret proxy (optional) ---------------- *
+ * Set FATSECRET_CLIENT_ID and FATSECRET_CLIENT_SECRET in
+ * Project Settings -> Script properties. If not set, this is skipped and the
+ * app falls back to Open Food Facts.
+ * ------------------------------------------------------------ */
+
+function fatsecretToken() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty('FATSECRET_CLIENT_ID');
+  var secret = props.getProperty('FATSECRET_CLIENT_SECRET');
+  if (!id || !secret) return null;
+
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get('fs_token');
+  if (cached) return cached;
+
+  var resp = UrlFetchApp.fetch('https://oauth.fatsecret.com/connect/token', {
+    method: 'post',
+    headers: { Authorization: 'Basic ' + Utilities.base64Encode(id + ':' + secret) },
+    contentType: 'application/x-www-form-urlencoded',
+    payload: 'grant_type=client_credentials&scope=basic',
+    muteHttpExceptions: true
+  });
+  var data = JSON.parse(resp.getContentText() || '{}');
+  if (!data.access_token) throw new Error('FatSecret auth failed: ' + resp.getContentText());
+  cache.put('fs_token', data.access_token, Math.max(60, (Number(data.expires_in) || 86400) - 120));
+  return data.access_token;
+}
+
+function handleFoodSearch(body) {
+  authUser(body);
+  return fatsecretSearch(String(body.q || '').trim());
+}
+
+function fatsecretSearch(q) {
+  if (!q) return { foods: [], source: 'none' };
+
+  var token;
+  try { token = fatsecretToken(); } catch (e) { return { foods: [], source: 'error', error: String(e.message || e) }; }
+  if (!token) return { foods: [], source: 'unconfigured' };
+
+  var url = 'https://platform.fatsecret.com/rest/server.api?method=foods.search&format=json&max_results=30&search_expression=' + encodeURIComponent(q);
+  var resp = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
+  var data = JSON.parse(resp.getContentText() || '{}');
+  if (data.error) return { foods: [], source: 'error', error: data.error.message };
+
+  var list = data.foods && data.foods.food ? data.foods.food : [];
+  if (!Array.isArray(list)) list = [list];
+
+  var out = [];
+  list.forEach(function (f) {
+    var parsed = parseFsDesc(String(f.food_description || ''));
+    if (!parsed) return;
+    out.push({
+      name: String(f.food_name) + (f.brand_name ? ' · ' + f.brand_name : ''),
+      kcal: parsed.kcal, p: parsed.p, c: parsed.c, f: parsed.f, s: 0,
+      serving: 100
+    });
+  });
+  return { foods: out, source: 'fatsecret' };
+}
+
+/* Parse "Per 100g - Calories: 717kcal | Fat: 81.00g | Carbs: 0.10g | Protein: 0.85g"
+ * (or "Per 1 serving (30g) - ...") into per-100g values. */
+function parseFsDesc(desc) {
+  var cal = desc.match(/Calories:\s*([\d.]+)\s*kcal/i);
+  if (!cal) return null;
+  var kcal = Number(cal[1]);
+  var fat = fsNum(desc, /Fat:\s*([\d.]+)\s*g/i);
+  var carbs = fsNum(desc, /Carbs:\s*([\d.]+)\s*g/i);
+  var protein = fsNum(desc, /Protein:\s*([\d.]+)\s*g/i);
+
+  var grams = null;
+  var g = desc.match(/Per\s+([\d.]+)\s*g\b/i) || desc.match(/\(([\d.]+)\s*g\)/i);
+  if (g) grams = Number(g[1]);
+
+  if (grams && grams > 0) {
+    var k = 100 / grams;
+    return { kcal: Math.round(kcal * k), p: round1(protein * k), c: round1(carbs * k), f: round1(fat * k) };
+  }
+  // Unknown gram weight (e.g. "Per 1 cup") — present the listed values as-is.
+  return { kcal: Math.round(kcal), p: round1(protein), c: round1(carbs), f: round1(fat) };
+}
+function fsNum(s, re) { var m = s.match(re); return m ? Number(m[1]) : 0; }
+
+/* Run this from the editor after setting the script properties to verify the key. */
+function testFatSecret() {
+  var token = fatsecretToken();
+  Logger.log(token ? 'Token OK' : 'No credentials set in Script properties');
+  if (token) Logger.log(JSON.stringify(fatsecretSearch('amul butter')));
 }
 
 function handleFoodSummary(body) {
