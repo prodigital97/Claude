@@ -177,6 +177,103 @@
         <div id="leaderboard"></div>
       </div>
 
+      <!-- CALCULATORS -->
+      <div id="view-calc" class="view hidden">
+        <h2 class="view-title">Fitness Calculators</h2>
+        <p class="muted tiny" style="margin:0 2px 12px">Metric units. Fields pre-fill from your diet profile where possible.</p>
+
+        <div class="card calc-card">
+          <h3>BMI — Body Mass Index</h3>
+          <div class="calc-grid">
+            <label>Height (cm)<input id="bmi-h" type="number" inputmode="decimal" /></label>
+            <label>Weight (kg)<input id="bmi-w" type="number" inputmode="decimal" /></label>
+          </div>
+          <button class="btn block" data-calc="bmi">Calculate</button>
+          <div class="calc-result" id="bmi-out"></div>
+        </div>
+
+        <div class="card calc-card">
+          <h3>Body Fat % <span class="muted tiny">(U.S. Navy)</span></h3>
+          <div class="calc-grid">
+            <label>Sex<select id="bf-sex"><option value="male">Male</option><option value="female">Female</option></select></label>
+            <label>Height (cm)<input id="bf-h" type="number" inputmode="decimal" /></label>
+            <label>Neck (cm)<input id="bf-neck" type="number" inputmode="decimal" /></label>
+            <label>Waist (cm)<input id="bf-waist" type="number" inputmode="decimal" /></label>
+            <label id="bf-hip-wrap" class="hidden">Hip (cm)<input id="bf-hip" type="number" inputmode="decimal" /></label>
+          </div>
+          <button class="btn block" data-calc="bodyfat">Calculate</button>
+          <div class="calc-result" id="bf-out"></div>
+        </div>
+
+        <div class="card calc-card">
+          <h3>Calories — BMR &amp; TDEE</h3>
+          <div class="calc-grid">
+            <label>Sex<select id="cal-sex"><option value="male">Male</option><option value="female">Female</option></select></label>
+            <label>Age<input id="cal-age" type="number" inputmode="numeric" /></label>
+            <label>Height (cm)<input id="cal-h" type="number" inputmode="decimal" /></label>
+            <label>Weight (kg)<input id="cal-w" type="number" inputmode="decimal" /></label>
+            <label>Activity<select id="cal-act">
+              <option value="sedentary">Sedentary</option>
+              <option value="light">Lightly active</option>
+              <option value="moderate" selected>Moderately active</option>
+              <option value="active">Very active</option>
+              <option value="athlete">Athlete</option>
+            </select></label>
+            <label>Goal<select id="cal-goal">
+              <option value="lose">Lose weight</option>
+              <option value="maintain" selected>Maintain</option>
+              <option value="gain">Gain muscle</option>
+            </select></label>
+          </div>
+          <button class="btn block" data-calc="calories">Calculate</button>
+          <div class="calc-result" id="cal-out"></div>
+        </div>
+
+        <div class="card calc-card">
+          <h3>Macro Split</h3>
+          <div class="calc-grid">
+            <label>Calories/day<input id="mac-cal" type="number" inputmode="numeric" /></label>
+            <label>Split<select id="mac-split">
+              <option value="balanced">Balanced 30/40/30</option>
+              <option value="highprotein">High protein 40/35/25</option>
+              <option value="lowcarb">Low carb 40/20/40</option>
+              <option value="keto">Keto 30/10/60</option>
+            </select></label>
+          </div>
+          <button class="btn block" data-calc="macros">Calculate</button>
+          <div class="calc-result" id="mac-out"></div>
+        </div>
+
+        <div class="card calc-card">
+          <h3>Ideal Weight</h3>
+          <div class="calc-grid">
+            <label>Sex<select id="iw-sex"><option value="male">Male</option><option value="female">Female</option></select></label>
+            <label>Height (cm)<input id="iw-h" type="number" inputmode="decimal" /></label>
+          </div>
+          <button class="btn block" data-calc="ideal">Calculate</button>
+          <div class="calc-result" id="iw-out"></div>
+        </div>
+
+        <div class="card calc-card">
+          <h3>One-Rep Max <span class="muted tiny">(Epley)</span></h3>
+          <div class="calc-grid">
+            <label>Weight lifted (kg)<input id="orm-w" type="number" inputmode="decimal" /></label>
+            <label>Reps<input id="orm-reps" type="number" inputmode="numeric" /></label>
+          </div>
+          <button class="btn block" data-calc="orm">Calculate</button>
+          <div class="calc-result" id="orm-out"></div>
+        </div>
+
+        <div class="card calc-card">
+          <h3>Daily Water</h3>
+          <div class="calc-grid">
+            <label>Weight (kg)<input id="wtr-w" type="number" inputmode="decimal" /></label>
+          </div>
+          <button class="btn block" data-calc="water">Calculate</button>
+          <div class="calc-result" id="wtr-out"></div>
+        </div>
+      </div>
+
       <!-- SETTINGS -->
       <div id="view-settings" class="view hidden">
         <h2 class="view-title">Settings</h2>
@@ -270,6 +367,7 @@
       <button class="nav-btn" data-view="calendar"><span class="ico">▦</span><span>Journey</span></button>
       <button class="nav-btn" data-view="stats"><span class="ico">📊</span><span>Stats</span></button>
       <button class="nav-btn" data-view="board"><span class="ico">👥</span><span>Friends</span></button>
+      <button class="nav-btn" data-view="calc"><span class="ico">🧮</span><span>Calc</span></button>
       <button class="nav-btn" data-view="settings"><span class="ico">⚙</span><span>Settings</span></button>
     </nav>
   </section>

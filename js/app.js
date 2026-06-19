@@ -412,6 +412,12 @@
     $('#day-close').addEventListener('click', function () { hide('#day-modal'); });
     $('#day-modal').addEventListener('click', function (e) { if (e.target.id === 'day-modal') hide('#day-modal'); });
     $('#day-save').addEventListener('click', saveDayEditor);
+    document.querySelectorAll('[data-calc]').forEach(function (b) {
+      b.addEventListener('click', function () { calcDispatch(b.dataset.calc); });
+    });
+    $('#bf-sex').addEventListener('change', function () {
+      $('#bf-hip-wrap').classList.toggle('hidden', this.value !== 'female');
+    });
     bindDietEvents();
   }
 
@@ -426,6 +432,7 @@
     if (name === 'calendar') renderCalendar();
     if (name === 'stats') renderStats();
     if (name === 'board') renderBoard();
+    if (name === 'calc') renderCalc();
     if (name === 'settings') renderSettings();
     window.scrollTo(0, 0);
   }
@@ -1462,6 +1469,89 @@
     $('#g-fat').value = p.fatGoal || '';
     $('#g-sugar').value = p.sugarGoal || '';
   }
+
+  /* ---------------- Fitness calculators ---------------- */
+  var ACT_FACTORS = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, athlete: 1.9 };
+
+  function renderCalc() {
+    var p = state.profile || {};
+    var pre = function (sel, v) { var e = $(sel); if (e && !e.value && (v || v === 0)) e.value = v; };
+    var preSel = function (sel, v) { var e = $(sel); if (e && v) e.value = v; };
+    pre('#bmi-h', p.heightCm); pre('#bmi-w', p.weightKg);
+    pre('#bf-h', p.heightCm); preSel('#bf-sex', p.sex);
+    $('#bf-hip-wrap').classList.toggle('hidden', $('#bf-sex').value !== 'female');
+    preSel('#cal-sex', p.sex); pre('#cal-age', p.age); pre('#cal-h', p.heightCm); pre('#cal-w', p.weightKg);
+    preSel('#cal-act', p.activity); preSel('#cal-goal', p.goalType);
+    pre('#mac-cal', p.calorieGoal);
+    preSel('#iw-sex', p.sex); pre('#iw-h', p.heightCm);
+    pre('#wtr-w', p.weightKg);
+  }
+
+  function calcOut(sel, html) { $(sel).innerHTML = html; }
+
+  function calcDispatch(type) {
+    var num = function (sel) { return parseFloat($(sel).value) || 0; };
+    if (type === 'bmi') {
+      var h = num('#bmi-h') / 100, w = num('#bmi-w');
+      if (!h || !w) return calcOut('#bmi-out', 'Enter height & weight.');
+      var bmi = w / (h * h);
+      var cat = bmi < 18.5 ? 'Underweight' : bmi < 25 ? 'Normal' : bmi < 30 ? 'Overweight' : 'Obese';
+      calcOut('#bmi-out', '<b>' + bmi.toFixed(1) + '</b> BMI · ' + cat);
+    }
+    else if (type === 'bodyfat') {
+      var sex = $('#bf-sex').value, H = num('#bf-h'), neck = num('#bf-neck'), waist = num('#bf-waist'), hip = num('#bf-hip');
+      if (!H || !neck || !waist) return calcOut('#bf-out', 'Enter height, neck & waist.');
+      var bf;
+      if (sex === 'female') {
+        if (!hip) return calcOut('#bf-out', 'Enter hip measurement.');
+        bf = 495 / (1.29579 - 0.35004 * log10(waist + hip - neck) + 0.22100 * log10(H)) - 450;
+      } else {
+        if (waist - neck <= 0) return calcOut('#bf-out', 'Waist must be larger than neck.');
+        bf = 495 / (1.0324 - 0.19077 * log10(waist - neck) + 0.15456 * log10(H)) - 450;
+      }
+      calcOut('#bf-out', '<b>' + bf.toFixed(1) + '%</b> body fat (estimate)');
+    }
+    else if (type === 'calories') {
+      var s = $('#cal-sex').value, age = num('#cal-age'), ch = num('#cal-h'), cw = num('#cal-w');
+      if (!age || !ch || !cw) return calcOut('#cal-out', 'Enter age, height & weight.');
+      var bmr = 10 * cw + 6.25 * ch - 5 * age + (s === 'female' ? -161 : 5);
+      var tdee = bmr * (ACT_FACTORS[$('#cal-act').value] || 1.2);
+      var adj = { lose: -500, maintain: 0, gain: 300 }[$('#cal-goal').value] || 0;
+      var target = Math.max(1200, Math.round((tdee + adj) / 10) * 10);
+      calcOut('#cal-out', 'BMR <b>' + Math.round(bmr) + '</b> · Maintain <b>' + Math.round(tdee) +
+        '</b> · Target <b>' + target + '</b> kcal/day');
+    }
+    else if (type === 'macros') {
+      var cal = num('#mac-cal');
+      if (!cal) return calcOut('#mac-out', 'Enter a calorie target.');
+      var r = { balanced: [.30, .40, .30], highprotein: [.40, .35, .25], lowcarb: [.40, .20, .40], keto: [.30, .10, .60] }[$('#mac-split').value];
+      var prot = Math.round(cal * r[0] / 4), carb = Math.round(cal * r[1] / 4), fat = Math.round(cal * r[2] / 9);
+      calcOut('#mac-out', 'Protein <b>' + prot + 'g</b> · Carbs <b>' + carb + 'g</b> · Fat <b>' + fat + 'g</b>');
+    }
+    else if (type === 'ideal') {
+      var is = $('#iw-sex').value, ih = num('#iw-h');
+      if (!ih) return calcOut('#iw-out', 'Enter height.');
+      var inches = ih / 2.54;
+      var devine = (is === 'female' ? 45.5 : 50) + 2.3 * Math.max(0, inches - 60);
+      var m = ih / 100;
+      var lo = (18.5 * m * m), hi = (24.9 * m * m);
+      calcOut('#iw-out', 'Ideal <b>' + devine.toFixed(1) + ' kg</b> · healthy range ' + lo.toFixed(0) + '–' + hi.toFixed(0) + ' kg');
+    }
+    else if (type === 'orm') {
+      var w = num('#orm-w'), reps = num('#orm-reps');
+      if (!w || !reps) return calcOut('#orm-out', 'Enter weight & reps.');
+      var orm = w * (1 + reps / 30);
+      calcOut('#orm-out', '1RM <b>' + orm.toFixed(1) + ' kg</b> · ' +
+        '80%: ' + (orm * .8).toFixed(0) + ' · 90%: ' + (orm * .9).toFixed(0) + ' kg');
+    }
+    else if (type === 'water') {
+      var ww = num('#wtr-w');
+      if (!ww) return calcOut('#wtr-out', 'Enter weight.');
+      var ml = 35 * ww;
+      calcOut('#wtr-out', '<b>' + (ml / 1000).toFixed(1) + ' L/day</b> (~' + Math.round(ml / 250) + ' glasses)');
+    }
+  }
+  function log10(x) { return Math.log(x) / Math.LN10; }
 
   /* ---------------- Themes ---------------- */
   var THEMES = [
