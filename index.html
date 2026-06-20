@@ -403,8 +403,12 @@
       <div id="food-step-portion" class="hidden">
         <button id="food-back" class="btn link-btn">‹ Back to search</button>
         <div class="portion-name" id="p-name">Food</div>
-        <label><span id="p-amount-label">Amount you had (g / ml)</span>
-          <input id="p-grams" type="number" inputmode="decimal" value="100" />
+        <div class="seg unit-toggle">
+          <button id="unit-serving" class="active" type="button">Serving</button>
+          <button id="unit-grams" type="button">Grams / 100g</button>
+        </div>
+        <label><span id="p-amount-label">Servings</span>
+          <input id="p-grams" type="number" inputmode="decimal" value="1" />
         </label>
         <div class="portion-macros" id="p-macros"></div>
         <label>Meal

@@ -912,9 +912,25 @@
     { name: 'Orange juice', kcal: 45, p: 0.7, c: 10, f: 0.2, s: 8, serving: 200 }
   ];
 
-  // Bundled Indian dish database (per serving). Loaded from assets/indian-foods.js.
+  // Bundled Indian dish database. Source values are per serving; we estimate a
+  // serving weight so every dish also has per-100g values (supports both units).
+  function round1(v) { return Math.round((Number(v) || 0) * 10) / 10; }
+  function estServingGrams(name) {
+    var n = name.toLowerCase();
+    if (/tea|coffee|chai|juice|lassi|shake|panna|sharbat|drink|smoothie|milk|buttermilk|chaas|soup|rasam|water/.test(n)) return 200;
+    if (/rice|biryani|biriyani|pulao|pulav|khichdi|khichri/.test(n)) return 200;
+    if (/idli/.test(n)) return 80;
+    if (/roti|chapati|chapathi|paratha|parantha|naan|dosa|thepla|puri|poori|bhatura|kulcha|appam|uttapam/.test(n)) return 60;
+    if (/samosa|pakora|pakoda|tikki|vada|bonda|cutlet|spring roll|\broll\b|kebab|kabab|tikka|momo/.test(n)) return 60;
+    if (/halwa|kheer|barfi|burfi|laddu|ladoo|jalebi|gulab|rasgulla|rasmalai|sweet|dessert|ice cream|custard|payasam/.test(n)) return 100;
+    if (/salad|raita|chutney|pickle|achar|papad/.test(n)) return 100;
+    if (/dal|daal|sabzi|sabji|curry|paneer|gravy|kofta|korma|masala|bhaji|rajma|chole|chana|sambar|kadhi/.test(n)) return 150;
+    return 150;
+  }
   var INDIAN_POOL = (window.INDIAN_FOODS || []).map(function (a) {
-    return { name: a[0], kcal: a[1], c: a[2], p: a[3], f: a[4], s: a[5], perServing: true };
+    var sg = estServingGrams(a[0]);
+    var k = 100 / sg;
+    return { name: a[0], kcal: Math.round(a[1] * k), c: round1(a[2] * k), p: round1(a[3] * k), f: round1(a[4] * k), s: round1(a[5] * k), serving: sg };
   });
 
   function dietGoals() {
@@ -1351,23 +1367,30 @@
   function pickFood(f) {
     state.pendingFood = f;
     $('#p-name').textContent = f.name;
-    if (f.perServing) {
-      $('#p-amount-label').textContent = 'Servings (1 = standard plate)';
+    setPortionUnit('serving');
+    showPortionStep();
+  }
+  function setPortionUnit(unit) {
+    state.portionUnit = unit;
+    $('#unit-serving').classList.toggle('active', unit === 'serving');
+    $('#unit-grams').classList.toggle('active', unit === 'grams');
+    var f = state.pendingFood; if (!f) return;
+    if (unit === 'serving') {
+      $('#p-amount-label').textContent = 'Servings (1 ≈ ' + (f.serving || 100) + ' g)';
       $('#p-grams').value = 1; $('#p-grams').step = '0.25';
     } else {
-      $('#p-amount-label').textContent = 'Amount you had (g / ml)';
+      $('#p-amount-label').textContent = 'Amount (g / ml)';
       $('#p-grams').value = f.serving || 100; $('#p-grams').step = 'any';
     }
     updatePortion();
-    showPortionStep();
   }
-  function portionFactor(f) {
-    var amt = Number($('#p-grams').value) || 0;
-    return f.perServing ? amt : amt / 100;
+  function portionGrams() {
+    var f = state.pendingFood; var amt = Number($('#p-grams').value) || 0;
+    return state.portionUnit === 'serving' ? amt * (f.serving || 100) : amt;
   }
   function updatePortion() {
     var f = state.pendingFood; if (!f) return;
-    var x = portionFactor(f);
+    var x = portionGrams() / 100;
     var k = f.kcal * x, p = f.p * x, c = f.c * x, ft = f.f * x, su = (f.s || 0) * x;
     $('#p-macros').innerHTML =
       '<div class="pm-chip"><b>' + Math.round(k) + '</b>kcal</div>' +
@@ -1378,13 +1401,11 @@
   }
   function addPortion() {
     var f = state.pendingFood; if (!f) return;
-    var amt = Number($('#p-grams').value) || 0;
-    var x = portionFactor(f);
+    var grams = portionGrams();
+    var x = grams / 100;
     addRecent(f);
     saveFood({
-      meal: $('#p-meal').value,
-      name: (f.perServing && amt !== 1) ? f.name + ' ×' + amt : f.name,
-      grams: f.perServing ? 0 : amt,
+      meal: $('#p-meal').value, name: f.name, grams: Math.round(grams),
       calories: f.kcal * x, protein: f.p * x, carbs: f.c * x, fat: f.f * x, sugar: (f.s || 0) * x
     });
   }
@@ -1439,6 +1460,8 @@
     $('#food-manual-toggle').addEventListener('click', function () { $('#food-manual').classList.toggle('hidden'); });
     $('#m-next').addEventListener('click', manualNext);
     $('#p-grams').addEventListener('input', updatePortion);
+    $('#unit-serving').addEventListener('click', function () { setPortionUnit('serving'); });
+    $('#unit-grams').addEventListener('click', function () { setPortionUnit('grams'); });
     $('#p-add').addEventListener('click', addPortion);
     $('#calc-goals').addEventListener('click', calcGoals);
     $('#save-goals').addEventListener('click', saveGoals);
