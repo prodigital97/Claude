@@ -1219,26 +1219,42 @@
     showSearchStep();
     $('#food-search').value = '';
     showRecents();
+    loadCustomFoods();   // refresh shared foods so newly-added ones are searchable
     $('#food-manual').classList.add('hidden');
     show('#food-modal');
     setTimeout(function () { $('#food-search').focus(); }, 100);
   }
 
-  /* Recently-logged foods (per device), shown before you type. */
-  function getRecents() {
-    try { return JSON.parse(localStorage.getItem('hard_recents') || '[]'); } catch (e) { return []; }
+  /* Per-device food stats: frequency (most used) + recency (recent). */
+  function getFoodStats() {
+    try { return JSON.parse(localStorage.getItem('hard_foodstats') || '{}'); } catch (e) { return {}; }
   }
   function addRecent(food) {
     if (!food || !food.name) return;
-    var r = getRecents().filter(function (x) { return x.name.toLowerCase() !== food.name.toLowerCase(); });
-    r.unshift({ name: food.name, kcal: food.kcal, p: food.p, c: food.c, f: food.f, s: food.s, serving: food.serving || 100, perServing: !!food.perServing });
-    localStorage.setItem('hard_recents', JSON.stringify(r.slice(0, 20)));
+    var m = getFoodStats();
+    var k = food.name.toLowerCase();
+    var ex = m[k] || { count: 0 };
+    m[k] = {
+      name: food.name, kcal: food.kcal, p: food.p, c: food.c, f: food.f, s: food.s,
+      serving: food.serving || 100, perServing: !!food.perServing,
+      count: (ex.count || 0) + 1, last: Date.now()
+    };
+    localStorage.setItem('hard_foodstats', JSON.stringify(m));
   }
   function showRecents() {
     var box = $('#food-results');
-    var r = getRecents();
-    box.innerHTML = '<div class="fr-head muted tiny">' + (r.length ? 'Recent' : 'Popular') + '</div>';
-    appendResults(r.length ? r : COMMON_FOODS.slice(0, 12));
+    box.innerHTML = '';
+    var m = getFoodStats();
+    var all = Object.keys(m).map(function (k) { return m[k]; });
+    var most = all.filter(function (x) { return (x.count || 0) >= 2; })
+                  .sort(function (a, b) { return b.count - a.count; }).slice(0, 5);
+    var taken = {};
+    most.forEach(function (x) { taken[x.name.toLowerCase()] = 1; });
+    var recent = all.slice().sort(function (a, b) { return (b.last || 0) - (a.last || 0); })
+                    .filter(function (x) { return !taken[x.name.toLowerCase()]; }).slice(0, 8);
+    if (most.length) { box.appendChild(el('div', 'fr-head muted tiny', '⭐ Most used')); appendResults(most); }
+    if (recent.length) { box.appendChild(el('div', 'fr-head muted tiny', 'Recent')); appendResults(recent); }
+    if (!most.length && !recent.length) { box.appendChild(el('div', 'fr-head muted tiny', 'Popular')); appendResults(COMMON_FOODS.slice(0, 12)); }
   }
   function closeFoodModal() { hide('#food-modal'); state.pendingFood = null; }
   function showSearchStep() { $('#food-step-search').classList.remove('hidden'); $('#food-step-portion').classList.add('hidden'); }
