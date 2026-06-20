@@ -26,7 +26,7 @@ var CUSTOM_SHEET = 'CustomFoods';
 
 var USER_HEADERS = ['username', 'displayName', 'passwordHash', 'salt', 'token', 'startDate', 'createdAt'];
 var LOG_HEADERS = ['username', 'date', 'dayNumber', 'workout1', 'workout2', 'outdoor',
-                   'waterMl', 'reading', 'photo', 'diet', 'noAlcohol', 'completed', 'notes', 'updatedAt'];
+                   'waterMl', 'reading', 'photo', 'diet', 'noAlcohol', 'completed', 'notes', 'updatedAt', 'extra'];
 // 'sugar' appended at the end so older Food rows keep their column positions.
 var FOOD_HEADERS = ['id', 'username', 'date', 'meal', 'name', 'grams',
                     'calories', 'protein', 'carbs', 'fat', 'createdAt', 'sugar'];
@@ -536,7 +536,8 @@ function handleSaveDay(body) {
     photo: !!day.photo,
     diet: !!day.diet,
     noAlcohol: !!day.noAlcohol,
-    notes: String(day.notes || '')
+    notes: String(day.notes || ''),
+    extra: JSON.stringify(day.extra || {})
   };
   record.completed = isDayComplete(record);
   record.updatedAt = new Date().toISOString();
@@ -841,8 +842,12 @@ function logFromRow(r, idx) {
     diet: toBool(r[idx.diet]),
     noAlcohol: toBool(r[idx.noAlcohol]),
     completed: toBool(r[idx.completed]),
-    notes: String(r[idx.notes] || '')
+    notes: String(r[idx.notes] || ''),
+    extra: parseJsonObj(r[idx.extra])
   };
+}
+function parseJsonObj(v) {
+  try { return JSON.parse(v || '{}'); } catch (e) { return {}; }
 }
 
 function findLogRow(sheet, username, date) {

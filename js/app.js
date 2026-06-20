@@ -286,7 +286,7 @@
   function emptyDay(date) {
     return { date: date, dayNumber: state.user ? dayNumber(state.user.startDate, date) : 1,
       workout1: false, workout2: false, outdoor: false, waterMl: 0,
-      reading: false, photo: false, diet: false, noAlcohol: false, completed: false, notes: '' };
+      reading: false, photo: false, diet: false, noAlcohol: false, completed: false, notes: '', extra: {} };
   }
   function logFor(date) {
     return state.logs.filter(function (l) { return l.date === date; })[0];
@@ -396,6 +396,8 @@
     $('#day-notes').addEventListener('input', function () {
       state.today.notes = this.value; queueSave();
     });
+    $('#add-habit-btn').addEventListener('click', addHabit);
+    $('#new-habit').addEventListener('keydown', function (e) { if (e.key === 'Enter') addHabit(); });
     $('#logout').addEventListener('click', logout);
     $('#reset-challenge').addEventListener('click', resetChallenge);
     $('#save-profile').addEventListener('click', saveProfile);
@@ -491,6 +493,61 @@
     else { st.textContent = count + ' / ' + TOTAL_ITEMS + ' done'; st.className = 'status-chip pending'; }
 
     $('#streak-line').textContent = '🔥 ' + streakOf(state.logs) + ' day streak';
+
+    renderExtraTasks(d);
+  }
+
+  /* ----- Custom daily habits (do NOT affect 75 Hard completion) ----- */
+  function renderExtraTasks(d) {
+    var list = $('#extra-tasks'); if (!list) return;
+    if (!d.extra) d.extra = {};
+    var habits = (state.profile && state.profile.customTasks) || [];
+    list.innerHTML = '';
+    if (!habits.length) {
+      list.innerHTML = '<p class="muted tiny" style="margin:2px 2px 10px">No habits yet — add one below to track it daily.</p>';
+      return;
+    }
+    habits.forEach(function (h) {
+      var done = !!d.extra[h.id];
+      var row = el('div', 'task habit' + (done ? ' done' : ''));
+      row.innerHTML =
+        '<div class="check">✓</div>' +
+        '<div class="t-emoji">📌</div>' +
+        '<div class="t-body"><div class="t-title">' + esc(h.name) + '</div></div>' +
+        '<button class="habit-del" title="Remove">✕</button>';
+      row.addEventListener('click', function (e) {
+        if (e.target.classList.contains('habit-del')) return;
+        d.extra[h.id] = !d.extra[h.id];
+        renderExtraTasks(d);
+        queueSave();
+      });
+      row.querySelector('.habit-del').addEventListener('click', function (e) {
+        e.stopPropagation();
+        removeHabit(h.id);
+      });
+      list.appendChild(row);
+    });
+  }
+
+  function addHabit() {
+    var name = $('#new-habit').value.trim();
+    if (!name) return;
+    var habits = (state.profile.customTasks || []).slice();
+    habits.push({ id: 'h_' + Date.now().toString(36), name: name });
+    $('#new-habit').value = '';
+    saveHabits(habits);
+  }
+  function removeHabit(id) {
+    var habits = (state.profile.customTasks || []).filter(function (h) { return h.id !== id; });
+    saveHabits(habits);
+  }
+  function saveHabits(habits) {
+    var profile = Object.assign({}, state.profile, { customTasks: habits });
+    state.profile = profile;
+    renderExtraTasks(state.today);
+    api('saveGoals', { profile: profile }).then(function (data) {
+      if (data && data.profile) state.profile = data.profile;
+    }).catch(function (e) { toast(e.message); });
   }
 
   function litres(ml) {
