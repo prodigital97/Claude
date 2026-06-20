@@ -912,6 +912,11 @@
     { name: 'Orange juice', kcal: 45, p: 0.7, c: 10, f: 0.2, s: 8, serving: 200 }
   ];
 
+  // Bundled Indian dish database (per serving). Loaded from assets/indian-foods.js.
+  var INDIAN_POOL = (window.INDIAN_FOODS || []).map(function (a) {
+    return { name: a[0], kcal: a[1], c: a[2], p: a[3], f: a[4], s: a[5], perServing: true };
+  });
+
   function dietGoals() {
     var p = state.profile || {};
     return {
@@ -1193,7 +1198,7 @@
         var it = el('div', 'food-item');
         it.innerHTML =
           '<div class="fi-body"><div class="fi-name">' + esc(f.name) + '</div>' +
-          '<div class="fi-sub">' + Math.round(f.grams) + ' g · P' + Math.round(f.protein) + ' C' + Math.round(f.carbs) + ' F' + Math.round(f.fat) + ' S' + Math.round(f.sugar || 0) + '</div></div>' +
+          '<div class="fi-sub">' + (f.grams ? Math.round(f.grams) + ' g · ' : '') + 'P' + Math.round(f.protein) + ' C' + Math.round(f.carbs) + ' F' + Math.round(f.fat) + ' S' + Math.round(f.sugar || 0) + '</div></div>' +
           '<div class="fi-cal">' + Math.round(f.calories) + '</div>' +
           '<button class="fi-del" title="Remove">✕</button>';
         it.querySelector('.fi-del').addEventListener('click', function () { deleteFood(f.id); });
@@ -1226,7 +1231,7 @@
   function addRecent(food) {
     if (!food || !food.name) return;
     var r = getRecents().filter(function (x) { return x.name.toLowerCase() !== food.name.toLowerCase(); });
-    r.unshift({ name: food.name, kcal: food.kcal, p: food.p, c: food.c, f: food.f, s: food.s, serving: food.serving || 100 });
+    r.unshift({ name: food.name, kcal: food.kcal, p: food.p, c: food.c, f: food.f, s: food.s, serving: food.serving || 100, perServing: !!food.perServing });
     localStorage.setItem('hard_recents', JSON.stringify(r.slice(0, 20)));
   }
   function showRecents() {
@@ -1243,7 +1248,7 @@
   // ranked by how many words it matches (so "chicken boiled" surfaces all chicken).
   function localMatches(q) {
     var tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
-    var pool = COMMON_FOODS.concat(state.customFoods || []);
+    var pool = COMMON_FOODS.concat(state.customFoods || [], INDIAN_POOL);
     return pool.map(function (f) {
       var n = f.name.toLowerCase();
       var score = 0;
@@ -1251,7 +1256,8 @@
       return { f: f, score: score };
     }).filter(function (x) { return x.score > 0; })
       .sort(function (a, b) { return b.score - a.score; })
-      .map(function (x) { return x.f; });
+      .map(function (x) { return x.f; })
+      .slice(0, 40);
   }
 
   function runSearch(q) {
@@ -1319,7 +1325,7 @@
     list.forEach(function (f) {
       var it = el('div', 'fr-item');
       it.innerHTML = '<div><div class="fr-name">' + esc(f.name) + '</div>' +
-        '<div class="fr-sub">per 100g · P' + Math.round(f.p) + ' C' + Math.round(f.c) + ' F' + Math.round(f.f) + '</div></div>' +
+        '<div class="fr-sub">' + (f.perServing ? 'per serving' : 'per 100g') + ' · P' + Math.round(f.p) + ' C' + Math.round(f.c) + ' F' + Math.round(f.f) + '</div></div>' +
         '<div class="fr-cal">' + Math.round(f.kcal) + ' kcal</div>';
       it.addEventListener('click', function () { pickFood(f); });
       box.appendChild(it);
@@ -1329,14 +1335,24 @@
   function pickFood(f) {
     state.pendingFood = f;
     $('#p-name').textContent = f.name;
-    $('#p-grams').value = f.serving || 100;
+    if (f.perServing) {
+      $('#p-amount-label').textContent = 'Servings (1 = standard plate)';
+      $('#p-grams').value = 1; $('#p-grams').step = '0.25';
+    } else {
+      $('#p-amount-label').textContent = 'Amount you had (g / ml)';
+      $('#p-grams').value = f.serving || 100; $('#p-grams').step = 'any';
+    }
     updatePortion();
     showPortionStep();
   }
+  function portionFactor(f) {
+    var amt = Number($('#p-grams').value) || 0;
+    return f.perServing ? amt : amt / 100;
+  }
   function updatePortion() {
     var f = state.pendingFood; if (!f) return;
-    var g = Number($('#p-grams').value) || 0;
-    var k = f.kcal * g / 100, p = f.p * g / 100, c = f.c * g / 100, ft = f.f * g / 100, su = (f.s || 0) * g / 100;
+    var x = portionFactor(f);
+    var k = f.kcal * x, p = f.p * x, c = f.c * x, ft = f.f * x, su = (f.s || 0) * x;
     $('#p-macros').innerHTML =
       '<div class="pm-chip"><b>' + Math.round(k) + '</b>kcal</div>' +
       '<div class="pm-chip"><b>' + Math.round(p) + '</b>protein</div>' +
@@ -1346,11 +1362,14 @@
   }
   function addPortion() {
     var f = state.pendingFood; if (!f) return;
-    var g = Number($('#p-grams').value) || 0;
+    var amt = Number($('#p-grams').value) || 0;
+    var x = portionFactor(f);
     addRecent(f);
     saveFood({
-      meal: $('#p-meal').value, name: f.name, grams: g,
-      calories: f.kcal * g / 100, protein: f.p * g / 100, carbs: f.c * g / 100, fat: f.f * g / 100, sugar: (f.s || 0) * g / 100
+      meal: $('#p-meal').value,
+      name: (f.perServing && amt !== 1) ? f.name + ' ×' + amt : f.name,
+      grams: f.perServing ? 0 : amt,
+      calories: f.kcal * x, protein: f.p * x, carbs: f.c * x, fat: f.f * x, sugar: (f.s || 0) * x
     });
   }
   // Custom food entered per 100 g/ml -> share it, then set the amount.

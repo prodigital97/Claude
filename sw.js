@@ -1,10 +1,11 @@
 /* Simple offline cache for the app shell. */
-var CACHE = '75hard-v27';
+var CACHE = '75hard-v28';
 var ASSETS = [
   './',
   './index.html',
   './css/styles.css',
   './js/config.js',
+  './assets/indian-foods.js',
   './js/app.js',
   './manifest.webmanifest',
   './assets/icon.svg'

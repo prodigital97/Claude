@@ -23,8 +23,9 @@ Miss any task and 75 Hard says you restart from Day 1 — there's a one-tap **re
 - **Today screen** with a live completion ring, big tap targets, and a glass-by-glass water tracker
 - **Diet & calorie tracker** (FatSecret-style) — search foods, log meals (breakfast/lunch/dinner/snacks),
   track calories + protein/carbs/fat against a daily goal, with a built-in TDEE goal calculator.
-  Food search uses the free [Open Food Facts](https://world.openfoodfacts.org) database plus a built-in
-  quick-list of common staples; you can also add custom foods manually.
+  Food search uses the free [Open Food Facts](https://world.openfoodfacts.org) database, a built-in
+  quick-list of common staples, **a bundled 1,000+ Indian dish database** (per serving), and shared
+  custom foods; you can also add custom foods manually.
 - **Intermittent fasting timer** — start a fast (with an adjustable start time), a live count-up ring
   that targets the next milestone and keeps running after you close the app. When you end it, the
   milestone reached (12/14/16/18/20/24/36 h) is derived automatically from how long you fasted. Past

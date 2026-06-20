@@ -403,7 +403,7 @@
       <div id="food-step-portion" class="hidden">
         <button id="food-back" class="btn link-btn">‹ Back to search</button>
         <div class="portion-name" id="p-name">Food</div>
-        <label>Amount you had (g / ml)
+        <label><span id="p-amount-label">Amount you had (g / ml)</span>
           <input id="p-grams" type="number" inputmode="decimal" value="100" />
         </label>
         <div class="portion-macros" id="p-macros"></div>
@@ -433,6 +433,7 @@
   <div id="toast" class="toast hidden"></div>
 
   <script src="js/config.js"></script>
+  <script src="assets/indian-foods.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
