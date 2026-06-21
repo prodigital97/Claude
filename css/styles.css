@@ -244,6 +244,21 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .water-amount { font-size: 12px; color: var(--muted); margin-top: 10px; text-align: center; }
 .water-amount b { color: #6cc0ff; }
 
+/* mood meter */
+.mood-buttons { display: flex; gap: 6px; margin-bottom: 6px; }
+.mood-btn {
+  flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--card); color: var(--muted);
+  border-radius: 14px; padding: 10px 2px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+}
+.mood-btn .mood-emoji { font-size: 22px; filter: grayscale(.5); transition: filter .15s; }
+.mood-btn .mood-label { font-size: 10px; font-weight: 700; }
+.mood-btn.sel { border-color: var(--mc); background: color-mix(in srgb, var(--mc) 18%, var(--card)); color: var(--text); }
+.mood-btn.sel .mood-emoji { filter: none; }
+.mood-btn:active { transform: scale(.95); }
+.mt-dots { display: flex; gap: 5px; flex-wrap: wrap; }
+.mt-dot { width: 20px; height: 20px; border-radius: 6px; border: 1px solid var(--line); }
+
 /* custom habits */
 .extra-head { font-size: 13px; font-weight: 800; margin: 18px 2px 10px; }
 .task.habit { padding: 13px 16px; }

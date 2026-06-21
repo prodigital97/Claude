@@ -286,7 +286,7 @@
   function emptyDay(date) {
     return { date: date, dayNumber: state.user ? dayNumber(state.user.startDate, date) : 1,
       workout1: false, workout2: false, outdoor: false, waterMl: 0,
-      reading: false, photo: false, diet: false, noAlcohol: false, completed: false, notes: '', extra: {} };
+      reading: false, photo: false, diet: false, noAlcohol: false, completed: false, notes: '', extra: {}, mood: 0 };
   }
   function logFor(date) {
     return state.logs.filter(function (l) { return l.date === date; })[0];
@@ -494,7 +494,34 @@
 
     $('#streak-line').textContent = '🔥 ' + streakOf(state.logs) + ' day streak';
 
+    renderMood(d);
     renderExtraTasks(d);
+  }
+
+  /* ----- Mood meter (does NOT affect 75 Hard completion) ----- */
+  var MOODS = [
+    { v: 5, label: 'Great', emoji: '😄', color: '#2fd47a' },
+    { v: 4, label: 'Good',  emoji: '🙂', color: '#9bd84a' },
+    { v: 3, label: 'Okay',  emoji: '😐', color: '#ffc24b' },
+    { v: 2, label: 'Low',   emoji: '😕', color: '#ff9f43' },
+    { v: 1, label: 'Bad',   emoji: '😣', color: '#ff5470' }
+  ];
+  function moodColor(v) { for (var i = 0; i < MOODS.length; i++) if (MOODS[i].v === v) return MOODS[i].color; return null; }
+  function renderMood(d) {
+    var box = $('#mood-buttons'); if (!box) return;
+    box.innerHTML = '';
+    MOODS.forEach(function (m) {
+      var sel = d.mood === m.v;
+      var b = el('button', 'mood-btn' + (sel ? ' sel' : ''));
+      b.style.setProperty('--mc', m.color);
+      b.innerHTML = '<span class="mood-emoji">' + m.emoji + '</span><span class="mood-label">' + m.label + '</span>';
+      b.addEventListener('click', function () {
+        d.mood = (d.mood === m.v) ? 0 : m.v;
+        renderMood(d);
+        queueSave();
+      });
+      box.appendChild(b);
+    });
   }
 
   /* ----- Custom daily habits (do NOT affect 75 Hard completion) ----- */
@@ -774,6 +801,27 @@
         '<div class="bar"><span style="width:' + pct + '%"></span></div>';
       bars.appendChild(row);
     });
+
+    renderMoodTrend();
+  }
+
+  function renderMoodTrend() {
+    var box = $('#mood-trend'); if (!box) return;
+    var today = todayStr(), dots = '', sum = 0, n = 0;
+    for (var i = 13; i >= 0; i--) {
+      var date = addDays(today, -i);
+      var log = logFor(date);
+      var mv = log && log.mood ? log.mood : 0;
+      var col = moodColor(mv) || 'var(--bg-soft)';
+      dots += '<span class="mt-dot" title="' + shortDate(date) + '" style="background:' + col + '"></span>';
+      if (mv) { sum += mv; n++; }
+    }
+    var avg = n ? (sum / n) : 0;
+    var avgM = avg ? MOODS.reduce(function (a, b) { return Math.abs(b.v - avg) < Math.abs(a.v - avg) ? b : a; }) : null;
+    box.innerHTML = '<div class="mt-dots">' + dots + '</div>' +
+      '<div class="muted tiny" style="margin-top:8px">' +
+      (n ? ('Average: ' + avgM.emoji + ' ' + avgM.label + ' (' + avg.toFixed(1) + '/5) over ' + n + ' logged day' + (n > 1 ? 's' : '')) : 'No mood logged yet — set it on the Today screen.') +
+      '</div>';
   }
   function bestStreak(logs) {
     var best = 0, cur = 0;
