@@ -400,8 +400,11 @@
         <div id="food-results" class="food-results"></div>
         <button id="food-manual-toggle" class="btn block">+ Add a custom food manually</button>
         <div id="food-manual" class="manual-box hidden">
+          <button id="scan-label" class="btn block" type="button">📷 Scan a nutrition label</button>
+          <input type="file" id="scan-input" accept="image/*" capture="environment" class="hidden" />
+          <div id="scan-status" class="muted tiny scan-status"></div>
           <label>Food name<input id="m-name" placeholder="e.g. Homemade smoothie" /></label>
-          <p class="muted tiny">Enter the values printed on the label <b>per 100 g / 100 ml</b>. You’ll set how much you actually had on the next step.</p>
+          <p class="muted tiny">Enter the values printed on the label <b>per 100 g / 100 ml</b> (or scan above). You’ll set how much you actually had on the next step.</p>
           <div class="manual-grid">
             <label>Calories /100<input id="m-cal" type="number" inputmode="decimal" /></label>
             <label>Protein g /100<input id="m-protein" type="number" inputmode="decimal" /></label>

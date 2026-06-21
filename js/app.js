@@ -1621,6 +1621,54 @@
     }).catch(function (e) { toast(e.message); });
   }
 
+  /* ----- Scan a nutrition label (on-device OCR via Tesseract.js) ----- */
+  function loadTesseract() {
+    if (window.Tesseract) return Promise.resolve();
+    return new Promise(function (res, rej) {
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+      s.onload = res; s.onerror = function () { rej(new Error('Could not load the scanner (no internet?)')); };
+      document.head.appendChild(s);
+    });
+  }
+  function scanStatus(msg) { var e = $('#scan-status'); if (e) e.textContent = msg || ''; }
+  function handleScanFile(file) {
+    if (!file) return;
+    $('#food-manual').classList.remove('hidden');
+    scanStatus('Loading scanner…');
+    loadTesseract().then(function () {
+      scanStatus('Reading label… 0%');
+      return Tesseract.recognize(file, 'eng', {
+        logger: function (m) {
+          if (m.status === 'recognizing text') scanStatus('Reading label… ' + Math.round(m.progress * 100) + '%');
+        }
+      });
+    }).then(function (out) {
+      var text = (out && out.data && out.data.text) || '';
+      var got = applyLabel(text);
+      scanStatus(got ? 'Done — please check the values below, then add.' : 'Couldn’t read the numbers — enter them manually.');
+    }).catch(function (e) { scanStatus(e.message || 'Scan failed.'); });
+  }
+  function labelNum(text, res) {
+    for (var i = 0; i < res.length; i++) {
+      var m = text.match(res[i]);
+      if (m) { var v = parseFloat(m[1].replace(',', '.')); if (!isNaN(v)) return v; }
+    }
+    return null;
+  }
+  function applyLabel(text) {
+    var t = ' ' + text.replace(/\n/g, ' ') + ' ';
+    var kcal = labelNum(t, [/energy\D{0,14}?(\d+(?:[.,]\d+)?)\s*k?cal/i, /(\d+(?:[.,]\d+)?)\s*kcal/i, /calorie\D{0,14}?(\d+(?:[.,]\d+)?)/i]);
+    var protein = labelNum(t, [/protein\D{0,14}?(\d+(?:[.,]\d+)?)/i]);
+    var carbs = labelNum(t, [/carbohydrate\D{0,14}?(\d+(?:[.,]\d+)?)/i, /carb\D{0,14}?(\d+(?:[.,]\d+)?)/i]);
+    var fat = labelNum(t, [/total\s*fat\D{0,14}?(\d+(?:[.,]\d+)?)/i, /(?:^|[^a-z])fat\D{0,14}?(\d+(?:[.,]\d+)?)/i]);
+    var sugar = labelNum(t, [/(?:added|free|total)?\s*sugar\D{0,14}?(\d+(?:[.,]\d+)?)/i]);
+    var any = false;
+    function setIf(sel, v) { if (v != null) { $(sel).value = v; any = true; } }
+    setIf('#m-cal', kcal); setIf('#m-protein', protein); setIf('#m-carbs', carbs); setIf('#m-fat', fat); setIf('#m-sugar', sugar);
+    return any;
+  }
+
   /* ----- Diet goals ----- */
   function bindDietEvents() {
     $('#food-close').addEventListener('click', closeFoodModal);
@@ -1632,6 +1680,8 @@
       searchTimer = setTimeout(function () { runSearch(q); }, 350);
     });
     $('#food-manual-toggle').addEventListener('click', function () { $('#food-manual').classList.toggle('hidden'); });
+    $('#scan-label').addEventListener('click', function () { $('#scan-input').click(); });
+    $('#scan-input').addEventListener('change', function () { if (this.files && this.files[0]) handleScanFile(this.files[0]); this.value = ''; });
     $('#m-next').addEventListener('click', manualNext);
     $('#p-grams').addEventListener('input', updatePortion);
     $('#unit-serving').addEventListener('click', function () { setPortionUnit('serving'); });
