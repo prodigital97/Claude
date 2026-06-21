@@ -430,7 +430,9 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .fr-loading { color: var(--muted); font-size: 13px; text-align: center; padding: 8px; }
 .fr-head { text-transform: uppercase; letter-spacing: .04em; margin: 2px 2px 2px; font-weight: 700; }
 .manual-box { margin-top: 10px; }
-.scan-status { margin: 6px 2px; min-height: 14px; }
+.scan-row { display: flex; gap: 8px; }
+.scan-row .btn { flex: 1; }
+.scan-status { margin: 8px 2px; min-height: 14px; }
 .manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
 .link-btn { background: transparent; border: 0; color: var(--primary); padding: 4px 0; margin-bottom: 8px; }
 .portion-name { font-size: 18px; font-weight: 800; margin-bottom: 12px; }

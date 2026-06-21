@@ -1632,41 +1632,80 @@
     });
   }
   function scanStatus(msg) { var e = $('#scan-status'); if (e) e.textContent = msg || ''; }
+
+  // Grayscale + upscale + contrast to give Tesseract a better chance.
+  function fileToCanvas(file) {
+    return new Promise(function (res) {
+      var img = new Image();
+      img.onload = function () {
+        var scale = Math.min(2.5, Math.max(1, 1300 / img.width));
+        var w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        var c = document.createElement('canvas'); c.width = w; c.height = h;
+        var ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+        try {
+          var d = ctx.getImageData(0, 0, w, h), p = d.data;
+          for (var i = 0; i < p.length; i += 4) {
+            var g = 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2];
+            g = (g - 128) * 1.5 + 128;
+            p[i] = p[i + 1] = p[i + 2] = g < 0 ? 0 : g > 255 ? 255 : g;
+          }
+          ctx.putImageData(d, 0, 0);
+        } catch (e) { /* ignore */ }
+        res(c);
+      };
+      img.onerror = function () { res(null); };
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
   function handleScanFile(file) {
     if (!file) return;
     $('#food-manual').classList.remove('hidden');
     scanStatus('Loading scanner…');
-    loadTesseract().then(function () {
-      scanStatus('Reading label… 0%');
-      return Tesseract.recognize(file, 'eng', {
-        logger: function (m) {
-          if (m.status === 'recognizing text') scanStatus('Reading label… ' + Math.round(m.progress * 100) + '%');
-        }
-      });
-    }).then(function (out) {
-      var text = (out && out.data && out.data.text) || '';
-      var got = applyLabel(text);
-      scanStatus(got ? 'Done — please check the values below, then add.' : 'Couldn’t read the numbers — enter them manually.');
-    }).catch(function (e) { scanStatus(e.message || 'Scan failed.'); });
+    var imgSource = file;
+    loadTesseract()
+      .then(function () { return fileToCanvas(file); })
+      .then(function (canvas) {
+        if (canvas) imgSource = canvas;
+        scanStatus('Reading label… 0%');
+        return Tesseract.recognize(imgSource, 'eng', {
+          logger: function (m) {
+            if (m.status === 'recognizing text') scanStatus('Reading label… ' + Math.round(m.progress * 100) + '%');
+          }
+        });
+      })
+      .then(function (out) {
+        var r = applyLabel((out && out.data && out.data.text) || '');
+        if (r.any) scanStatus('Read ✓ (' + r.note + ') — check the values, then add.');
+        else scanStatus('Couldn’t read this label clearly. Try a straight, close, well-lit shot — or type the values in.');
+      })
+      .catch(function (e) { scanStatus(e.message || 'Scan failed.'); });
   }
-  function labelNum(text, res) {
-    for (var i = 0; i < res.length; i++) {
-      var m = text.match(res[i]);
-      if (m) { var v = parseFloat(m[1].replace(',', '.')); if (!isNaN(v)) return v; }
-    }
-    return null;
+
+  function firstNumAfter(text, kw) {
+    var re = new RegExp(kw.replace(/ /g, '\\s*') + '[^0-9\\n]{0,25}?(\\d+(?:[.,]\\d+)?)', 'i');
+    var m = text.match(re);
+    return m ? parseFloat(m[1].replace(',', '.')) : null;
   }
   function applyLabel(text) {
-    var t = ' ' + text.replace(/\n/g, ' ') + ' ';
-    var kcal = labelNum(t, [/energy\D{0,14}?(\d+(?:[.,]\d+)?)\s*k?cal/i, /(\d+(?:[.,]\d+)?)\s*kcal/i, /calorie\D{0,14}?(\d+(?:[.,]\d+)?)/i]);
-    var protein = labelNum(t, [/protein\D{0,14}?(\d+(?:[.,]\d+)?)/i]);
-    var carbs = labelNum(t, [/carbohydrate\D{0,14}?(\d+(?:[.,]\d+)?)/i, /carb\D{0,14}?(\d+(?:[.,]\d+)?)/i]);
-    var fat = labelNum(t, [/total\s*fat\D{0,14}?(\d+(?:[.,]\d+)?)/i, /(?:^|[^a-z])fat\D{0,14}?(\d+(?:[.,]\d+)?)/i]);
-    var sugar = labelNum(t, [/(?:added|free|total)?\s*sugar\D{0,14}?(\d+(?:[.,]\d+)?)/i]);
+    var t = ' ' + text.replace(/\n/g, ' ').replace(/\s+/g, ' ') + ' ';
+    var kcal = firstNumAfter(t, 'energy');
+    if (kcal == null) { var mk = t.match(/(\d+(?:[.,]\d+)?)\s*kcal/i) || t.match(/kcal[^0-9]{0,10}(\d+(?:[.,]\d+)?)/i); if (mk) kcal = parseFloat(mk[1].replace(',', '.')); }
+    if (kcal == null) kcal = firstNumAfter(t, 'calorie');
+    var protein = firstNumAfter(t, 'protein');
+    var carbs = firstNumAfter(t, 'carbohydrate'); if (carbs == null) carbs = firstNumAfter(t, 'carb');
+    var fat = firstNumAfter(t, 'total fat'); if (fat == null) fat = firstNumAfter(t, 'fat');
+    var sugar = firstNumAfter(t, 'total sugar'); if (sugar == null) sugar = firstNumAfter(t, 'sugar');
+
+    // Convert per-serving labels to per-100.
+    var scale = 1, note = 'per 100';
+    var ps = t.match(/per\s*serv\w*[^0-9]{0,14}(\d+(?:[.,]\d+)?)\s*(ml|g)/i) || t.match(/serving\s*size[^0-9]{0,14}(\d+(?:[.,]\d+)?)\s*(ml|g)/i);
+    if (ps) { var sz = parseFloat(ps[1].replace(',', '.')); if (sz > 0 && Math.abs(sz - 100) > 1) { scale = 100 / sz; note = 'converted from per ' + sz + ps[2]; } }
+
     var any = false;
-    function setIf(sel, v) { if (v != null) { $(sel).value = v; any = true; } }
-    setIf('#m-cal', kcal); setIf('#m-protein', protein); setIf('#m-carbs', carbs); setIf('#m-fat', fat); setIf('#m-sugar', sugar);
-    return any;
+    function put(sel, v, intval) { if (v != null) { var x = v * scale; $(sel).value = intval ? Math.round(x) : Math.round(x * 10) / 10; any = true; } }
+    put('#m-cal', kcal, true); put('#m-protein', protein); put('#m-carbs', carbs); put('#m-fat', fat); put('#m-sugar', sugar);
+    return { any: any, note: note };
   }
 
   /* ----- Diet goals ----- */
@@ -1680,8 +1719,11 @@
       searchTimer = setTimeout(function () { runSearch(q); }, 350);
     });
     $('#food-manual-toggle').addEventListener('click', function () { $('#food-manual').classList.toggle('hidden'); });
-    $('#scan-label').addEventListener('click', function () { $('#scan-input').click(); });
-    $('#scan-input').addEventListener('change', function () { if (this.files && this.files[0]) handleScanFile(this.files[0]); this.value = ''; });
+    $('#scan-camera-btn').addEventListener('click', function () { $('#scan-camera').click(); });
+    $('#scan-upload-btn').addEventListener('click', function () { $('#scan-upload').click(); });
+    function onScanChange() { if (this.files && this.files[0]) handleScanFile(this.files[0]); this.value = ''; }
+    $('#scan-camera').addEventListener('change', onScanChange);
+    $('#scan-upload').addEventListener('change', onScanChange);
     $('#m-next').addEventListener('click', manualNext);
     $('#p-grams').addEventListener('input', updatePortion);
     $('#unit-serving').addEventListener('click', function () { setPortionUnit('serving'); });
