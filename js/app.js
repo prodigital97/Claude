@@ -1658,9 +1658,39 @@
     });
   }
 
+  // Compress to a JPEG base64 string for the AI scanner payload.
+  function compressImage(file) {
+    return new Promise(function (res, rej) {
+      var img = new Image();
+      img.onload = function () {
+        var scale = Math.min(1, 1100 / img.width);
+        var w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        var c = document.createElement('canvas'); c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        try { res(c.toDataURL('image/jpeg', 0.7).split(',')[1]); }
+        catch (e) { rej(new Error('Could not read this image.')); }
+      };
+      img.onerror = function () { rej(new Error('Could not open this image.')); };
+      img.src = URL.createObjectURL(file);
+    });
+  }
+  function scanWithGemini(file) {
+    scanStatus('Sending to AI…');
+    compressImage(file).then(function (b64) {
+      return api('scanLabel', { image: b64, mime: 'image/jpeg' });
+    }).then(function (d) {
+      var any = false;
+      function put(sel, v, intval) { if (v) { $(sel).value = intval ? Math.round(v) : Math.round(v * 10) / 10; any = true; } }
+      put('#m-cal', d.calories, true); put('#m-protein', d.protein); put('#m-carbs', d.carbs); put('#m-fat', d.fat); put('#m-sugar', d.sugar);
+      if (d.name && !$('#m-name').value) $('#m-name').value = d.name;
+      scanStatus(any ? 'AI read ✓ — check the values, then add.' : 'AI couldn’t find nutrition values on this image.');
+    }).catch(function (e) { scanStatus(e.message || 'AI scan failed.'); });
+  }
+
   function handleScanFile(file) {
     if (!file) return;
     $('#food-manual').classList.remove('hidden');
+    if ($('#ai-scan') && $('#ai-scan').checked) { scanWithGemini(file); return; }
     scanStatus('Loading scanner…');
     var imgSource = file;
     loadTesseract()
@@ -1724,6 +1754,8 @@
     function onScanChange() { if (this.files && this.files[0]) handleScanFile(this.files[0]); this.value = ''; }
     $('#scan-camera').addEventListener('change', onScanChange);
     $('#scan-upload').addEventListener('change', onScanChange);
+    $('#ai-scan').checked = localStorage.getItem('hard_aiscan') === '1';
+    $('#ai-scan').addEventListener('change', function () { localStorage.setItem('hard_aiscan', this.checked ? '1' : '0'); });
     $('#m-next').addEventListener('click', manualNext);
     $('#p-grams').addEventListener('input', updatePortion);
     $('#unit-serving').addEventListener('click', function () { setPortionUnit('serving'); });

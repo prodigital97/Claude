@@ -116,6 +116,20 @@ Apps Script backend proxies it.
 Now searches hit FatSecret first and fall back to Open Food Facts automatically. If the properties aren't set,
 the app just uses Open Food Facts as before.
 
+## Optional: AI nutrition-label scanner (Gemini)
+
+The custom-food form has a **📷 Scan a nutrition label** option. By default it uses free on-device OCR
+(Tesseract.js) — fine for clean black-on-white labels, unreliable on glossy/coloured ones. For accurate
+reads, enable the **✨ AI high-accuracy** toggle, which sends the image through your Apps Script to Google's
+**Gemini** vision model.
+
+1. Get a free API key at <https://aistudio.google.com> → *Get API key*.
+2. Apps Script editor → **Project Settings (⚙) → Script properties** → add `GEMINI_API_KEY` = your key.
+3. Paste the latest `Code.gs`, **Deploy → Manage deployments → ✏️ → New version → Deploy.**
+
+Cost is ~₹0.01–0.03 per scan (the free tier likely covers a small group at no cost). Unlike FatSecret,
+Gemini needs **no IP whitelist** — the key alone works.
+
 ## Updating the backend after a code change
 
 When `apps-script/Code.gs` changes (e.g. new features like the diet tracker), update your deployed script:

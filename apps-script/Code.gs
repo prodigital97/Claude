@@ -16,6 +16,7 @@
 
 var WATER_GOAL_ML = 4000;         // 4 L (comfortably meets the 1-gallon rule)
 var CHALLENGE_LENGTH = 75;        // days
+var GEMINI_MODEL = 'gemini-2.0-flash';   // cheap vision model for label scanning
 var USERS_SHEET = 'Users';
 var LOGS_SHEET = 'Logs';
 
@@ -69,6 +70,7 @@ function doPost(e) {
       case 'getCustomFoods': data = handleGetCustomFoods(body); break;
       case 'addCustomFood':  data = handleAddCustomFood(body);  break;
       case 'foodSearch':     data = handleFoodSearch(body);     break;
+      case 'scanLabel':      data = handleScanLabel(body);      break;
       case 'startFast':  data = handleStartFast(body);  break;
       case 'endFast':    data = handleEndFast(body);    break;
       case 'getFasts':   data = handleGetFasts(body);   break;
@@ -468,6 +470,49 @@ function parseFsDesc(desc) {
   return { kcal: Math.round(kcal), p: round1(protein), c: round1(carbs), f: round1(fat) };
 }
 function fsNum(s, re) { var m = s.match(re); return m ? Number(m[1]) : 0; }
+
+/* ---------------- Gemini AI label scanner ---------------- *
+ * Set GEMINI_API_KEY in Project Settings -> Script properties.
+ * Get a free key at https://aistudio.google.com  (no IP whitelist needed).
+ * ------------------------------------------------------------ */
+function handleScanLabel(body) {
+  authUser(body);
+  var key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!key) throw new Error('AI scanner not set up (missing GEMINI_API_KEY).');
+  var img = String(body.image || '');
+  if (!img) throw new Error('No image received.');
+  var mime = String(body.mime || 'image/jpeg');
+
+  var prompt = 'You are reading a packaged-food nutrition label. Return ONLY JSON: ' +
+    '{"name":string,"calories":number,"protein":number,"carbs":number,"fat":number,"sugar":number}. ' +
+    'All values must be PER 100 g (or per 100 ml). If the label shows values per serving, convert to per 100 ' +
+    'using the serving size on the label. Use total fat and total sugar. Use 0 for any value not shown. ' +
+    'Numbers only, no units. name = product name if visible, else "".';
+
+  var payload = {
+    contents: [{ parts: [ { text: prompt }, { inline_data: { mime_type: mime, data: img } } ] }],
+    generationConfig: { temperature: 0, responseMimeType: 'application/json' }
+  };
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + encodeURIComponent(key);
+  var resp = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', payload: JSON.stringify(payload), muteHttpExceptions: true });
+  var data = JSON.parse(resp.getContentText() || '{}');
+  if (data.error) throw new Error('Gemini: ' + (data.error.message || 'request failed'));
+
+  var txt = '';
+  try { txt = data.candidates[0].content.parts[0].text; } catch (e) { throw new Error('No response from the AI.'); }
+  var parsed;
+  try { parsed = JSON.parse(txt); }
+  catch (e) { var m = txt.match(/\{[\s\S]*\}/); parsed = m ? JSON.parse(m[0]) : {}; }
+
+  return {
+    name: String(parsed.name || ''),
+    calories: Number(parsed.calories) || 0,
+    protein: Number(parsed.protein) || 0,
+    carbs: Number(parsed.carbs) || 0,
+    fat: Number(parsed.fat) || 0,
+    sugar: Number(parsed.sugar) || 0
+  };
+}
 
 /* Run this from the editor after setting the script properties to verify the key. */
 function testFatSecret() {
