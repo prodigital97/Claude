@@ -132,6 +132,25 @@ disables Gemini 2.5's billed "thinking" tokens (`thinkingBudget: 0`), caps the r
 app downsizes the photo before sending, so each scan stays cheap. (The free tier likely covers a small
 group at no cost.) Unlike FatSecret, Gemini needs **no IP whitelist** — the key alone works.
 
+Every scan is logged to a `ScanLog` sheet with its token usage and an estimated cost (in ₹), which
+powers the **Admin dashboard** (below). To tune the rupee figure, set a `USD_INR` script property
+(defaults to 86).
+
+## Admin dashboard
+
+Usernames in the `ADMIN_USERS` list at the top of `apps-script/Code.gs` (default: `pronoy`) get an
+**🛠 Admin dashboard** button in **Settings**. It has three tabs:
+
+- **Scan costs** — total scans, total/average/this-month cost in ₹, average tokens, plus breakdowns by
+  user and by model, and a list of recent scans.
+- **Users** — everyone using the app, with their current day, streak, completed days, today's progress,
+  number of food logs, start date and last-active date.
+- **Scanned foods** — the full shared `CustomFoods` directory; edit **any** nutrition value (the full
+  per-100g panel) inline and tap **Save**, or **Delete** an entry. Useful for fixing the odd mis-read.
+
+Admin actions are enforced on the backend too — a non-admin token is rejected even if it calls the API
+directly. To add more admins, append their (lowercase) usernames to `ADMIN_USERS` and redeploy.
+
 ## Updating the backend after a code change
 
 When `apps-script/Code.gs` changes (e.g. new features like the diet tracker), update your deployed script:

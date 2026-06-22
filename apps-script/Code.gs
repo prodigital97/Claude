@@ -36,6 +36,18 @@ var FAST_HEADERS = ['id', 'username', 'startAt', 'endAt', 'goalHours', 'createdA
 var CUSTOM_HEADERS = ['id', 'name', 'kcal', 'protein', 'carbs', 'fat', 'sugar', 'createdBy', 'createdAt',
                       'satFat', 'transFat', 'fiber', 'addedSugar', 'sodium', 'cholesterol', 'calcium', 'iron', 'servingSize', 'dataJson'];
 
+// Admin dashboard: usernames listed here get access to /admin actions.
+var ADMIN_USERS = ['pronoy'];
+var SCAN_SHEET = 'ScanLog';
+var SCAN_HEADERS = ['id', 'at', 'username', 'name', 'model', 'images', 'promptTokens', 'outputTokens', 'totalTokens', 'costUsd', 'costInr'];
+// Gemini pricing (USD per 1M tokens). Used to estimate per-scan cost.
+var GEMINI_PRICES = {
+  'gemini-2.5-flash-lite': { in: 0.10, out: 0.40 },
+  'gemini-flash-lite-latest': { in: 0.10, out: 0.40 },
+  'gemini-2.5-flash': { in: 0.30, out: 2.50 },
+  'gemini-flash-latest': { in: 0.30, out: 2.50 }
+};
+
 /* ----------------------------------------------------------------------- *
  *  HTTP entry points
  * ----------------------------------------------------------------------- */
@@ -72,6 +84,11 @@ function doPost(e) {
       case 'addCustomFood':  data = handleAddCustomFood(body);  break;
       case 'foodSearch':     data = handleFoodSearch(body);     break;
       case 'scanLabel':      data = handleScanLabel(body);      break;
+      case 'adminScans':      data = handleAdminScans(body);      break;
+      case 'adminUsers':      data = handleAdminUsers(body);      break;
+      case 'adminFoods':      data = handleAdminFoods(body);      break;
+      case 'adminUpdateFood': data = handleAdminUpdateFood(body); break;
+      case 'adminDeleteFood': data = handleAdminDeleteFood(body); break;
       case 'startFast':  data = handleStartFast(body);  break;
       case 'endFast':    data = handleEndFast(body);    break;
       case 'getFasts':   data = handleGetFasts(body);   break;
@@ -542,7 +559,7 @@ function handleScanLabel(body) {
   // model is temporarily overloaded (503). Each model gets a couple of quick
   // retries with backoff before we move on to the next one.
   var models = dedupe([GEMINI_MODEL, 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash']);
-  var txt = null, lastErr = '';
+  var txt = null, lastErr = '', usedModel = '', usage = null;
   outer:
   for (var i = 0; i < models.length; i++) {
     var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent?key=' + encodeURIComponent(key);
@@ -560,7 +577,8 @@ function handleScanLabel(body) {
         }
         throw new Error('Gemini: ' + lastErr);
       }
-      try { txt = data.candidates[0].content.parts[0].text; break outer; } catch (e) { lastErr = 'No response from the AI.'; break; }
+      try { txt = data.candidates[0].content.parts[0].text; usedModel = models[i]; usage = data.usageMetadata || null; break outer; }
+      catch (e) { lastErr = 'No response from the AI.'; break; }
     }
   }
   if (txt == null) throw new Error('Gemini is busy right now — please try again in a moment. (' + lastErr + ')');
@@ -569,12 +587,189 @@ function handleScanLabel(body) {
   try { p = JSON.parse(txt); }
   catch (e) { var m = txt.match(/\{[\s\S]*\}/); p = m ? JSON.parse(m[0]) : {}; }
   function n(x) { return Number(x) || 0; }
-  return {
+  var result = {
     name: String(p.name || ''), servingSize: String(p.servingSize || ''),
     calories: n(p.calories), protein: n(p.protein), carbs: n(p.carbs), fat: n(p.fat), sugar: n(p.sugar),
     addedSugar: n(p.addedSugar), saturatedFat: n(p.saturatedFat), transFat: n(p.transFat),
     fiber: n(p.fiber), sodium: n(p.sodium), cholesterol: n(p.cholesterol), calcium: n(p.calcium), iron: n(p.iron)
   };
+  try { logScan(body, usedModel, imgs.length, usage, result.name); } catch (e) { /* logging must never break a scan */ }
+  return result;
+}
+
+/* Record one scan in the ScanLog sheet with its token usage and estimated cost. */
+function logScan(body, model, imageCount, usage, name) {
+  var promptTok = usage ? (Number(usage.promptTokenCount) || 0) : 0;
+  var outTok = usage ? (Number(usage.candidatesTokenCount) || 0) : 0;
+  var totalTok = usage ? (Number(usage.totalTokenCount) || (promptTok + outTok)) : 0;
+  var price = GEMINI_PRICES[model] || { in: 0.10, out: 0.40 };
+  var costUsd = (promptTok / 1e6) * price.in + (outTok / 1e6) * price.out;
+  var rate = Number(PropertiesService.getScriptProperties().getProperty('USD_INR')) || 86;
+  var costInr = costUsd * rate;
+  var sheet = getSheet(SCAN_SHEET, SCAN_HEADERS);
+  sheet.appendRow([
+    Utilities.getUuid(), new Date().toISOString(), normalizeUsername(body.username), String(name || ''),
+    model, imageCount, promptTok, outTok, totalTok,
+    Math.round(costUsd * 1e6) / 1e6, Math.round(costInr * 1000) / 1000
+  ]);
+}
+
+/* ---------------- Admin dashboard ---------------- */
+
+function requireAdmin(body) {
+  var user = authUser(body);
+  if (ADMIN_USERS.indexOf(user.username) < 0) throw new Error('Admin access only.');
+  return user;
+}
+
+function handleAdminScans(body) {
+  requireAdmin(body);
+  var rows = getSheet(SCAN_SHEET, SCAN_HEADERS).getDataRange().getValues();
+  var idx = colIndex(SCAN_HEADERS);
+  var monthPrefix = new Date().toISOString().slice(0, 7);   // YYYY-MM
+  var totalInr = 0, totalUsd = 0, monthInr = 0, count = 0, tokens = 0;
+  var byUser = {}, byModel = {}, recent = [];
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (!r[idx.at]) continue;
+    count++;
+    var inr = Number(r[idx.costInr]) || 0, usd = Number(r[idx.costUsd]) || 0;
+    totalInr += inr; totalUsd += usd; tokens += Number(r[idx.totalTokens]) || 0;
+    if (String(r[idx.at]).slice(0, 7) === monthPrefix) monthInr += inr;
+    var u = String(r[idx.username] || 'unknown');
+    if (!byUser[u]) byUser[u] = { username: u, scans: 0, costInr: 0 };
+    byUser[u].scans++; byUser[u].costInr += inr;
+    var m = String(r[idx.model] || '?');
+    if (!byModel[m]) byModel[m] = { model: m, scans: 0, costInr: 0 };
+    byModel[m].scans++; byModel[m].costInr += inr;
+    recent.push({
+      at: String(r[idx.at]), username: u, name: String(r[idx.name] || ''),
+      model: m, images: Number(r[idx.images]) || 1,
+      tokens: Number(r[idx.totalTokens]) || 0, costInr: Math.round(inr * 1000) / 1000
+    });
+  }
+  recent.sort(function (a, b) { return a.at < b.at ? 1 : -1; });
+  function arr(o) { return Object.keys(o).map(function (k) { return o[k]; }).sort(function (a, b) { return b.costInr - a.costInr; }); }
+  return {
+    totalScans: count,
+    totalCostInr: Math.round(totalInr * 100) / 100,
+    totalCostUsd: Math.round(totalUsd * 1e5) / 1e5,
+    monthCostInr: Math.round(monthInr * 100) / 100,
+    avgCostInr: count ? Math.round((totalInr / count) * 1000) / 1000 : 0,
+    avgTokens: count ? Math.round(tokens / count) : 0,
+    byUser: arr(byUser), byModel: arr(byModel),
+    recent: recent.slice(0, 50)
+  };
+}
+
+function handleAdminUsers(body) {
+  requireAdmin(body);
+  var today = todayStr();
+  var users = getSheet(USERS_SHEET, USER_HEADERS).getDataRange().getValues();
+  var uIdx = colIndex(USER_HEADERS);
+
+  var logRows = getSheet(LOGS_SHEET, LOG_HEADERS).getDataRange().getValues();
+  var lIdx = colIndex(LOG_HEADERS);
+  var logsByUser = {};
+  for (var a = 1; a < logRows.length; a++) {
+    var un = normalizeUsername(logRows[a][lIdx.username]);
+    if (!un) continue;
+    (logsByUser[un] = logsByUser[un] || []).push(logFromRow(logRows[a], lIdx));
+  }
+  var foodRows = getSheet(FOOD_SHEET, FOOD_HEADERS).getDataRange().getValues();
+  var fIdx = colIndex(FOOD_HEADERS);
+  var foodCount = {};
+  for (var b = 1; b < foodRows.length; b++) {
+    var fu = normalizeUsername(foodRows[b][fIdx.username]);
+    if (fu) foodCount[fu] = (foodCount[fu] || 0) + 1;
+  }
+
+  var out = [];
+  for (var i = 1; i < users.length; i++) {
+    var u = users[i];
+    var name = normalizeUsername(u[uIdx.username]);
+    if (!name) continue;
+    var logs = (logsByUser[name] || []).sort(function (x, y) { return x.date < y.date ? -1 : 1; });
+    var start = formatDate(u[uIdx.startDate]);
+    var doneDates = {};
+    logs.forEach(function (l) { if (l.completed && l.date >= start && l.date <= today) doneDates[l.date] = true; });
+    var lastActive = logs.length ? logs[logs.length - 1].date : '';
+    var todayLog = logs.filter(function (l) { return l.date === today; })[0];
+    out.push({
+      username: name,
+      displayName: u[uIdx.displayName] || name,
+      startDate: start,
+      createdAt: String(u[uIdx.createdAt] || ''),
+      currentDay: dayNumberFor(u[uIdx.startDate], today),
+      completedDays: Object.keys(doneDates).length,
+      streak: currentStreak(logs),
+      lastActive: lastActive,
+      todayDone: todayLog ? tasksDoneCount(todayLog) : 0,
+      foodLogs: foodCount[name] || 0,
+      isAdmin: ADMIN_USERS.indexOf(name) >= 0
+    });
+  }
+  out.sort(function (a, b) { return (b.lastActive || '').localeCompare(a.lastActive || ''); });
+  return { users: out, total: out.length };
+}
+
+function handleAdminFoods(body) {
+  requireAdmin(body);
+  var sheet = getSheet(CUSTOM_SHEET, CUSTOM_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(CUSTOM_HEADERS);
+  var out = [];
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    if (!r[idx.name]) continue;
+    out.push({
+      id: String(r[idx.id]), name: String(r[idx.name]),
+      kcal: Number(r[idx.kcal]) || 0, protein: Number(r[idx.protein]) || 0,
+      carbs: Number(r[idx.carbs]) || 0, fat: Number(r[idx.fat]) || 0, sugar: Number(r[idx.sugar]) || 0,
+      satFat: Number(r[idx.satFat]) || 0, transFat: Number(r[idx.transFat]) || 0,
+      fiber: Number(r[idx.fiber]) || 0, addedSugar: Number(r[idx.addedSugar]) || 0,
+      sodium: Number(r[idx.sodium]) || 0, cholesterol: Number(r[idx.cholesterol]) || 0,
+      calcium: Number(r[idx.calcium]) || 0, iron: Number(r[idx.iron]) || 0,
+      servingSize: String(r[idx.servingSize] || ''),
+      createdBy: String(r[idx.createdBy] || ''), createdAt: String(r[idx.createdAt] || '')
+    });
+  }
+  out.sort(function (a, b) { return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : 1; });
+  return { foods: out, total: out.length };
+}
+
+function handleAdminUpdateFood(body) {
+  requireAdmin(body);
+  var id = String(body.id || '');
+  if (!id) throw new Error('Food id required.');
+  var sheet = getSheet(CUSTOM_SHEET, CUSTOM_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(CUSTOM_HEADERS);
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idx.id]) !== id) continue;
+    var numCols = ['kcal', 'protein', 'carbs', 'fat', 'sugar', 'satFat', 'transFat', 'fiber',
+                   'addedSugar', 'sodium', 'cholesterol', 'calcium', 'iron'];
+    numCols.forEach(function (c) {
+      if (body[c] !== undefined && body[c] !== '') sheet.getRange(i + 1, idx[c] + 1).setValue(Number(body[c]) || 0);
+    });
+    if (body.name !== undefined && String(body.name).trim()) sheet.getRange(i + 1, idx.name + 1).setValue(String(body.name).trim());
+    if (body.servingSize !== undefined) sheet.getRange(i + 1, idx.servingSize + 1).setValue(String(body.servingSize));
+    return { ok: true, id: id };
+  }
+  throw new Error('Food not found.');
+}
+
+function handleAdminDeleteFood(body) {
+  requireAdmin(body);
+  var id = String(body.id || '');
+  if (!id) throw new Error('Food id required.');
+  var sheet = getSheet(CUSTOM_SHEET, CUSTOM_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(CUSTOM_HEADERS);
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idx.id]) === id) { sheet.deleteRow(i + 1); return { ok: true, id: id }; }
+  }
+  throw new Error('Food not found.');
 }
 function dedupe(arr) { var s = {}, o = []; arr.forEach(function (x) { if (!s[x]) { s[x] = 1; o.push(x); } }); return o; }
 

@@ -22,6 +22,8 @@
     { key: 'noAlcohol', emoji: '🚫', title: 'No alcohol',       sub: 'Zero, none' }
   ];
   var TOTAL_ITEMS = TASKS.length + 1; // + water
+  var ADMIN_USERS = ['pronoy']; // who sees the admin dashboard (backend enforces too)
+  function isAdmin() { return !!state.user && ADMIN_USERS.indexOf(String(state.user.username || '').toLowerCase()) >= 0; }
 
   /* ---------------- state ---------------- */
   var state = {
@@ -421,6 +423,21 @@
     $('#bf-sex').addEventListener('change', function () {
       $('#bf-hip-wrap').classList.toggle('hidden', this.value !== 'female');
     });
+    // Admin dashboard
+    $('#open-admin').addEventListener('click', function () { switchView('admin'); });
+    $('#admin-back').addEventListener('click', function () { switchView('settings'); });
+    document.querySelectorAll('#admin-tabs [data-atab]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('#admin-tabs [data-atab]').forEach(function (x) { x.classList.toggle('active', x === b); });
+        ['scans', 'users', 'foods'].forEach(function (t) { $('#admin-pane-' + t).classList.toggle('hidden', t !== b.dataset.atab); });
+      });
+    });
+    $('#admin-food-filter').addEventListener('input', function () { renderAdminFoods(); });
+    $('#admin-foods-list').addEventListener('click', function (e) {
+      var save = e.target.closest('[data-save]'); var del = e.target.closest('[data-del]');
+      if (save) adminSaveFood(save.getAttribute('data-save'), save);
+      if (del) adminDeleteFood(del.getAttribute('data-del'));
+    });
     bindDietEvents();
   }
 
@@ -437,6 +454,7 @@
     if (name === 'board') renderBoard();
     if (name === 'calc') renderCalc();
     if (name === 'settings') renderSettings();
+    if (name === 'admin') renderAdmin();
     window.scrollTo(0, 0);
   }
 
@@ -875,6 +893,7 @@
   function renderSettings() {
     $('#set-displayname').value = state.user.displayName;
     $('#set-username').textContent = state.user.username;
+    $('#admin-entry').classList.toggle('hidden', !isAdmin());
     var sd = fmt(parse(state.user.startDate));
     // Guard against a corrupted/ancient stored date (e.g. year 2000) — show today instead.
     if (sd < '2025-01-01' || sd > todayStr()) sd = todayStr();
@@ -1995,6 +2014,117 @@
       s.addEventListener('click', function () { applyTheme(t.id); renderThemes(); });
       grid.appendChild(s);
     });
+  }
+
+  /* ---------------- Admin dashboard ---------------- */
+  function renderAdmin() {
+    if (!isAdmin()) { switchView('today'); return; }
+    $('#admin-scan-cards').innerHTML = '<p class="muted tiny">Loading…</p>';
+    $('#admin-users-list').innerHTML = '<p class="muted tiny">Loading…</p>';
+    $('#admin-foods-list').innerHTML = '<p class="muted tiny">Loading…</p>';
+    api('adminScans', {}).then(renderAdminScans).catch(function (e) { $('#admin-scan-cards').innerHTML = '<p class="muted tiny">' + (e.message || 'Failed') + '</p>'; });
+    api('adminUsers', {}).then(renderAdminUsers).catch(function (e) { $('#admin-users-list').innerHTML = '<p class="muted tiny">' + (e.message || 'Failed') + '</p>'; });
+    api('adminFoods', {}).then(function (d) { state.adminFoods = d.foods || []; renderAdminFoods(); })
+      .catch(function (e) { $('#admin-foods-list').innerHTML = '<p class="muted tiny">' + (e.message || 'Failed') + '</p>'; });
+  }
+
+  function inr(v) { return '₹' + (Number(v) || 0).toFixed(Math.abs(v) >= 1 ? 2 : 3); }
+
+  function renderAdminScans(d) {
+    var cards = [
+      ['Total scans', d.totalScans || 0],
+      ['Total cost', inr(d.totalCostInr)],
+      ['Avg / scan', inr(d.avgCostInr)],
+      ['This month', inr(d.monthCostInr)],
+      ['Avg tokens', (d.avgTokens || 0).toLocaleString()],
+      ['≈ USD total', '$' + (Number(d.totalCostUsd) || 0).toFixed(4)]
+    ];
+    $('#admin-scan-cards').innerHTML = cards.map(function (c) {
+      return '<div class="stat"><div class="num">' + c[1] + '</div><div class="lbl">' + c[0] + '</div></div>';
+    }).join('');
+
+    $('#admin-scan-byuser').innerHTML = (d.byUser || []).length
+      ? d.byUser.map(function (u) {
+          return '<div class="admin-row"><span>' + esc(u.username) + '</span><span class="amono">' + u.scans + ' · ' + inr(u.costInr) + '</span></div>';
+        }).join('')
+      : '<p class="muted tiny">No scans yet.</p>';
+
+    $('#admin-scan-bymodel').innerHTML = (d.byModel || []).length
+      ? d.byModel.map(function (m) {
+          return '<div class="admin-row"><span>' + esc(m.model) + '</span><span class="amono">' + m.scans + ' · ' + inr(m.costInr) + '</span></div>';
+        }).join('')
+      : '<p class="muted tiny">—</p>';
+
+    $('#admin-scan-recent').innerHTML = (d.recent || []).length
+      ? d.recent.map(function (r) {
+          var when = String(r.at || '').slice(0, 16).replace('T', ' ');
+          var label = (r.name || '(unnamed)') + (r.images > 1 ? ' · ' + r.images + ' imgs' : '');
+          return '<div class="admin-row"><span>' + esc(label) + '<br><span class="muted tiny">' + when + ' · ' + esc(r.username) + ' · ' + r.tokens.toLocaleString() + ' tok</span></span>' +
+                 '<span class="amono">' + inr(r.costInr) + '</span></div>';
+        }).join('')
+      : '<p class="muted tiny">No scans yet.</p>';
+  }
+
+  function renderAdminUsers(d) {
+    var list = $('#admin-users-list');
+    if (!d.users || !d.users.length) { list.innerHTML = '<p class="muted tiny">No users.</p>'; return; }
+    list.innerHTML = '<p class="muted tiny" style="margin:2px">' + d.total + ' user' + (d.total === 1 ? '' : 's') + '</p>' +
+      d.users.map(function (u) {
+        return '<div class="admin-user"><div class="au-top"><span class="au-name">' + esc(u.displayName) +
+          (u.isAdmin ? ' <span class="muted tiny">· admin</span>' : '') + '</span>' +
+          '<span class="muted tiny">Day ' + u.currentDay + '</span></div>' +
+          '<div class="au-sub">@' + esc(u.username) + ' · 🔥 ' + u.streak + ' streak · ✅ ' + u.completedDays + ' days done · today ' + u.todayDone + '/7<br>' +
+          '🍽 ' + u.foodLogs + ' food logs · started ' + esc(u.startDate) + ' · last active ' + (u.lastActive ? esc(u.lastActive) : '—') + '</div></div>';
+      }).join('');
+  }
+
+  function renderAdminFoods() {
+    var list = $('#admin-foods-list');
+    var all = state.adminFoods || [];
+    var q = ($('#admin-food-filter').value || '').trim().toLowerCase();
+    var foods = q ? all.filter(function (f) { return f.name.toLowerCase().indexOf(q) >= 0; }) : all;
+    if (!foods.length) { list.innerHTML = '<p class="muted tiny">' + (all.length ? 'No matches.' : 'No scanned foods yet.') + '</p>'; return; }
+    var fields = [
+      ['kcal', 'Cal'], ['protein', 'Protein'], ['carbs', 'Carbs'], ['fat', 'Fat'], ['sugar', 'Sugar'],
+      ['satFat', 'Sat fat'], ['transFat', 'Trans'], ['fiber', 'Fibre'], ['addedSugar', 'Add sugar'],
+      ['sodium', 'Sodium'], ['cholesterol', 'Chol'], ['calcium', 'Calcium'], ['iron', 'Iron']
+    ];
+    list.innerHTML = foods.map(function (f) {
+      var grid = fields.map(function (fl) {
+        return '<label>' + fl[1] + '<input type="number" inputmode="decimal" data-f="' + fl[0] + '" value="' + (f[fl[0]] || 0) + '" /></label>';
+      }).join('');
+      return '<div class="admin-food" data-id="' + esc(f.id) + '">' +
+        '<div class="af-head"><input data-f="name" value="' + esc(f.name) + '" /></div>' +
+        '<div class="af-grid">' + grid +
+        '<label>Serving<input data-f="servingSize" value="' + esc(f.servingSize || '') + '" /></label></div>' +
+        '<div class="af-meta">by ' + esc(f.createdBy || '—') + ' · ' + String(f.createdAt || '').slice(0, 10) + '</div>' +
+        '<div class="af-actions"><button class="btn primary" data-save="' + esc(f.id) + '">Save</button>' +
+        '<button class="btn danger" data-del="' + esc(f.id) + '">Delete</button></div></div>';
+    }).join('');
+  }
+
+  function adminSaveFood(id, btn) {
+    var card = btn.closest('.admin-food'); if (!card) return;
+    var patch = { id: id };
+    card.querySelectorAll('[data-f]').forEach(function (el) { patch[el.getAttribute('data-f')] = el.value; });
+    btn.disabled = true; btn.textContent = 'Saving…';
+    api('adminUpdateFood', patch).then(function () {
+      btn.textContent = 'Saved ✓';
+      // reflect locally so a re-filter keeps the new values
+      var rec = (state.adminFoods || []).filter(function (x) { return x.id === id; })[0];
+      if (rec) Object.keys(patch).forEach(function (k) { if (k !== 'id') rec[k] = k === 'name' || k === 'servingSize' ? patch[k] : (Number(patch[k]) || 0); });
+      setTimeout(function () { btn.disabled = false; btn.textContent = 'Save'; }, 1200);
+      toast('Saved ✓');
+    }).catch(function (e) { btn.disabled = false; btn.textContent = 'Save'; toast(e.message); });
+  }
+
+  function adminDeleteFood(id) {
+    var rec = (state.adminFoods || []).filter(function (x) { return x.id === id; })[0];
+    if (!confirm('Delete "' + (rec ? rec.name : 'this food') + '" from the shared directory? This can’t be undone.')) return;
+    api('adminDeleteFood', { id: id }).then(function () {
+      state.adminFoods = (state.adminFoods || []).filter(function (x) { return x.id !== id; });
+      renderAdminFoods(); toast('Deleted');
+    }).catch(function (e) { toast(e.message); });
   }
 
   /* ---------------- Start ---------------- */

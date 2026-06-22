@@ -291,6 +291,11 @@
       <!-- SETTINGS -->
       <div id="view-settings" class="view hidden">
         <h2 class="view-title">Settings</h2>
+        <div class="card admin-entry hidden" id="admin-entry">
+          <h3>🛠 Admin dashboard</h3>
+          <p class="muted tiny">Scan costs, user activity and the scanned-food directory.</p>
+          <button id="open-admin" class="btn primary block">Open admin dashboard</button>
+        </div>
         <div class="card">
           <label>Display name
             <input id="set-displayname" />
@@ -372,6 +377,34 @@
         </div>
 
         <p class="muted tiny center" id="set-version"></p>
+      </div>
+
+      <!-- ADMIN (Pronoy only) -->
+      <div id="view-admin" class="view hidden">
+        <button id="admin-back" class="btn link-btn">‹ Back to settings</button>
+        <h2 class="view-title">Admin dashboard</h2>
+        <div class="seg" id="admin-tabs">
+          <button data-atab="scans" class="active">Scan costs</button>
+          <button data-atab="users">Users</button>
+          <button data-atab="foods">Scanned foods</button>
+        </div>
+
+        <div id="admin-pane-scans" class="admin-pane">
+          <div id="admin-scan-cards" class="stats-grid"></div>
+          <div class="card"><h3>By user</h3><div id="admin-scan-byuser"></div></div>
+          <div class="card"><h3>By model</h3><div id="admin-scan-bymodel"></div></div>
+          <div class="card"><h3>Recent scans</h3><div id="admin-scan-recent"></div></div>
+        </div>
+
+        <div id="admin-pane-users" class="admin-pane hidden">
+          <div id="admin-users-list"></div>
+        </div>
+
+        <div id="admin-pane-foods" class="admin-pane hidden">
+          <input id="admin-food-filter" placeholder="Filter scanned foods…" autocapitalize="none" />
+          <p class="muted tiny" style="margin:6px 2px">Edit any value and tap Save. Values are <b>per 100 g / 100 ml</b>.</p>
+          <div id="admin-foods-list"></div>
+        </div>
       </div>
     </main>
 
