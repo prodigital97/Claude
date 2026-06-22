@@ -987,6 +987,17 @@ function getSheet(name, headers) {
   } else if (sheet.getLastRow() === 0) {
     sheet.appendRow(headers);
     sheet.setFrozenRows(1);
+  } else {
+    // Backfill headers if columns were added after this sheet was first created
+    // (e.g. CustomFoods gained the extra nutrition columns). Only the header row
+    // is rewritten — data rows are untouched.
+    var existing = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), headers.length)).getValues()[0];
+    var needs = false;
+    for (var i = 0; i < headers.length; i++) { if (String(existing[i] || '') !== String(headers[i])) { needs = true; break; } }
+    if (needs) {
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.setFrozenRows(1);
+    }
   }
   return sheet;
 }

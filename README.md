@@ -170,10 +170,11 @@ Everything lives in your Google Sheet, in two tabs:
 | id | username | startAt | endAt | goalHours | createdAt |
 |----|----------|---------|-------|-----------|-----------|
 
-**`CustomFoods`** (shared custom foods — once anyone adds one, everyone can search it)
+**`CustomFoods`** (shared custom foods — once anyone adds one, everyone can search it). The first 9
+columns drive the app; the rest build a fuller nutrition dataset from scanned labels.
 
-| id | name | kcal | protein | carbs | fat | sugar | createdBy | createdAt |
-|----|------|------|---------|-------|-----|-------|-----------|-----------|
+| id | name | kcal | protein | carbs | fat | sugar | createdBy | createdAt | satFat | transFat | fiber | addedSugar | sodium | cholesterol | calcium | iron | servingSize | dataJson |
+|----|------|------|---------|-------|-----|-------|-----------|-----------|--------|----------|-------|------------|--------|-------------|---------|------|-------------|----------|
 
 You can open the sheet any time to view, chart, or export your data — the app writes to it live.
 
