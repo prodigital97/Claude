@@ -127,8 +127,10 @@ reads, enable the **✨ AI high-accuracy** toggle, which sends the image through
 2. Apps Script editor → **Project Settings (⚙) → Script properties** → add `GEMINI_API_KEY` = your key.
 3. Paste the latest `Code.gs`, **Deploy → Manage deployments → ✏️ → New version → Deploy.**
 
-Cost is ~₹0.01–0.03 per scan (the free tier likely covers a small group at no cost). Unlike FatSecret,
-Gemini needs **no IP whitelist** — the key alone works.
+Cost is roughly **₹0.02–0.05 per scan** with the default `gemini-2.5-flash-lite` model. The backend
+disables Gemini 2.5's billed "thinking" tokens (`thinkingBudget: 0`), caps the reply length, and the
+app downsizes the photo before sending, so each scan stays cheap. (The free tier likely covers a small
+group at no cost.) Unlike FatSecret, Gemini needs **no IP whitelist** — the key alone works.
 
 ## Updating the backend after a code change
 

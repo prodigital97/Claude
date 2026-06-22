@@ -16,7 +16,7 @@
 
 var WATER_GOAL_ML = 4000;         // 4 L (comfortably meets the 1-gallon rule)
 var CHALLENGE_LENGTH = 75;        // days
-var GEMINI_MODEL = 'gemini-2.5-flash';   // cheap vision model for label scanning
+var GEMINI_MODEL = 'gemini-2.5-flash-lite';   // cheapest vision model for label scanning
 var USERS_SHEET = 'Users';
 var LOGS_SHEET = 'Logs';
 
@@ -504,11 +504,16 @@ function handleScanLabel(body) {
 
   var payload = {
     contents: [{ parts: [ { text: prompt }, { inline_data: { mime_type: mime, data: img } } ] }],
-    generationConfig: { temperature: 0, responseMimeType: 'application/json' }
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: 'application/json',
+      maxOutputTokens: 300,          // the JSON panel is tiny; cap runaway output
+      thinkingConfig: { thinkingBudget: 0 }   // disable billed "thinking" tokens (Gemini 2.5)
+    }
   };
 
   // Try the configured model, then fall back if Google has retired it.
-  var models = dedupe([GEMINI_MODEL, 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest']);
+  var models = dedupe([GEMINI_MODEL, 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash']);
   var txt = null, lastErr = '';
   for (var i = 0; i < models.length; i++) {
     var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent?key=' + encodeURIComponent(key);

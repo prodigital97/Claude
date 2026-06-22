@@ -1676,11 +1676,11 @@
     return new Promise(function (res, rej) {
       var img = new Image();
       img.onload = function () {
-        var scale = Math.min(1, 1100 / img.width);
+        var scale = Math.min(1, 1000 / img.width);
         var w = Math.round(img.width * scale), h = Math.round(img.height * scale);
         var c = document.createElement('canvas'); c.width = w; c.height = h;
         c.getContext('2d').drawImage(img, 0, 0, w, h);
-        try { res(c.toDataURL('image/jpeg', 0.7).split(',')[1]); }
+        try { res(c.toDataURL('image/jpeg', 0.6).split(',')[1]); }
         catch (e) { rej(new Error('Could not read this image.')); }
       };
       img.onerror = function () { rej(new Error('Could not open this image.')); };
