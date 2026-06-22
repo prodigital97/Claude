@@ -491,19 +491,29 @@ function handleScanLabel(body) {
   authUser(body);
   var key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
   if (!key) throw new Error('AI scanner not set up (missing GEMINI_API_KEY).');
-  var img = String(body.image || '');
-  if (!img) throw new Error('No image received.');
   var mime = String(body.mime || 'image/jpeg');
+  // Accept either a single image, or an array of images (e.g. front + back of a pack).
+  var imgs = [];
+  if (body.images && body.images.length) { for (var k = 0; k < body.images.length; k++) { var s = String(body.images[k] || ''); if (s) imgs.push(s); } }
+  else if (body.image) imgs.push(String(body.image));
+  if (!imgs.length) throw new Error('No image received.');
 
-  var prompt = 'Read this packaged-food nutrition label. Return ONLY JSON with ALL nutrients you can see, ' +
-    'each value PER 100 g (or per 100 ml). If the label shows values per serving, convert to per 100 using the ' +
-    'serving size. Use 0 for any nutrient not shown. Numbers only, no units. Schema: ' +
+  var multi = imgs.length > 1;
+  var prompt = 'These ' + (multi ? imgs.length + ' images are different sides of ONE packaged food product (e.g. the front of the pack and the back nutrition panel)' : 'image is a packaged-food label') + '. ' +
+    'Combine everything you can read across ' + (multi ? 'all images' : 'the image') + '. ' +
+    'Get the product "name" from the front-of-pack / brand text if present (e.g. "Amul Butter", "Maggi Noodles"). ' +
+    'Return ONLY JSON with ALL nutrients you can see, each value PER 100 g (or per 100 ml). ' +
+    'If the label shows values per serving, convert to per 100 using the serving size. ' +
+    'Use 0 for any nutrient not shown. Numbers only, no units. Schema: ' +
     '{"name":string,"servingSize":string,"calories":number,"protein":number,"carbs":number,"fat":number,' +
     '"sugar":number,"addedSugar":number,"saturatedFat":number,"transFat":number,"fiber":number,' +
     '"sodium":number,"cholesterol":number,"calcium":number,"iron":number}.';
 
+  var parts = [{ text: prompt }];
+  for (var j = 0; j < imgs.length; j++) parts.push({ inline_data: { mime_type: mime, data: imgs[j] } });
+
   var payload = {
-    contents: [{ parts: [ { text: prompt }, { inline_data: { mime_type: mime, data: img } } ] }],
+    contents: [{ parts: parts }],
     generationConfig: {
       temperature: 0,
       responseMimeType: 'application/json',

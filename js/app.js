@@ -1687,24 +1687,63 @@
       img.src = URL.createObjectURL(file);
     });
   }
-  function scanWithGemini(file) {
-    scanStatus('Sending to AI…');
-    compressImage(file).then(function (b64) {
-      return api('scanLabel', { image: b64, mime: 'image/jpeg' });
-    }).then(function (d) {
+  // Send one or more already-compressed base64 JPEGs to the Gemini scanner.
+  function scanWithGemini(b64list) {
+    if (!b64list || !b64list.length) return;
+    scanStatus(b64list.length > 1 ? 'Sending front + back to AI…' : 'Sending to AI…');
+    var payload = b64list.length > 1
+      ? { images: b64list, mime: 'image/jpeg' }
+      : { image: b64list[0], mime: 'image/jpeg' };
+    api('scanLabel', payload).then(function (d) {
       state.scanData = d;   // full panel kept for the backend dataset
       var any = false;
       function put(sel, v, intval) { if (v) { $(sel).value = intval ? Math.round(v) : Math.round(v * 10) / 10; any = true; } }
       put('#m-cal', d.calories, true); put('#m-protein', d.protein); put('#m-carbs', d.carbs); put('#m-fat', d.fat); put('#m-sugar', d.sugar);
       if (d.name && !$('#m-name').value) $('#m-name').value = d.name;
       scanStatus(any ? 'AI read ✓ — check the values, then add.' : 'AI couldn’t find nutrition values on this image.');
+      resetScanImages();
     }).catch(function (e) { scanStatus(e.message || 'AI scan failed.'); });
+  }
+
+  // Front + back collection (AI mode only).
+  function resetScanImages() {
+    state.scanImages = [];
+    var t = $('#scan-thumbs'); if (t) t.innerHTML = '';
+    var go = $('#scan-go-btn'); if (go) go.classList.add('hidden');
+  }
+  function renderScanThumbs() {
+    var t = $('#scan-thumbs'); if (!t) return;
+    t.innerHTML = '';
+    (state.scanImages || []).forEach(function (b64, i) {
+      var img = document.createElement('img');
+      img.src = 'data:image/jpeg;base64,' + b64;
+      img.title = (i === 0 ? 'Front' : 'Back') + ' — tap to remove';
+      img.addEventListener('click', function () {
+        state.scanImages.splice(i, 1); renderScanThumbs();
+        $('#scan-go-btn').classList.toggle('hidden', !state.scanImages.length);
+      });
+      t.appendChild(img);
+    });
+  }
+  function addScanImage(file) {
+    compressImage(file).then(function (b64) {
+      if (!state.scanImages) state.scanImages = [];
+      if (state.scanImages.length >= 2) state.scanImages.shift();   // keep latest two
+      state.scanImages.push(b64);
+      renderScanThumbs();
+      $('#scan-go-btn').classList.remove('hidden');
+      scanStatus(state.scanImages.length < 2
+        ? 'Front added ✓ — now add the back (nutrition table), then tap Scan now.'
+        : 'Front + back added ✓ — tap Scan now.');
+    }).catch(function (e) { scanStatus(e.message || 'Could not read image.'); });
   }
 
   function handleScanFile(file) {
     if (!file) return;
     $('#food-manual').classList.remove('hidden');
-    if ($('#ai-scan') && $('#ai-scan').checked) { scanWithGemini(file); return; }
+    var ai = $('#ai-scan') && $('#ai-scan').checked;
+    if (ai && $('#two-img') && $('#two-img').checked) { addScanImage(file); return; }
+    if (ai) { compressImage(file).then(function (b64) { scanWithGemini([b64]); }).catch(function (e) { scanStatus(e.message || 'AI scan failed.'); }); return; }
     scanStatus('Loading scanner…');
     var imgSource = file;
     loadTesseract()
@@ -1769,7 +1808,17 @@
     $('#scan-camera').addEventListener('change', onScanChange);
     $('#scan-upload').addEventListener('change', onScanChange);
     $('#ai-scan').checked = localStorage.getItem('hard_aiscan') === '1';
-    $('#ai-scan').addEventListener('change', function () { localStorage.setItem('hard_aiscan', this.checked ? '1' : '0'); });
+    function syncTwoImg() { $('#two-img-wrap').classList.toggle('hidden', !$('#ai-scan').checked); if (!$('#ai-scan').checked) { $('#two-img').checked = false; resetScanImages(); } }
+    $('#ai-scan').addEventListener('change', function () { localStorage.setItem('hard_aiscan', this.checked ? '1' : '0'); syncTwoImg(); });
+    syncTwoImg();
+    $('#two-img').addEventListener('change', function () {
+      resetScanImages();
+      scanStatus(this.checked ? 'Add the FRONT (name/brand), then the BACK (nutrition table), then tap Scan now.' : '');
+    });
+    $('#scan-go-btn').addEventListener('click', function () {
+      if (state.scanImages && state.scanImages.length) scanWithGemini(state.scanImages.slice());
+      else scanStatus('Add a photo first.');
+    });
     $('#m-next').addEventListener('click', manualNext);
     $('#p-grams').addEventListener('input', updatePortion);
     $('#unit-serving').addEventListener('click', function () { setPortionUnit('serving'); });
