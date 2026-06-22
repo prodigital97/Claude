@@ -35,6 +35,7 @@
     foodsDate: null,
     dietDate: null,
     customFoods: [],
+    scanData: null,
     pendingFood: null,
     activeFast: null,
     fastTimer: null,
@@ -1410,6 +1411,7 @@
     $('#food-search').value = '';
     showRecents();
     loadCustomFoods();   // refresh shared foods so newly-added ones are searchable
+    state.scanData = null;
     $('#food-manual').classList.add('hidden');
     show('#food-modal');
     setTimeout(function () { $('#food-search').focus(); }, 100);
@@ -1587,6 +1589,7 @@
   function manualNext() {
     var name = $('#m-name').value.trim();
     if (!name) { toast('Enter a food name'); return; }
+    var sd = state.scanData || {};
     var food = {
       name: name,
       kcal: Number($('#m-cal').value) || 0,
@@ -1594,16 +1597,26 @@
       c: Number($('#m-carbs').value) || 0,
       f: Number($('#m-fat').value) || 0,
       s: Number($('#m-sugar').value) || 0,
-      serving: 100
+      serving: 100,
+      // full panel (from a scan) — stored in the backend dataset, not shown here
+      satFat: sd.saturatedFat || 0, transFat: sd.transFat || 0, fiber: sd.fiber || 0, addedSugar: sd.addedSugar || 0,
+      sodium: sd.sodium || 0, cholesterol: sd.cholesterol || 0, calcium: sd.calcium || 0, iron: sd.iron || 0,
+      servingSize: sd.servingSize || '', data: state.scanData
     };
     saveCustomFood(food);   // share with everyone so it's searchable
     pickFood(food);
+    state.scanData = null;
     $('#m-name').value = $('#m-cal').value = $('#m-protein').value = $('#m-carbs').value = $('#m-fat').value = $('#m-sugar').value = '';
   }
   function saveCustomFood(food) {
     var exists = (state.customFoods || []).some(function (f) { return f.name.toLowerCase() === food.name.toLowerCase(); });
     if (!exists) state.customFoods.push({ name: food.name, kcal: food.kcal, p: food.p, c: food.c, f: food.f, s: food.s, serving: 100, shared: true });
-    api('addCustomFood', { food: { name: food.name, kcal: food.kcal, p: food.p, c: food.c, f: food.f, s: food.s } }).catch(function () {});
+    api('addCustomFood', { food: {
+      name: food.name, kcal: food.kcal, p: food.p, c: food.c, f: food.f, s: food.s,
+      satFat: food.satFat || 0, transFat: food.transFat || 0, fiber: food.fiber || 0, addedSugar: food.addedSugar || 0,
+      sodium: food.sodium || 0, cholesterol: food.cholesterol || 0, calcium: food.calcium || 0, iron: food.iron || 0,
+      servingSize: food.servingSize || '', data: food.data || null
+    } }).catch(function () {});
   }
   function saveFood(food) {
     food.date = state.dietDate || todayStr();
@@ -1679,6 +1692,7 @@
     compressImage(file).then(function (b64) {
       return api('scanLabel', { image: b64, mime: 'image/jpeg' });
     }).then(function (d) {
+      state.scanData = d;   // full panel kept for the backend dataset
       var any = false;
       function put(sel, v, intval) { if (v) { $(sel).value = intval ? Math.round(v) : Math.round(v * 10) / 10; any = true; } }
       put('#m-cal', d.calories, true); put('#m-protein', d.protein); put('#m-carbs', d.carbs); put('#m-fat', d.fat); put('#m-sugar', d.sugar);

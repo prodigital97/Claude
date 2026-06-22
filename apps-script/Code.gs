@@ -16,7 +16,7 @@
 
 var WATER_GOAL_ML = 4000;         // 4 L (comfortably meets the 1-gallon rule)
 var CHALLENGE_LENGTH = 75;        // days
-var GEMINI_MODEL = 'gemini-2.0-flash';   // cheap vision model for label scanning
+var GEMINI_MODEL = 'gemini-2.5-flash';   // cheap vision model for label scanning
 var USERS_SHEET = 'Users';
 var LOGS_SHEET = 'Logs';
 
@@ -33,7 +33,8 @@ var FOOD_HEADERS = ['id', 'username', 'date', 'meal', 'name', 'grams',
                     'calories', 'protein', 'carbs', 'fat', 'createdAt', 'sugar'];
 var PROFILE_HEADERS = ['username', 'dataJson', 'updatedAt'];
 var FAST_HEADERS = ['id', 'username', 'startAt', 'endAt', 'goalHours', 'createdAt'];
-var CUSTOM_HEADERS = ['id', 'name', 'kcal', 'protein', 'carbs', 'fat', 'sugar', 'createdBy', 'createdAt'];
+var CUSTOM_HEADERS = ['id', 'name', 'kcal', 'protein', 'carbs', 'fat', 'sugar', 'createdBy', 'createdAt',
+                      'satFat', 'transFat', 'fiber', 'addedSugar', 'sodium', 'cholesterol', 'calcium', 'iron', 'servingSize', 'dataJson'];
 
 /* ----------------------------------------------------------------------- *
  *  HTTP entry points
@@ -360,20 +361,31 @@ function handleAddCustomFood(body) {
   var name = String(f.name || '').trim();
   if (!name) throw new Error('Food name required.');
 
+  var rec = {
+    id: Utilities.getUuid(), name: name,
+    kcal: Math.round(Number(f.kcal) || 0),
+    protein: round1(f.p), carbs: round1(f.c), fat: round1(f.f), sugar: round1(f.s),
+    createdBy: user.username, createdAt: new Date().toISOString(),
+    satFat: round1(f.satFat), transFat: round1(f.transFat), fiber: round1(f.fiber),
+    addedSugar: round1(f.addedSugar), sodium: round1(f.sodium), cholesterol: round1(f.cholesterol),
+    calcium: round1(f.calcium), iron: round1(f.iron), servingSize: String(f.servingSize || ''),
+    dataJson: f.data ? JSON.stringify(f.data) : ''
+  };
+
   var sheet = getSheet(CUSTOM_SHEET, CUSTOM_HEADERS);
   var values = sheet.getDataRange().getValues();
   var idx = colIndex(CUSTOM_HEADERS);
   for (var i = 1; i < values.length; i++) {
     if (String(values[i][idx.name]).trim().toLowerCase() === name.toLowerCase()) {
-      return { food: customFromRow(values[i], idx) };   // already shared
+      // Already shared — enrich it with full-panel data if this came from a scan.
+      if (rec.dataJson) {
+        ['satFat', 'transFat', 'fiber', 'addedSugar', 'sodium', 'cholesterol', 'calcium', 'iron', 'servingSize', 'dataJson'].forEach(function (col) {
+          sheet.getRange(i + 1, idx[col] + 1).setValue(rec[col]);
+        });
+      }
+      return { food: customFromRow(values[i], idx) };
     }
   }
-  var rec = {
-    id: Utilities.getUuid(), name: name,
-    kcal: Math.round(Number(f.kcal) || 0),
-    protein: round1(f.p), carbs: round1(f.c), fat: round1(f.f), sugar: round1(f.s),
-    createdBy: user.username, createdAt: new Date().toISOString()
-  };
   sheet.appendRow(CUSTOM_HEADERS.map(function (h) { return rec[h]; }));
   return { food: rec };
 }
@@ -483,36 +495,46 @@ function handleScanLabel(body) {
   if (!img) throw new Error('No image received.');
   var mime = String(body.mime || 'image/jpeg');
 
-  var prompt = 'You are reading a packaged-food nutrition label. Return ONLY JSON: ' +
-    '{"name":string,"calories":number,"protein":number,"carbs":number,"fat":number,"sugar":number}. ' +
-    'All values must be PER 100 g (or per 100 ml). If the label shows values per serving, convert to per 100 ' +
-    'using the serving size on the label. Use total fat and total sugar. Use 0 for any value not shown. ' +
-    'Numbers only, no units. name = product name if visible, else "".';
+  var prompt = 'Read this packaged-food nutrition label. Return ONLY JSON with ALL nutrients you can see, ' +
+    'each value PER 100 g (or per 100 ml). If the label shows values per serving, convert to per 100 using the ' +
+    'serving size. Use 0 for any nutrient not shown. Numbers only, no units. Schema: ' +
+    '{"name":string,"servingSize":string,"calories":number,"protein":number,"carbs":number,"fat":number,' +
+    '"sugar":number,"addedSugar":number,"saturatedFat":number,"transFat":number,"fiber":number,' +
+    '"sodium":number,"cholesterol":number,"calcium":number,"iron":number}.';
 
   var payload = {
     contents: [{ parts: [ { text: prompt }, { inline_data: { mime_type: mime, data: img } } ] }],
     generationConfig: { temperature: 0, responseMimeType: 'application/json' }
   };
-  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + encodeURIComponent(key);
-  var resp = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', payload: JSON.stringify(payload), muteHttpExceptions: true });
-  var data = JSON.parse(resp.getContentText() || '{}');
-  if (data.error) throw new Error('Gemini: ' + (data.error.message || 'request failed'));
 
-  var txt = '';
-  try { txt = data.candidates[0].content.parts[0].text; } catch (e) { throw new Error('No response from the AI.'); }
-  var parsed;
-  try { parsed = JSON.parse(txt); }
-  catch (e) { var m = txt.match(/\{[\s\S]*\}/); parsed = m ? JSON.parse(m[0]) : {}; }
+  // Try the configured model, then fall back if Google has retired it.
+  var models = dedupe([GEMINI_MODEL, 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest']);
+  var txt = null, lastErr = '';
+  for (var i = 0; i < models.length; i++) {
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent?key=' + encodeURIComponent(key);
+    var resp = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', payload: JSON.stringify(payload), muteHttpExceptions: true });
+    var data = JSON.parse(resp.getContentText() || '{}');
+    if (data.error) {
+      lastErr = data.error.message || 'request failed';
+      if (/not found|not available|not supported|unsupported|retired|deprecated/i.test(lastErr)) continue;
+      throw new Error('Gemini: ' + lastErr);
+    }
+    try { txt = data.candidates[0].content.parts[0].text; break; } catch (e) { lastErr = 'No response from the AI.'; }
+  }
+  if (txt == null) throw new Error('Gemini: ' + lastErr);
 
+  var p;
+  try { p = JSON.parse(txt); }
+  catch (e) { var m = txt.match(/\{[\s\S]*\}/); p = m ? JSON.parse(m[0]) : {}; }
+  function n(x) { return Number(x) || 0; }
   return {
-    name: String(parsed.name || ''),
-    calories: Number(parsed.calories) || 0,
-    protein: Number(parsed.protein) || 0,
-    carbs: Number(parsed.carbs) || 0,
-    fat: Number(parsed.fat) || 0,
-    sugar: Number(parsed.sugar) || 0
+    name: String(p.name || ''), servingSize: String(p.servingSize || ''),
+    calories: n(p.calories), protein: n(p.protein), carbs: n(p.carbs), fat: n(p.fat), sugar: n(p.sugar),
+    addedSugar: n(p.addedSugar), saturatedFat: n(p.saturatedFat), transFat: n(p.transFat),
+    fiber: n(p.fiber), sodium: n(p.sodium), cholesterol: n(p.cholesterol), calcium: n(p.calcium), iron: n(p.iron)
   };
 }
+function dedupe(arr) { var s = {}, o = []; arr.forEach(function (x) { if (!s[x]) { s[x] = 1; o.push(x); } }); return o; }
 
 /* Run this from the editor after setting the script properties to verify the key. */
 function testFatSecret() {
