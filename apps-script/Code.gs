@@ -499,12 +499,28 @@ function handleScanLabel(body) {
   if (!imgs.length) throw new Error('No image received.');
 
   var multi = imgs.length > 1;
-  var prompt = 'These ' + (multi ? imgs.length + ' images are different sides of ONE packaged food product (e.g. the front of the pack and the back nutrition panel)' : 'image is a packaged-food label') + '. ' +
-    'Combine everything you can read across ' + (multi ? 'all images' : 'the image') + '. ' +
-    'Get the product "name" from the front-of-pack / brand text if present (e.g. "Amul Butter", "Maggi Noodles"). ' +
-    'Return ONLY JSON with ALL nutrients you can see, each value PER 100 g (or per 100 ml). ' +
-    'If the label shows values per serving, convert to per 100 using the serving size. ' +
-    'Use 0 for any nutrient not shown. Numbers only, no units. Schema: ' +
+  var prompt = 'You are reading an Indian packaged-food nutrition label. ' +
+    (multi
+      ? 'These ' + imgs.length + ' images are different sides of ONE product (e.g. the front of pack and the back nutrition panel). Combine everything across all images. '
+      : 'Read this label image. ') +
+    'The photo may be rotated, sideways or upside-down — read it in whatever orientation it is. ' +
+    'Get the product "name" from the front-of-pack brand text if present (e.g. "Milky Mist Cheese Slices", "Amul Butter"). ' +
+    '\n\nCRITICAL RULES for the nutrition table:\n' +
+    '1. The table usually has several number columns (e.g. "per 100 g", "per serving / per 20 g / per 100 ml", "%RDA"). ' +
+    'Read ONLY the PER-100-g (or per-100-ml) column. IGNORE the per-serving column and the %RDA / %DV column completely. ' +
+    'If there is no per-100 column, take the per-serving values and convert them to per-100 using the serving size.\n' +
+    '2. Map each row to the RIGHT field — do NOT mix them up:\n' +
+    '   - "fat" = the TOTAL Fat row ONLY. Do NOT use Saturated Fat or Trans Fat for "fat".\n' +
+    '   - "saturatedFat" = the Saturated Fat row (separate field).\n' +
+    '   - "transFat" = the Trans Fat row (separate field).\n' +
+    '   - "carbs" = the Total Carbohydrate row. Do NOT use the Sugars row for "carbs".\n' +
+    '   - "sugar" = the Total Sugars row. Do NOT use Added Sugars for "sugar".\n' +
+    '   - "addedSugar" = the Added Sugars row (separate field).\n' +
+    '   - "fiber" = Dietary Fibre. "sodium" = Sodium (mg). "cholesterol" = Cholesterol (mg). ' +
+    '"calcium" = Calcium (mg). "iron" = Iron (mg).\n' +
+    '3. Some values are written with a "<", "≈", "Approx", or "*" — use just the number (e.g. "<16.0" -> 16, "Approx 25.0" -> 25).\n' +
+    '4. Use 0 for any nutrient that is genuinely not printed on the label. Numbers only, no units.\n\n' +
+    'Return ONLY JSON, no markdown, matching this schema exactly: ' +
     '{"name":string,"servingSize":string,"calories":number,"protein":number,"carbs":number,"fat":number,' +
     '"sugar":number,"addedSugar":number,"saturatedFat":number,"transFat":number,"fiber":number,' +
     '"sodium":number,"cholesterol":number,"calcium":number,"iron":number}.';
