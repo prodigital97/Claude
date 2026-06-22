@@ -512,21 +512,32 @@ function handleScanLabel(body) {
     }
   };
 
-  // Try the configured model, then fall back if Google has retired it.
+  // Try the configured model, then fall back if Google has retired it OR if a
+  // model is temporarily overloaded (503). Each model gets a couple of quick
+  // retries with backoff before we move on to the next one.
   var models = dedupe([GEMINI_MODEL, 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.5-flash']);
   var txt = null, lastErr = '';
+  outer:
   for (var i = 0; i < models.length; i++) {
     var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent?key=' + encodeURIComponent(key);
-    var resp = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', payload: JSON.stringify(payload), muteHttpExceptions: true });
-    var data = JSON.parse(resp.getContentText() || '{}');
-    if (data.error) {
-      lastErr = data.error.message || 'request failed';
-      if (/not found|not available|not supported|unsupported|retired|deprecated/i.test(lastErr)) continue;
-      throw new Error('Gemini: ' + lastErr);
+    for (var attempt = 0; attempt < 3; attempt++) {
+      var resp = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', payload: JSON.stringify(payload), muteHttpExceptions: true });
+      var data = JSON.parse(resp.getContentText() || '{}');
+      if (data.error) {
+        lastErr = data.error.message || 'request failed';
+        // Retired/unknown model: skip straight to the next model.
+        if (/not found|not available|not supported|unsupported|retired|deprecated/i.test(lastErr)) continue outer;
+        // Overloaded / rate-limited / transient: brief backoff, retry, then next model.
+        if (resp.getResponseCode() >= 500 || resp.getResponseCode() === 429 || /overload|high demand|unavailable|try again|exhausted|rate/i.test(lastErr)) {
+          if (attempt < 2) { Utilities.sleep(800 * (attempt + 1)); continue; }
+          continue outer;
+        }
+        throw new Error('Gemini: ' + lastErr);
+      }
+      try { txt = data.candidates[0].content.parts[0].text; break outer; } catch (e) { lastErr = 'No response from the AI.'; break; }
     }
-    try { txt = data.candidates[0].content.parts[0].text; break; } catch (e) { lastErr = 'No response from the AI.'; }
   }
-  if (txt == null) throw new Error('Gemini: ' + lastErr);
+  if (txt == null) throw new Error('Gemini is busy right now — please try again in a moment. (' + lastErr + ')');
 
   var p;
   try { p = JSON.parse(txt); }
