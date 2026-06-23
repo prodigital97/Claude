@@ -532,36 +532,42 @@ function handleScanLabel(body) {
   var key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
   if (!key) throw new Error('AI scanner not set up (missing GEMINI_API_KEY).');
   var mime = String(body.mime || 'image/jpeg');
-  // Accept either a single image, or an array of images (e.g. front + back of a pack).
+  // Accept any of: a single image, an array of images (front + back), and/or a product name.
   var imgs = [];
   if (body.images && body.images.length) { for (var k = 0; k < body.images.length; k++) { var s = String(body.images[k] || ''); if (s) imgs.push(s); } }
   else if (body.image) imgs.push(String(body.image));
-  if (!imgs.length) throw new Error('No image received.');
+  var query = String(body.query || '').trim();
+  if (!imgs.length && !query) throw new Error('No image or product name received.');
 
   var multi = imgs.length > 1;
-  var prompt = 'You are reading an Indian packaged-food nutrition label. ' +
-    (multi
-      ? 'These ' + imgs.length + ' images are different sides of ONE product (e.g. the front of pack and the back nutrition panel). Combine everything across all images. '
-      : 'Read this label image. ') +
-    'The photo may be rotated, sideways or upside-down — read it in whatever orientation it is. ' +
-    'Get the product "name" from the front-of-pack brand text if present (e.g. "Milky Mist Cheese Slices", "Amul Butter"). ' +
-    '\n\nCRITICAL RULES for the nutrition table:\n' +
-    '1. The table usually has several number columns (e.g. "per 100 g", "per serving / per 20 g / per 100 ml", "%RDA"). ' +
-    'Read ONLY the PER-100-g (or per-100-ml) column. IGNORE the per-serving column and the %RDA / %DV column completely. ' +
-    'If there is no per-100 column, take the per-serving values and convert them to per-100 using the serving size.\n' +
+  var prompt = 'You are a nutrition-data assistant for Indian + global packaged foods.\n';
+  if (query) prompt += 'Product to look up by name: "' + query + '".\n';
+  if (imgs.length) {
+    prompt += (multi
+      ? 'These ' + imgs.length + ' images are different sides of ONE product (e.g. front of pack + back nutrition panel). Combine them. '
+      : 'There is one photo of a packaged food. ') +
+      'It may be rotated, sideways or upside-down — read it in any orientation. ' +
+      'Read the product "name" from the front-of-pack brand text if visible.\n';
+  }
+  prompt += '\nChoose the best source and set "estimated" accordingly:\n' +
+    '- If a NUTRITION INFORMATION PANEL is clearly visible in a photo, READ the exact printed values and set "estimated" to false.\n' +
+    '- If NO panel is available (only the front of pack, or only a product name was given), IDENTIFY the specific branded product and give its TYPICAL published nutrition per 100 g / 100 ml from your knowledge, and set "estimated" to true. If you are unsure what product it is, return calories 0.\n' +
+    'Always fill the product "name" (brand + product).\n\n' +
+    'When READING a panel, follow these rules exactly:\n' +
+    '1. Tables often have several columns ("per 100 g", "per serving / per 20 g", "%RDA"). ' +
+    'Read ONLY the PER-100-g (or per-100-ml) column; IGNORE per-serving and %RDA/%DV. ' +
+    'If there is no per-100 column, convert the per-serving values to per-100 using the serving size.\n' +
     '2. Map each row to the RIGHT field — do NOT mix them up:\n' +
-    '   - "fat" = the TOTAL Fat row ONLY. Do NOT use Saturated Fat or Trans Fat for "fat".\n' +
-    '   - "saturatedFat" = the Saturated Fat row (separate field).\n' +
-    '   - "transFat" = the Trans Fat row (separate field).\n' +
-    '   - "carbs" = the Total Carbohydrate row. Do NOT use the Sugars row for "carbs".\n' +
-    '   - "sugar" = the Total Sugars row. Do NOT use Added Sugars for "sugar".\n' +
-    '   - "addedSugar" = the Added Sugars row (separate field).\n' +
+    '   - "fat" = the TOTAL Fat row ONLY (never Saturated or Trans).\n' +
+    '   - "saturatedFat" = Saturated Fat row. "transFat" = Trans Fat row.\n' +
+    '   - "carbs" = Total Carbohydrate row (never the Sugars row).\n' +
+    '   - "sugar" = Total Sugars row (never Added Sugars). "addedSugar" = Added Sugars row.\n' +
     '   - "fiber" = Dietary Fibre. "sodium" = Sodium (mg). "cholesterol" = Cholesterol (mg). ' +
     '"calcium" = Calcium (mg). "iron" = Iron (mg).\n' +
-    '3. Some values are written with a "<", "≈", "Approx", or "*" — use just the number (e.g. "<16.0" -> 16, "Approx 25.0" -> 25).\n' +
-    '4. Use 0 for any nutrient that is genuinely not printed on the label. Numbers only, no units.\n\n' +
+    '3. Values like "<16.0", "≈", "Approx 25.0", "*" -> use just the number.\n' +
+    '4. Use 0 for any value you cannot determine. Numbers only, no units.\n\n' +
     'Return ONLY JSON, no markdown, matching this schema exactly: ' +
-    '{"name":string,"servingSize":string,"calories":number,"protein":number,"carbs":number,"fat":number,' +
+    '{"name":string,"estimated":boolean,"servingSize":string,"calories":number,"protein":number,"carbs":number,"fat":number,' +
     '"sugar":number,"addedSugar":number,"saturatedFat":number,"transFat":number,"fiber":number,' +
     '"sodium":number,"cholesterol":number,"calcium":number,"iron":number}.';
 
@@ -611,7 +617,7 @@ function handleScanLabel(body) {
   catch (e) { var m = txt.match(/\{[\s\S]*\}/); p = m ? JSON.parse(m[0]) : {}; }
   function n(x) { return Number(x) || 0; }
   var result = {
-    name: String(p.name || ''), servingSize: String(p.servingSize || ''),
+    name: String(p.name || ''), estimated: !!p.estimated, servingSize: String(p.servingSize || ''),
     calories: n(p.calories), protein: n(p.protein), carbs: n(p.carbs), fat: n(p.fat), sugar: n(p.sugar),
     addedSugar: n(p.addedSugar), saturatedFat: n(p.saturatedFat), transFat: n(p.transFat),
     fiber: n(p.fiber), sodium: n(p.sodium), cholesterol: n(p.cholesterol), calcium: n(p.calcium), iron: n(p.iron)

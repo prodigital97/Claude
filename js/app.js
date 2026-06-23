@@ -1789,6 +1789,18 @@
       img.src = URL.createObjectURL(file);
     });
   }
+  // Fill the form from an AI result (works for label reads, front-photo or name lookups).
+  function applyScanResult(d) {
+    state.scanData = d;   // full panel kept for the backend dataset
+    var any = false;
+    function put(sel, v, intval) { if (v) { $(sel).value = intval ? Math.round(v) : Math.round(v * 10) / 10; any = true; } }
+    put('#m-cal', d.calories, true); put('#m-protein', d.protein); put('#m-carbs', d.carbs); put('#m-fat', d.fat); put('#m-sugar', d.sugar);
+    if (d.name && !$('#m-name').value) $('#m-name').value = d.name;
+    var warn = d.estimated ? ' ⚠️ AI estimate — please double-check the values.' : '';
+    scanStatus(any
+      ? ((d.estimated ? 'AI estimate ✓' : 'AI read ✓') + ' — check the values, then add.' + warn)
+      : 'AI couldn’t find nutrition values. Try a clear photo of the nutrition panel.');
+  }
   // Send one or more already-compressed base64 JPEGs to the Gemini scanner.
   function scanWithGemini(b64list) {
     if (!b64list || !b64list.length) return;
@@ -1796,15 +1808,16 @@
     var payload = b64list.length > 1
       ? { images: b64list, mime: 'image/jpeg' }
       : { image: b64list[0], mime: 'image/jpeg' };
-    api('scanLabel', payload).then(function (d) {
-      state.scanData = d;   // full panel kept for the backend dataset
-      var any = false;
-      function put(sel, v, intval) { if (v) { $(sel).value = intval ? Math.round(v) : Math.round(v * 10) / 10; any = true; } }
-      put('#m-cal', d.calories, true); put('#m-protein', d.protein); put('#m-carbs', d.carbs); put('#m-fat', d.fat); put('#m-sugar', d.sugar);
-      if (d.name && !$('#m-name').value) $('#m-name').value = d.name;
-      scanStatus(any ? 'AI read ✓ — check the values, then add.' : 'AI couldn’t find nutrition values on this image.');
-      resetScanImages();
-    }).catch(function (e) { scanStatus(e.message || 'AI scan failed.'); });
+    api('scanLabel', payload).then(function (d) { applyScanResult(d); resetScanImages(); })
+      .catch(function (e) { scanStatus(e.message || 'AI scan failed.'); });
+  }
+  // Look a product up by name (no photo) — AI returns typical per-100g values.
+  function aiLookupByName() {
+    var name = $('#m-name').value.trim();
+    if (!name) { scanStatus('Type a product name above first.'); return; }
+    scanStatus('Asking AI about “' + name + '”…');
+    api('scanLabel', { query: name }).then(applyScanResult)
+      .catch(function (e) { scanStatus(e.message || 'AI lookup failed.'); });
   }
 
   // Front + back collection (AI mode only).
@@ -1910,9 +1923,16 @@
     $('#scan-camera').addEventListener('change', onScanChange);
     $('#scan-upload').addEventListener('change', onScanChange);
     $('#ai-scan').checked = localStorage.getItem('hard_aiscan') === '1';
-    function syncTwoImg() { $('#two-img-wrap').classList.toggle('hidden', !$('#ai-scan').checked); if (!$('#ai-scan').checked) { $('#two-img').checked = false; resetScanImages(); } }
+    function syncTwoImg() {
+      var on = $('#ai-scan').checked;
+      $('#two-img-wrap').classList.toggle('hidden', !on);
+      $('#ai-name-btn').classList.toggle('hidden', !on);
+      $('#ai-hint').classList.toggle('hidden', !on);
+      if (!on) { $('#two-img').checked = false; resetScanImages(); }
+    }
     $('#ai-scan').addEventListener('change', function () { localStorage.setItem('hard_aiscan', this.checked ? '1' : '0'); syncTwoImg(); });
     syncTwoImg();
+    $('#ai-name-btn').addEventListener('click', aiLookupByName);
     $('#two-img').addEventListener('change', function () {
       resetScanImages();
       scanStatus(this.checked ? 'Add the FRONT (name/brand), then the BACK (nutrition table), then tap Scan now.' : '');

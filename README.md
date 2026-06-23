@@ -123,6 +123,16 @@ The custom-food form has a **📷 Scan a nutrition label** option. By default it
 reads, enable the **✨ AI high-accuracy** toggle, which sends the image through your Apps Script to Google's
 **Gemini** vision model.
 
+With AI high-accuracy on you have three ways to get nutrition:
+
+- **Scan the nutrition panel** (most accurate) — values are read straight off the label.
+- **Photo of just the front of pack** — Gemini identifies the product and fills in its *typical* published
+  values (flagged as an **estimate**).
+- **Type the product name** and tap **✨ AI: look up this product by name** — no photo needed; also an
+  estimate.
+
+Estimated results are clearly marked so you can double-check them before saving.
+
 1. Get a free API key at <https://aistudio.google.com> → *Get API key*.
 2. Apps Script editor → **Project Settings (⚙) → Script properties** → add `GEMINI_API_KEY` = your key.
 3. Paste the latest `Code.gs`, **Deploy → Manage deployments → ✏️ → New version → Deploy.**
