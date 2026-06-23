@@ -104,9 +104,18 @@
     }
   };
   // Fire on pointerdown so it feels instant (and unlocks audio on the first user gesture).
+  // Walk up a few ancestors and tick if the element is a control or is styled clickable.
   document.addEventListener('pointerdown', function (e) {
-    var b = e.target.closest('button, .nav-btn, .swatch, .tab, .seg button, .mood-btn, .food-item .fi-body, [data-calc], label.ai-toggle');
-    if (b && !b.disabled) FX.tap();
+    var node = e.target;
+    for (var i = 0; i < 5 && node && node.nodeType === 1; i++) {
+      if (node.disabled) return;
+      var tag = node.tagName;
+      var isControl = tag === 'BUTTON' || tag === 'A' ||
+        (tag === 'INPUT' && /^(checkbox|radio|button|submit)$/i.test(node.type));
+      if (isControl || node.getAttribute('role') === 'button') { FX.tap(); return; }
+      try { if (window.getComputedStyle(node).cursor === 'pointer') { FX.tap(); return; } } catch (e2) {}
+      node = node.parentNode;
+    }
   }, { passive: true });
 
   /* ---------------- date helpers ---------------- */

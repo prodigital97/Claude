@@ -103,9 +103,8 @@ button, .nav-btn, .swatch, .tab, .seg button, .mood-btn, .food-item .fi-body {
   transition: transform .07s ease, opacity .07s ease;
 }
 button:active, .nav-btn:active, .swatch:active, .tab:active, .seg button:active,
-.mood-btn:active, .food-item .fi-body:active, .btn:active, .icon-btn:active {
-  transform: scale(.96);
-}
+.mood-btn:active, .food-item .fi-body:active, .btn:active, .icon-btn:active,
+.task:active, .fr-item:active, .habit:active { transform: scale(.96); }
 html, body { margin: 0; padding: 0; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
