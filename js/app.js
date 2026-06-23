@@ -69,6 +69,46 @@
     toastTimer = setTimeout(function () { t.classList.add('hidden'); t.classList.remove('show'); }, 2200);
   }
 
+  /* ---------------- Tap feedback (haptic + click sound) ---------------- */
+  var FX = {
+    haptics: localStorage.getItem('hard_haptics') !== '0', // default on
+    sound: localStorage.getItem('hard_sound') !== '0',     // default on
+    actx: null,
+    ensure: function () {
+      if (this.actx) { if (this.actx.state === 'suspended') this.actx.resume(); return; }
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) { try { this.actx = new Ctx(); } catch (e) {} }
+    },
+    beep: function () {
+      this.ensure();
+      if (!this.actx) return;
+      try {
+        var now = this.actx.currentTime;
+        var o = this.actx.createOscillator(), g = this.actx.createGain();
+        o.type = 'triangle'; o.frequency.setValueAtTime(420, now); o.frequency.exponentialRampToValueAtTime(180, now + 0.05);
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(0.06, now + 0.004);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
+        o.connect(g); g.connect(this.actx.destination);
+        o.start(now); o.stop(now + 0.07);
+      } catch (e) {}
+    },
+    tap: function () {
+      if (this.haptics && navigator.vibrate) { try { navigator.vibrate(8); } catch (e) {} }
+      if (this.sound) this.beep();
+    },
+    set: function (key, on) {
+      this[key] = on;
+      localStorage.setItem(key === 'haptics' ? 'hard_haptics' : 'hard_sound', on ? '1' : '0');
+      if (on) this.tap(); // confirm the toggle itself
+    }
+  };
+  // Fire on pointerdown so it feels instant (and unlocks audio on the first user gesture).
+  document.addEventListener('pointerdown', function (e) {
+    var b = e.target.closest('button, .nav-btn, .swatch, .tab, .seg button, .mood-btn, .food-item .fi-body, [data-calc], label.ai-toggle');
+    if (b && !b.disabled) FX.tap();
+  }, { passive: true });
+
   /* ---------------- date helpers ---------------- */
   function todayStr() { return fmt(new Date()); }
   function fmt(d) {
@@ -430,6 +470,8 @@
     $('#bf-sex').addEventListener('change', function () {
       $('#bf-hip-wrap').classList.toggle('hidden', this.value !== 'female');
     });
+    $('#fx-sound').addEventListener('change', function () { FX.set('sound', this.checked); });
+    $('#fx-haptics').addEventListener('change', function () { FX.set('haptics', this.checked); });
     // Admin dashboard
     $('#open-admin').addEventListener('click', function () { switchView('admin'); });
     $('#admin-back').addEventListener('click', function () { switchView('settings'); });
@@ -901,6 +943,8 @@
     $('#set-displayname').value = state.user.displayName;
     $('#set-username').textContent = state.user.username;
     $('#admin-entry').classList.toggle('hidden', !isAdmin());
+    $('#fx-sound').checked = FX.sound;
+    $('#fx-haptics').checked = FX.haptics;
     var sd = fmt(parse(state.user.startDate));
     // Guard against a corrupted/ancient stored date (e.g. year 2000) — show today instead.
     if (sd < '2025-01-01' || sd > todayStr()) sd = todayStr();
