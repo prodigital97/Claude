@@ -79,6 +79,7 @@ function doPost(e) {
       case 'getFood':    data = handleGetFood(body);    break;
       case 'addFood':    data = handleAddFood(body);    break;
       case 'deleteFood': data = handleDeleteFood(body); break;
+      case 'updateFood': data = handleUpdateFood(body); break;
       case 'foodSummary':data = handleFoodSummary(body); break;
       case 'getCustomFoods': data = handleGetCustomFoods(body); break;
       case 'addCustomFood':  data = handleAddCustomFood(body);  break;
@@ -352,6 +353,28 @@ function handleDeleteFood(body) {
     }
   }
   return { deleted: null };
+}
+
+function handleUpdateFood(body) {
+  var user = authUser(body);
+  var id = String(body.id || '');
+  if (!id) throw new Error('Food id required.');
+  var f = body.food || {};
+  var sheet = getSheet(FOOD_SHEET, FOOD_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(FOOD_HEADERS);
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idx.id]) === id && normalizeUsername(values[i][idx.username]) === user.username) {
+      sheet.getRange(i + 1, idx.grams + 1).setValue(round1(f.grams));
+      sheet.getRange(i + 1, idx.calories + 1).setValue(Math.round(Number(f.calories) || 0));
+      sheet.getRange(i + 1, idx.protein + 1).setValue(round1(f.protein));
+      sheet.getRange(i + 1, idx.carbs + 1).setValue(round1(f.carbs));
+      sheet.getRange(i + 1, idx.fat + 1).setValue(round1(f.fat));
+      sheet.getRange(i + 1, idx.sugar + 1).setValue(round1(f.sugar));
+      return { food: foodFromRow(sheet.getRange(i + 1, 1, 1, FOOD_HEADERS.length).getValues()[0], idx) };
+    }
+  }
+  throw new Error('Food not found.');
 }
 
 /* ---------------- Shared custom foods (visible to all users) ---------------- */

@@ -39,6 +39,7 @@
     customFoods: [],
     scanData: null,
     pendingFood: null,
+    editingFoodId: null,
     activeFast: null,
     fastTimer: null,
     journeyWindow: 75,
@@ -189,6 +190,12 @@
         saveDb(d);
       }
       return { deleted: p.id };
+    }
+    if (action === 'updateFood') {
+      var farr = (d.foods && d.foods[me.username]) || [];
+      var row = farr.filter(function (x) { return x.id === p.id; })[0];
+      if (row) { ['grams', 'calories', 'protein', 'carbs', 'fat', 'sugar'].forEach(function (k) { row[k] = p.food[k]; }); saveDb(d); }
+      return { food: row || null };
     }
     if (action === 'getCustomFoods') {
       return { foods: (d.customFoods || []) };
@@ -1408,10 +1415,11 @@
         var it = el('div', 'food-item');
         it.innerHTML =
           '<div class="fi-body"><div class="fi-name">' + esc(f.name) + '</div>' +
-          '<div class="fi-sub">' + (f.grams ? Math.round(f.grams) + ' g · ' : '') + 'P' + Math.round(f.protein) + ' C' + Math.round(f.carbs) + ' F' + Math.round(f.fat) + ' S' + Math.round(f.sugar || 0) + '</div></div>' +
+          '<div class="fi-sub">' + (f.grams ? Math.round(f.grams) + ' g · ' : '') + 'P' + Math.round(f.protein) + ' C' + Math.round(f.carbs) + ' F' + Math.round(f.fat) + ' S' + Math.round(f.sugar || 0) + ' · <span class="fi-edit-hint">tap to edit</span></div></div>' +
           '<div class="fi-cal">' + Math.round(f.calories) + '</div>' +
           '<button class="fi-del" title="Remove">✕</button>';
-        it.querySelector('.fi-del').addEventListener('click', function () { deleteFood(f.id); });
+        it.querySelector('.fi-body').addEventListener('click', function () { editFoodEntry(f); });
+        it.querySelector('.fi-del').addEventListener('click', function (e) { e.stopPropagation(); deleteFood(f.id); });
         card.appendChild(it);
       });
       var add = el('button', 'add-food-btn', '+ Add food');
@@ -1425,6 +1433,7 @@
   var searchTimer;
   function openFoodModal(meal) {
     $('#food-modal-title').textContent = 'Add to ' + meal;
+    state.editingFoodId = null;
     $('#p-meal').value = meal;
     showSearchStep();
     $('#food-search').value = '';
@@ -1467,7 +1476,7 @@
     if (recent.length) { box.appendChild(el('div', 'fr-head muted tiny', 'Recent')); appendResults(recent); }
     if (!most.length && !recent.length) { box.appendChild(el('div', 'fr-head muted tiny', 'Popular')); appendResults(COMMON_FOODS.slice(0, 12)); }
   }
-  function closeFoodModal() { hide('#food-modal'); state.pendingFood = null; }
+  function closeFoodModal() { hide('#food-modal'); state.pendingFood = null; state.editingFoodId = null; $('#food-modal-title').textContent = 'Add food'; }
   function showSearchStep() { $('#food-step-search').classList.remove('hidden'); $('#food-step-portion').classList.add('hidden'); }
   function showPortionStep() { $('#food-step-search').classList.add('hidden'); $('#food-step-portion').classList.remove('hidden'); }
 
@@ -1561,9 +1570,31 @@
 
   function pickFood(f) {
     state.pendingFood = f;
+    state.editingFoodId = null;
+    $('#p-add').textContent = 'Add to diary';
     $('#p-name').textContent = f.name;
     setPortionUnit('serving');
     showPortionStep();
+  }
+
+  // Edit the quantity (and meal) of a food already in the diary.
+  function editFoodEntry(f) {
+    var g = Number(f.grams) > 0 ? Number(f.grams) : 100;
+    state.pendingFood = {
+      name: f.name, serving: 100,
+      kcal: f.calories / g * 100, p: f.protein / g * 100,
+      c: f.carbs / g * 100, f: f.fat / g * 100, s: (f.sugar || 0) / g * 100
+    };
+    state.editingFoodId = f.id;
+    $('#food-modal-title').textContent = 'Edit quantity';
+    $('#p-meal').value = f.meal;
+    $('#p-name').textContent = f.name;
+    show('#food-modal');
+    showPortionStep();
+    setPortionUnit('grams');
+    $('#p-grams').value = Math.round(g);
+    updatePortion();
+    $('#p-add').textContent = 'Save changes';
   }
   function setPortionUnit(unit) {
     state.portionUnit = unit;
@@ -1598,11 +1629,19 @@
     var f = state.pendingFood; if (!f) return;
     var grams = portionGrams();
     var x = grams / 100;
+    var macros = { calories: f.kcal * x, protein: f.p * x, carbs: f.c * x, fat: f.f * x, sugar: (f.s || 0) * x };
+    if (state.editingFoodId) {
+      var id = state.editingFoodId;
+      api('updateFood', { id: id, food: Object.assign({ grams: Math.round(grams), meal: $('#p-meal').value }, macros) })
+        .then(function (data) {
+          for (var i = 0; i < state.foods.length; i++) { if (state.foods[i].id === id && data.food) { state.foods[i] = data.food; break; } }
+          state.editingFoodId = null;
+          closeFoodModal(); renderDietBody(); toast('Updated ✓');
+        }).catch(function (e) { toast(e.message); });
+      return;
+    }
     addRecent(f);
-    saveFood({
-      meal: $('#p-meal').value, name: f.name, grams: Math.round(grams),
-      calories: f.kcal * x, protein: f.p * x, carbs: f.c * x, fat: f.f * x, sugar: (f.s || 0) * x
-    });
+    saveFood(Object.assign({ meal: $('#p-meal').value, name: f.name, grams: Math.round(grams) }, macros));
   }
   // Custom food entered per 100 g/ml -> share it, then set the amount.
   function manualNext() {
