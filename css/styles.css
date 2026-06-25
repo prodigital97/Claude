@@ -460,6 +460,7 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .admin-user .au-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
 .admin-user .au-name { font-weight: 600; }
 .admin-user .au-sub { color: var(--muted); font-size: 11px; margin-top: 3px; line-height: 1.5; }
+.new-badge { background: var(--green); color: #04210f; font-size: 9px; font-weight: 800; border-radius: 4px; padding: 1px 5px; vertical-align: middle; }
 .admin-food { border: 1px solid var(--line, #2a2a2a); border-radius: 12px; padding: 10px; margin: 8px 0; }
 .admin-food .af-head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .admin-food .af-head input { flex: 1; font-weight: 600; }
@@ -491,6 +492,14 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .fc-bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--primary), var(--amber)); border-radius: 99px; transition: width .4s ease; }
 .fc-stats { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
 .fc-stats b { color: var(--text); }
+/* Friend requests / search rows */
+.board-sub { font-size: 13px; color: var(--muted); margin: 14px 2px 8px; }
+.req-badge { background: var(--red); color: #fff; font-size: 10px; font-weight: 800; border-radius: 999px; padding: 1px 6px; margin-left: 4px; }
+.fr-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 12px; background: var(--bg-soft); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; }
+.fr-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; font-size: 14px; }
+.fr-acts { display: flex; gap: 6px; flex: none; }
+.fr-mini { padding: 7px 12px; font-size: 13px; }
+.fr-cancel { color: var(--red); }
 
 /* ---------- Calculators ---------- */
 .calc-card h3 { margin-bottom: 4px; }

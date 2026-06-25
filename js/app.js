@@ -37,6 +37,7 @@
     foodsDate: null,
     dietDate: null,
     customFoods: [],
+    friends: null,
     scanData: null,
     pendingFood: null,
     editingFoodId: null,
@@ -317,6 +318,12 @@
       }).sort(function (a, b) { return b.completedDays - a.completedDays || b.todayDone - a.todayDone; });
       return { leaderboard: board };
     }
+    // Friends features aren't meaningful in single-device demo mode — return empties.
+    if (action === 'getFriends') return { friends: [], incoming: [], outgoing: [] };
+    if (action === 'searchUsers') return { users: [] };
+    if (action === 'addFriend') return { status: 'outgoing' };
+    if (action === 'respondFriend') return { status: 'friend' };
+    if (action === 'removeFriend') return { status: 'removed' };
     throw new Error('Unknown action');
   }
 
@@ -495,6 +502,27 @@
       var save = e.target.closest('[data-save]'); var del = e.target.closest('[data-del]');
       if (save) adminSaveFood(save.getAttribute('data-save'), save);
       if (del) adminDeleteFood(del.getAttribute('data-del'));
+    });
+    // Friends tabs + actions
+    document.querySelectorAll('#board-tabs [data-btab]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('#board-tabs [data-btab]').forEach(function (x) { x.classList.toggle('active', x === b); });
+        ['feed', 'requests', 'add'].forEach(function (t) { $('#board-pane-' + t).classList.toggle('hidden', t !== b.dataset.btab); });
+        if (b.dataset.btab === 'add') setTimeout(function () { $('#friend-search').focus(); }, 50);
+      });
+    });
+    $('#friend-search').addEventListener('input', function () {
+      clearTimeout(friendSearchTimer);
+      var q = this.value;
+      friendSearchTimer = setTimeout(function () { runFriendSearch(q); }, 300);
+    });
+    $('#view-board').addEventListener('click', function (e) {
+      var t = e.target.closest('[data-add],[data-accept],[data-decline],[data-cancel]');
+      if (!t) return;
+      if (t.hasAttribute('data-add')) addFriend(t.getAttribute('data-add'));
+      else if (t.hasAttribute('data-accept')) respondFriend(t.getAttribute('data-accept'), true);
+      else if (t.hasAttribute('data-decline')) respondFriend(t.getAttribute('data-decline'), false);
+      else if (t.hasAttribute('data-cancel')) { e.preventDefault(); removeFriend(t.getAttribute('data-cancel')); }
     });
     bindDietEvents();
   }
@@ -908,12 +936,19 @@
 
   /* ---------------- Friends ---------------- */
   function renderBoard() {
+    renderFeed();
+    renderFriends();
+  }
+  function renderFeed() {
     var box = $('#leaderboard');
     box.innerHTML = '<p class="muted tiny">Loading…</p>';
     api('leaderboard', {}).then(function (data) {
       var list = data.leaderboard || [];
       box.innerHTML = '';
-      if (!list.length) { box.innerHTML = '<p class="muted">No athletes yet.</p>'; return; }
+      if (list.length <= 1) {
+        box.innerHTML = '<p class="muted">Add friends to see their progress here. Tap <b>Add</b> above to find people.</p>';
+        if (!list.length) return;
+      }
       list.forEach(function (u, i) {
         var mine = u.displayName === state.user.displayName;
         var medal = ['🥇', '🥈', '🥉'][i] || ('#' + (i + 1));
@@ -944,6 +979,72 @@
       });
     }).catch(function (err) { box.innerHTML = '<p class="muted">' + esc(err.message) + '</p>'; });
   }
+
+  // Load friends + requests; render the Requests pane and the badge.
+  function renderFriends() {
+    api('getFriends', {}).then(function (d) {
+      state.friends = d;
+      var inc = d.incoming || [], out = d.outgoing || [];
+      var badge = $('#req-badge');
+      badge.textContent = inc.length;
+      badge.classList.toggle('hidden', !inc.length);
+
+      $('#req-incoming').innerHTML = inc.length
+        ? inc.map(function (u) {
+            return '<div class="fr-row"><span class="fr-id">' + esc(u.displayName) + ' <span class="muted tiny">@' + esc(u.username) + '</span></span>' +
+              '<span class="fr-acts"><button class="btn primary fr-mini" data-accept="' + esc(u.username) + '">Accept</button>' +
+              '<button class="btn fr-mini" data-decline="' + esc(u.username) + '">Decline</button></span></div>';
+          }).join('')
+        : '<p class="muted tiny">No new requests.</p>';
+
+      $('#req-outgoing').innerHTML = out.length
+        ? out.map(function (u) {
+            return '<div class="fr-row"><span class="fr-id">' + esc(u.displayName) + ' <span class="muted tiny">@' + esc(u.username) + '</span></span>' +
+              '<span class="muted tiny">Pending · <a href="#" class="fr-cancel" data-cancel="' + esc(u.username) + '">cancel</a></span></div>';
+          }).join('')
+        : '<p class="muted tiny">No pending sent requests.</p>';
+    }).catch(function () {});
+  }
+
+  var friendSearchTimer;
+  function runFriendSearch(q) {
+    var box = $('#friend-results');
+    if (!q || q.trim().length < 2) { box.innerHTML = '<p class="muted tiny">Type at least 2 letters.</p>'; return; }
+    box.innerHTML = '<p class="muted tiny">Searching…</p>';
+    api('searchUsers', { query: q.trim() }).then(function (d) {
+      var list = d.users || [];
+      if (!list.length) { box.innerHTML = '<p class="muted tiny">No users found.</p>'; return; }
+      box.innerHTML = list.map(function (u) {
+        var right;
+        if (u.relation === 'friend') right = '<span class="muted tiny">✓ Friend</span>';
+        else if (u.relation === 'outgoing') right = '<span class="muted tiny">Requested</span>';
+        else if (u.relation === 'incoming') right = '<button class="btn primary fr-mini" data-accept="' + esc(u.username) + '">Accept</button>';
+        else right = '<button class="btn primary fr-mini" data-add="' + esc(u.username) + '">+ Add</button>';
+        return '<div class="fr-row"><span class="fr-id">' + esc(u.displayName) + ' <span class="muted tiny">@' + esc(u.username) + '</span></span>' + right + '</div>';
+      }).join('');
+    }).catch(function (e) { box.innerHTML = '<p class="muted tiny">' + esc(e.message) + '</p>'; });
+  }
+
+  function addFriend(username) {
+    api('addFriend', { to: username }).then(function (r) {
+      toast(r.status === 'friend' ? 'You are now friends ✓' : 'Request sent ✓');
+      runFriendSearch($('#friend-search').value); renderFriends();
+      if (r.status === 'friend') renderFeed();
+    }).catch(function (e) { toast(e.message); });
+  }
+  function respondFriend(username, accept) {
+    api('respondFriend', { from: username, accept: accept }).then(function () {
+      toast(accept ? 'Friend added ✓' : 'Request declined');
+      renderFriends(); renderFeed();
+      if ($('#friend-search').value) runFriendSearch($('#friend-search').value);
+    }).catch(function (e) { toast(e.message); });
+  }
+  function removeFriend(username) {
+    api('removeFriend', { username: username }).then(function () {
+      toast('Removed'); renderFriends(); renderFeed();
+    }).catch(function (e) { toast(e.message); });
+  }
+
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
@@ -2180,13 +2281,21 @@
   function renderAdminUsers(d) {
     var list = $('#admin-users-list');
     if (!d.users || !d.users.length) { list.innerHTML = '<p class="muted tiny">No users.</p>'; return; }
-    list.innerHTML = '<p class="muted tiny" style="margin:2px">' + d.total + ' user' + (d.total === 1 ? '' : 's') + '</p>' +
-      d.users.map(function (u) {
+    // Newest signups first so the admin can spot who just joined.
+    var users = (d.users || []).slice().sort(function (a, b) { return (b.createdAt || '').localeCompare(a.createdAt || ''); });
+    var weekAgo = new Date(Date.now() - 7 * 864e5).toISOString();
+    var newCount = users.filter(function (u) { return u.createdAt && u.createdAt >= weekAgo; }).length;
+    list.innerHTML = '<p class="muted tiny" style="margin:2px">' + d.total + ' user' + (d.total === 1 ? '' : 's') +
+        (newCount ? ' · 🆕 ' + newCount + ' joined this week' : '') + '</p>' +
+      users.map(function (u) {
+        var isNew = u.createdAt && u.createdAt >= weekAgo;
+        var joined = u.createdAt ? String(u.createdAt).slice(0, 10) : '—';
         return '<div class="admin-user"><div class="au-top"><span class="au-name">' + esc(u.displayName) +
+          (isNew ? ' <span class="new-badge">NEW</span>' : '') +
           (u.isAdmin ? ' <span class="muted tiny">· admin</span>' : '') + '</span>' +
           '<span class="muted tiny">Day ' + u.currentDay + '</span></div>' +
           '<div class="au-sub">@' + esc(u.username) + ' · 🔥 ' + u.streak + ' streak · ✅ ' + u.completedDays + ' days done · today ' + u.todayDone + '/7<br>' +
-          '🍽 ' + u.foodLogs + ' food logs · started ' + esc(u.startDate) + ' · last active ' + (u.lastActive ? esc(u.lastActive) : '—') + '</div></div>';
+          '🍽 ' + u.foodLogs + ' food logs · joined ' + esc(joined) + ' · started ' + esc(u.startDate) + ' · last active ' + (u.lastActive ? esc(u.lastActive) : '—') + '</div></div>';
       }).join('');
   }
 

@@ -40,6 +40,9 @@ var CUSTOM_HEADERS = ['id', 'name', 'kcal', 'protein', 'carbs', 'fat', 'sugar', 
 var ADMIN_USERS = ['pronoy'];
 var SCAN_SHEET = 'ScanLog';
 var SCAN_HEADERS = ['id', 'at', 'username', 'name', 'model', 'images', 'promptTokens', 'outputTokens', 'totalTokens', 'costUsd', 'costInr'];
+// Friend graph: one row per directed request; status pending | accepted.
+var FRIEND_SHEET = 'Friends';
+var FRIEND_HEADERS = ['id', 'requester', 'addressee', 'status', 'createdAt', 'updatedAt'];
 // Gemini pricing (USD per 1M tokens). Used to estimate per-scan cost.
 var GEMINI_PRICES = {
   'gemini-2.5-flash-lite': { in: 0.10, out: 0.40 },
@@ -73,6 +76,11 @@ function doPost(e) {
       case 'saveDay':    data = handleSaveDay(body);   break;
       case 'reset':      data = handleReset(body);     break;
       case 'leaderboard':data = handleLeaderboard(body); break;
+      case 'searchUsers':  data = handleSearchUsers(body);  break;
+      case 'getFriends':   data = handleGetFriends(body);   break;
+      case 'addFriend':    data = handleAddFriend(body);    break;
+      case 'respondFriend':data = handleRespondFriend(body);break;
+      case 'removeFriend': data = handleRemoveFriend(body); break;
       case 'updateProfile': data = handleUpdateProfile(body); break;
       case 'deleteAccount': data = handleDeleteAccount(body); break;
       case 'saveGoals':  data = handleSaveGoals(body);  break;
@@ -1025,8 +1033,12 @@ function deleteRowsFor(sheet, usernameCol, username) {
 }
 
 function handleLeaderboard(body) {
-  authUser(body); // any logged-in user may view the friends feed
+  var me = authUser(body); // friends feed = me + my accepted friends
   var today = todayStr();
+
+  // Only show this user and people they're friends with.
+  var visible = friendsOf(me.username);
+  visible[me.username] = true;
 
   var users = getSheet(USERS_SHEET, USER_HEADERS).getDataRange().getValues();
   var uIdx = colIndex(USER_HEADERS);
@@ -1061,7 +1073,7 @@ function handleLeaderboard(body) {
   for (var i = 1; i < users.length; i++) {
     var u = users[i];
     var name = normalizeUsername(u[uIdx.username]);
-    if (!name) continue;
+    if (!name || !visible[name]) continue;
     var logs = (logsByUser[name] || []).sort(function (x, y) { return x.date < y.date ? -1 : 1; });
     var todayLog = logs.filter(function (l) { return l.date === today; })[0];
     // Count distinct complete days within the challenge window (ignores stray/duplicate rows).
@@ -1085,6 +1097,146 @@ function handleLeaderboard(body) {
   }
   board.sort(function (a, b) { return b.completedDays - a.completedDays || b.todayDone - a.todayDone; });
   return { leaderboard: board };
+}
+
+/* ---------------- Friends ---------------- */
+
+// Map of usernames who are ACCEPTED friends of `username` (either direction).
+function friendsOf(username) {
+  var sheet = getSheet(FRIEND_SHEET, FRIEND_HEADERS);
+  var rows = sheet.getDataRange().getValues();
+  var idx = colIndex(FRIEND_HEADERS);
+  var out = {};
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][idx.status]) !== 'accepted') continue;
+    var r = normalizeUsername(rows[i][idx.requester]), a = normalizeUsername(rows[i][idx.addressee]);
+    if (r === username && a) out[a] = true;
+    else if (a === username && r) out[r] = true;
+  }
+  return out;
+}
+
+// Find the relationship row between two users (either direction). Returns {row, values} or null.
+function findFriendRow(rows, idx, u1, u2) {
+  for (var i = 1; i < rows.length; i++) {
+    var r = normalizeUsername(rows[i][idx.requester]), a = normalizeUsername(rows[i][idx.addressee]);
+    if ((r === u1 && a === u2) || (r === u2 && a === u1)) return { row: i + 1, values: rows[i], i: i };
+  }
+  return null;
+}
+
+function displayNameOf(username) {
+  var sheet = getSheet(USERS_SHEET, USER_HEADERS);
+  var found = findUserRow(sheet, username);
+  var idx = colIndex(USER_HEADERS);
+  return found ? (found.values[idx.displayName] || username) : username;
+}
+
+function handleSearchUsers(body) {
+  var me = authUser(body);
+  var q = normalizeUsername(body.query).replace(/[^a-z0-9 ]/g, '');
+  var qRaw = String(body.query || '').trim().toLowerCase();
+  if (qRaw.length < 2) return { users: [] };
+
+  var users = getSheet(USERS_SHEET, USER_HEADERS).getDataRange().getValues();
+  var uIdx = colIndex(USER_HEADERS);
+  var frows = getSheet(FRIEND_SHEET, FRIEND_HEADERS).getDataRange().getValues();
+  var fIdx = colIndex(FRIEND_HEADERS);
+
+  var out = [];
+  for (var i = 1; i < users.length && out.length < 20; i++) {
+    var un = normalizeUsername(users[i][uIdx.username]);
+    if (!un || un === me.username) continue;
+    var dn = String(users[i][uIdx.displayName] || un);
+    if (un.indexOf(qRaw) < 0 && dn.toLowerCase().indexOf(qRaw) < 0) continue;
+    var rel = 'none';
+    var fr = findFriendRow(frows, fIdx, me.username, un);
+    if (fr) {
+      if (String(fr.values[fIdx.status]) === 'accepted') rel = 'friend';
+      else rel = normalizeUsername(fr.values[fIdx.requester]) === me.username ? 'outgoing' : 'incoming';
+    }
+    out.push({ username: un, displayName: dn, relation: rel });
+  }
+  return { users: out };
+}
+
+function handleGetFriends(body) {
+  var me = authUser(body);
+  var rows = getSheet(FRIEND_SHEET, FRIEND_HEADERS).getDataRange().getValues();
+  var idx = colIndex(FRIEND_HEADERS);
+  var friends = [], incoming = [], outgoing = [];
+  for (var i = 1; i < rows.length; i++) {
+    var r = normalizeUsername(rows[i][idx.requester]), a = normalizeUsername(rows[i][idx.addressee]);
+    var status = String(rows[i][idx.status]);
+    if (r !== me.username && a !== me.username) continue;
+    var other = r === me.username ? a : r;
+    if (!other) continue;
+    var entry = { username: other, displayName: displayNameOf(other) };
+    if (status === 'accepted') friends.push(entry);
+    else if (status === 'pending') { if (a === me.username) incoming.push(entry); else outgoing.push(entry); }
+  }
+  return { friends: friends, incoming: incoming, outgoing: outgoing };
+}
+
+function handleAddFriend(body) {
+  var me = authUser(body);
+  var to = normalizeUsername(body.to);
+  if (!to) throw new Error('Pick a user to add.');
+  if (to === me.username) throw new Error("You can't add yourself.");
+  var sheet = getSheet(USERS_SHEET, USER_HEADERS);
+  if (!findUserRow(sheet, to)) throw new Error('That user does not exist.');
+
+  var fsheet = getSheet(FRIEND_SHEET, FRIEND_HEADERS);
+  var rows = fsheet.getDataRange().getValues();
+  var idx = colIndex(FRIEND_HEADERS);
+  var existing = findFriendRow(rows, idx, me.username, to);
+  var now = new Date().toISOString();
+  if (existing) {
+    var st = String(existing.values[idx.status]);
+    if (st === 'accepted') return { status: 'friend' };
+    // If THEY already requested ME, accept it; otherwise it's already pending from me.
+    if (normalizeUsername(existing.values[idx.addressee]) === me.username) {
+      fsheet.getRange(existing.row, idx.status + 1).setValue('accepted');
+      fsheet.getRange(existing.row, idx.updatedAt + 1).setValue(now);
+      return { status: 'friend' };
+    }
+    return { status: 'outgoing' };
+  }
+  fsheet.appendRow([Utilities.getUuid(), me.username, to, 'pending', now, now]);
+  return { status: 'outgoing' };
+}
+
+function handleRespondFriend(body) {
+  var me = authUser(body);
+  var from = normalizeUsername(body.from);
+  var accept = !!body.accept;
+  var fsheet = getSheet(FRIEND_SHEET, FRIEND_HEADERS);
+  var rows = fsheet.getDataRange().getValues();
+  var idx = colIndex(FRIEND_HEADERS);
+  for (var i = 1; i < rows.length; i++) {
+    var r = normalizeUsername(rows[i][idx.requester]), a = normalizeUsername(rows[i][idx.addressee]);
+    if (r === from && a === me.username && String(rows[i][idx.status]) === 'pending') {
+      if (accept) {
+        fsheet.getRange(i + 1, idx.status + 1).setValue('accepted');
+        fsheet.getRange(i + 1, idx.updatedAt + 1).setValue(new Date().toISOString());
+        return { status: 'friend' };
+      }
+      fsheet.deleteRow(i + 1);
+      return { status: 'declined' };
+    }
+  }
+  throw new Error('No pending request from that user.');
+}
+
+function handleRemoveFriend(body) {
+  var me = authUser(body);
+  var other = normalizeUsername(body.username);
+  var fsheet = getSheet(FRIEND_SHEET, FRIEND_HEADERS);
+  var rows = fsheet.getDataRange().getValues();
+  var idx = colIndex(FRIEND_HEADERS);
+  var hit = findFriendRow(rows, idx, me.username, other);
+  if (hit) { fsheet.deleteRow(hit.row); return { status: 'removed' }; }
+  return { status: 'none' };
 }
 
 function tasksDoneCount(l) {

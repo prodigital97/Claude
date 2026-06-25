@@ -187,8 +187,29 @@
       <!-- COMMUNITY -->
       <div id="view-board" class="view hidden">
         <h2 class="view-title">Friends</h2>
-        <p class="muted tiny">Everyone's progress today — tasks, water &amp; calories.</p>
-        <div id="leaderboard"></div>
+        <div class="seg" id="board-tabs">
+          <button data-btab="feed" class="active">Feed</button>
+          <button data-btab="requests">Requests <span id="req-badge" class="req-badge hidden">0</span></button>
+          <button data-btab="add">Add</button>
+        </div>
+
+        <div id="board-pane-feed" class="board-pane">
+          <p class="muted tiny">You and your friends' progress today — tasks, water &amp; calories.</p>
+          <div id="leaderboard"></div>
+        </div>
+
+        <div id="board-pane-requests" class="board-pane hidden">
+          <h3 class="board-sub">Requests received</h3>
+          <div id="req-incoming"></div>
+          <h3 class="board-sub">Requests sent</h3>
+          <div id="req-outgoing"></div>
+        </div>
+
+        <div id="board-pane-add" class="board-pane hidden">
+          <input id="friend-search" placeholder="Find people by name or username…" autocapitalize="none" />
+          <p class="muted tiny" style="margin:6px 2px">You'll both see each other's progress once they accept.</p>
+          <div id="friend-results"></div>
+        </div>
       </div>
 
       <!-- CALCULATORS -->

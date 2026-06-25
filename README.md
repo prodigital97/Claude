@@ -30,10 +30,13 @@ Miss any task and 75 Hard says you restart from Day 1 — there's a one-tap **re
   that targets the next milestone and keeps running after you close the app. When you end it, the
   milestone reached (12/14/16/18/20/24/36 h) is derived automatically from how long you fasted. Past
   fasts can be edited or deleted.
-- **Friends feed** — see everyone's *today* at a glance: tasks done/pending, water, and calories.
+- **Friends** — find people by name/username and send a friend request; once they **accept**, you each
+  see the other's *today* at a glance (tasks done/pending, water, calories) in the Feed. The feed only
+  shows you and your accepted friends — not everyone on the sheet. The **Requests** tab handles
+  incoming/outgoing requests.
 - **75-day journey** calendar (done / missed / today / upcoming)
 - **Stats** — current & best streak, days completed, gallons of water, per-task consistency bars
-- **Leaderboard** — everyone using your sheet, ranked by completed days (great for doing it with friends)
+- **Leaderboard** — you and your accepted friends, ranked by completed days (great for doing it together)
 - **Themes** — pick from Midnight, Neon Lime, Violet, Ocean, Crimson, Pastel, Academia or Arsenal in
   Settings (saved on your device). Academia and Arsenal use a wallpaper background with frosted cards —
   to use your own wallpaper, replace `assets/bg-academia.svg` / `assets/bg-arsenal.svg` with your image
@@ -204,6 +207,15 @@ columns drive the app; the rest build a fuller nutrition dataset from scanned la
 
 | id | name | kcal | protein | carbs | fat | sugar | createdBy | createdAt | satFat | transFat | fiber | addedSugar | sodium | cholesterol | calcium | iron | servingSize | dataJson |
 |----|------|------|---------|-------|-----|-------|-----------|-----------|--------|----------|-------|------------|--------|-------------|---------|------|-------------|----------|
+
+**`Friends`** (the friend graph — one row per request)
+
+| id | requester | addressee | status | createdAt | updatedAt |
+|----|-----------|-----------|--------|-----------|-----------|
+
+`status` is `pending` until the addressee accepts, then `accepted`. The Friends feed shows a user only
+the people they have an `accepted` row with. Admins still see **every** user in the admin dashboard's
+**Users** tab (newest signups first, with a 🆕 badge for those who joined in the last week).
 
 You can open the sheet any time to view, chart, or export your data — the app writes to it live.
 
