@@ -435,6 +435,8 @@
       </div>
     </main>
 
+    <button id="coach-fab" class="coach-fab" title="AI Coach" type="button">💬</button>
+
     <nav class="bottom-nav">
       <button class="nav-btn active" data-view="today"><span class="ico">✓</span><span>Today</span></button>
       <button class="nav-btn" data-view="diet"><span class="ico">🍽️</span><span>Diet</span></button>
@@ -517,6 +519,24 @@
       </div>
       <div id="day-editor-list" class="tasklist"></div>
       <button id="day-save" class="btn primary block">Save this day</button>
+    </div>
+  </div>
+
+  <!-- AI Coach chat -->
+  <div id="coach-modal" class="modal hidden">
+    <div class="modal-card coach-card">
+      <div class="modal-head">
+        <b>✨ AI Coach</b>
+        <span class="coach-head-actions">
+          <button id="coach-clear" class="icon-btn" title="Clear chat">🗑</button>
+          <button id="coach-close" class="icon-btn" title="Close">✕</button>
+        </span>
+      </div>
+      <div id="coach-msgs" class="coach-msgs"></div>
+      <div class="coach-input">
+        <textarea id="coach-text" rows="1" placeholder="Ask about your diet, workouts, streak…"></textarea>
+        <button id="coach-send" class="btn primary" type="button">Send</button>
+      </div>
     </div>
   </div>
 

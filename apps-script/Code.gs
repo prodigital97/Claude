@@ -93,6 +93,7 @@ function doPost(e) {
       case 'addCustomFood':  data = handleAddCustomFood(body);  break;
       case 'foodSearch':     data = handleFoodSearch(body);     break;
       case 'scanLabel':      data = handleScanLabel(body);      break;
+      case 'coachChat':      data = handleCoachChat(body);      break;
       case 'adminScans':      data = handleAdminScans(body);      break;
       case 'adminUsers':      data = handleAdminUsers(body);      break;
       case 'adminFoods':      data = handleAdminFoods(body);      break;
@@ -809,6 +810,143 @@ function handleAdminDeleteFood(body) {
   throw new Error('Food not found.');
 }
 function dedupe(arr) { var s = {}, o = []; arr.forEach(function (x) { if (!s[x]) { s[x] = 1; o.push(x); } }); return o; }
+
+/* ---------------- AI Coach (Gemini chat over this user's data) ---------------- */
+
+// Generic Gemini text call with the same model fallback + retry as the scanner.
+function geminiGenerate(key, payload, models) {
+  models = dedupe(models || ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest']);
+  var lastErr = '';
+  for (var i = 0; i < models.length; i++) {
+    var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent?key=' + encodeURIComponent(key);
+    for (var attempt = 0; attempt < 3; attempt++) {
+      var resp = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', payload: JSON.stringify(payload), muteHttpExceptions: true });
+      var data = JSON.parse(resp.getContentText() || '{}');
+      if (data.error) {
+        lastErr = data.error.message || 'request failed';
+        if (/not found|not available|not supported|unsupported|retired|deprecated/i.test(lastErr)) break;
+        if (resp.getResponseCode() >= 500 || resp.getResponseCode() === 429 || /overload|high demand|unavailable|try again|exhausted|rate/i.test(lastErr)) {
+          if (attempt < 2) { Utilities.sleep(800 * (attempt + 1)); continue; }
+          break;
+        }
+        throw new Error('Gemini: ' + lastErr);
+      }
+      try { return { text: data.candidates[0].content.parts[0].text, model: models[i], usage: data.usageMetadata || null }; }
+      catch (e) { lastErr = 'No response from the AI.'; break; }
+    }
+  }
+  throw new Error('Coach is busy right now — please try again in a moment.');
+}
+
+function handleCoachChat(body) {
+  var user = authUser(body);
+  var key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!key) throw new Error('AI coach not set up (missing GEMINI_API_KEY).');
+  var message = String(body.message || '').trim();
+  if (!message) throw new Error('Type a message.');
+  var history = body.history || [];
+
+  var context = buildCoachContext(user.username, user.displayName);
+  var system = 'You are "Coach", a friendly, motivating but honest 75 Hard fitness & nutrition coach inside a tracking app. ' +
+    'You are talking to ' + (user.displayName || user.username) + '. ' +
+    'Use the DATA below (their real tracked numbers) plus general fitness & nutrition knowledge. ' +
+    'Reference their actual numbers when relevant. Keep replies concise, practical and encouraging — a few short paragraphs or bullets, not an essay. ' +
+    'You may discuss diet, workouts, water, sleep, fasting, streaks, motivation and habit-building. ' +
+    'Do NOT give medical diagnoses or treatment; for medical concerns advise seeing a professional. ' +
+    'Never invent tracked data you were not given; if something is not in the data, say so.\n\n' +
+    '=== THIS USER\'S DATA (as of today) ===\n' + context;
+
+  var contents = [];
+  contents.push({ role: 'user', parts: [{ text: system }] });
+  contents.push({ role: 'model', parts: [{ text: 'Understood — I have ' + (user.displayName || 'your') + '\'s latest stats. Ready to help.' }] });
+  (history || []).slice(-8).forEach(function (m) {
+    contents.push({ role: (m.role === 'model' ? 'model' : 'user'), parts: [{ text: String(m.text || '').slice(0, 2000) }] });
+  });
+  contents.push({ role: 'user', parts: [{ text: message.slice(0, 2000) }] });
+
+  var payload = {
+    contents: contents,
+    generationConfig: { temperature: 0.6, maxOutputTokens: 600, thinkingConfig: { thinkingBudget: 0 } }
+  };
+  var res = geminiGenerate(key, payload, ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest']);
+  try { logScan(body, res.model, 0, res.usage, '💬 Coach chat'); } catch (e) {}
+  return { reply: String(res.text || '').trim() };
+}
+
+// Compact, current snapshot of one user's tracked data for the coach prompt.
+function buildCoachContext(username, displayName) {
+  var today = todayStr();
+  var wa = new Date(); wa.setDate(wa.getDate() - 7);
+  var weekAgo = wa.getFullYear() + '-' + ('0' + (wa.getMonth() + 1)).slice(-2) + '-' + ('0' + wa.getDate()).slice(-2);
+
+  var usheet = getSheet(USERS_SHEET, USER_HEADERS);
+  var found = findUserRow(usheet, username);
+  var uIdx = colIndex(USER_HEADERS);
+  var start = found ? formatDate(found.values[uIdx.startDate]) : today;
+  var day = dayNumberFor(start, today);
+
+  var prof = {};
+  var profRows = getSheet(PROFILE_SHEET, PROFILE_HEADERS).getDataRange().getValues();
+  for (var i = 1; i < profRows.length; i++) {
+    if (normalizeUsername(profRows[i][0]) === username) { try { prof = JSON.parse(profRows[i][1] || '{}'); } catch (e) {} break; }
+  }
+
+  var logRows = getSheet(LOGS_SHEET, LOG_HEADERS).getDataRange().getValues();
+  var lIdx = colIndex(LOG_HEADERS);
+  var logs = [];
+  for (var a = 1; a < logRows.length; a++) {
+    if (normalizeUsername(logRows[a][lIdx.username]) === username) logs.push(logFromRow(logRows[a], lIdx));
+  }
+  logs.sort(function (x, y) { return x.date < y.date ? -1 : 1; });
+  var done = {}; logs.forEach(function (l) { if (l.completed && l.date >= start && l.date <= today) done[l.date] = true; });
+  var elapsed = Math.max(1, logs.length);
+  function pct(k) { return Math.round(logs.filter(function (l) { return l[k]; }).length / elapsed * 100); }
+  var waterPct = Math.round(logs.filter(function (l) { return Number(l.waterMl) >= WATER_GOAL_ML; }).length / elapsed * 100);
+  var recent = logs.slice(-7).map(function (l) {
+    return l.date + ': ' + tasksDoneCount(l) + '/7' + (l.completed ? ' done' : '') +
+      ', water ' + (Math.round((Number(l.waterMl) || 0) / 100) / 10) + 'L' + (l.mood ? (', mood ' + l.mood + '/5') : '');
+  });
+
+  var foodRows = getSheet(FOOD_SHEET, FOOD_HEADERS).getDataRange().getValues();
+  var fIdx = colIndex(FOOD_HEADERS);
+  var byDate = {};
+  for (var b = 1; b < foodRows.length; b++) {
+    if (normalizeUsername(foodRows[b][fIdx.username]) !== username) continue;
+    var dt = formatDate(foodRows[b][fIdx.date]); if (dt < weekAgo) continue;
+    var e = byDate[dt] || (byDate[dt] = { cal: 0, p: 0, c: 0, f: 0, s: 0 });
+    e.cal += Number(foodRows[b][fIdx.calories]) || 0; e.p += Number(foodRows[b][fIdx.protein]) || 0;
+    e.c += Number(foodRows[b][fIdx.carbs]) || 0; e.f += Number(foodRows[b][fIdx.fat]) || 0; e.s += Number(foodRows[b][fIdx.sugar]) || 0;
+  }
+  var fdays = Object.keys(byDate).sort();
+  var avgCal = 0, avgP = 0, avgC = 0, avgF = 0, avgS = 0;
+  if (fdays.length) {
+    fdays.forEach(function (k) { avgCal += byDate[k].cal; avgP += byDate[k].p; avgC += byDate[k].c; avgF += byDate[k].f; avgS += byDate[k].s; });
+    avgCal = Math.round(avgCal / fdays.length); avgP = Math.round(avgP / fdays.length);
+    avgC = Math.round(avgC / fdays.length); avgF = Math.round(avgF / fdays.length); avgS = Math.round(avgS / fdays.length);
+  }
+
+  var fastRows = getSheet(FAST_SHEET, FAST_HEADERS).getDataRange().getValues();
+  var faIdx = colIndex(FAST_HEADERS);
+  var durs = [];
+  for (var c = 1; c < fastRows.length; c++) {
+    if (normalizeUsername(fastRows[c][faIdx.username]) !== username) continue;
+    var s0 = fastRows[c][faIdx.startAt], en = fastRows[c][faIdx.endAt];
+    if (s0 && en) { var h = (new Date(en) - new Date(s0)) / 3.6e6; if (h > 0 && h < 48) durs.push(h); }
+  }
+  var avgFast = durs.length ? Math.round(durs.reduce(function (a2, b2) { return a2 + b2; }, 0) / durs.length * 10) / 10 : 0;
+
+  var lines = [];
+  lines.push('Name: ' + (displayName || username));
+  lines.push('Challenge: Day ' + day + ' of 75, started ' + start + ', ' + Object.keys(done).length + ' days fully completed, current streak ' + currentStreak(logs) + '.');
+  lines.push('Goals/body: calorie goal ' + (prof.calorieGoal || '?') + ' kcal/day, protein ' + (prof.proteinGoal || '?') + 'g, carbs ' + (prof.carbGoal || '?') + 'g, fat ' + (prof.fatGoal || '?') + 'g, sugar limit ' + (prof.sugarGoal || '?') + 'g; weight ' + (prof.weightKg || '?') + 'kg, height ' + (prof.heightCm || '?') + 'cm, age ' + (prof.age || '?') + ', sex ' + (prof.sex || '?') + ', activity ' + (prof.activity || '?') + ', aim ' + (prof.goalType || '?') + '.');
+  lines.push('Task consistency (over ' + elapsed + ' logged days): indoor workout ' + pct('workout1') + '%, outdoor ' + pct('outdoor') + '%, reading ' + pct('reading') + '%, photo ' + pct('photo') + '%, diet ' + pct('diet') + '%, no-alcohol ' + pct('noAlcohol') + '%, water goal ' + waterPct + '%.');
+  if (fdays.length) lines.push('Diet (avg over last ' + fdays.length + ' logged days): ' + avgCal + ' kcal, ' + avgP + 'g protein, ' + avgC + 'g carbs, ' + avgF + 'g fat, ' + avgS + 'g sugar per day.');
+  else lines.push('Diet: no food logged in the last 7 days.');
+  if (avgFast) lines.push('Fasting: average ' + avgFast + 'h over ' + durs.length + ' completed fasts.');
+  if (recent.length) lines.push('Recent days:\n  ' + recent.join('\n  '));
+  return lines.join('\n');
+}
+
 
 /* Run this from the editor after setting the script properties to verify the key. */
 function testFatSecret() {

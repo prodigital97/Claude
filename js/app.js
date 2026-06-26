@@ -38,6 +38,8 @@
     dietDate: null,
     customFoods: [],
     friends: null,
+    coachHistory: null,
+    coachBusy: false,
     scanData: null,
     pendingFood: null,
     editingFoodId: null,
@@ -324,6 +326,7 @@
     if (action === 'addFriend') return { status: 'outgoing' };
     if (action === 'respondFriend') return { status: 'friend' };
     if (action === 'removeFriend') return { status: 'removed' };
+    if (action === 'coachChat') return { reply: 'The AI coach needs the online backend (Gemini) — it isn’t available in demo mode.' };
     throw new Error('Unknown action');
   }
 
@@ -523,6 +526,16 @@
       else if (t.hasAttribute('data-accept')) respondFriend(t.getAttribute('data-accept'), true);
       else if (t.hasAttribute('data-decline')) respondFriend(t.getAttribute('data-decline'), false);
       else if (t.hasAttribute('data-cancel')) { e.preventDefault(); removeFriend(t.getAttribute('data-cancel')); }
+    });
+    // AI Coach
+    $('#coach-fab').addEventListener('click', openCoach);
+    $('#coach-close').addEventListener('click', function () { hide('#coach-modal'); });
+    $('#coach-clear').addEventListener('click', clearCoach);
+    $('#coach-send').addEventListener('click', sendCoach);
+    $('#coach-modal').addEventListener('click', function (e) { if (e.target.id === 'coach-modal') hide('#coach-modal'); });
+    $('#coach-text').addEventListener('input', function () { this.style.height = 'auto'; this.style.height = Math.min(96, this.scrollHeight) + 'px'; });
+    $('#coach-text').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCoach(); }
     });
     bindDietEvents();
   }
@@ -2346,6 +2359,69 @@
       state.adminFoods = (state.adminFoods || []).filter(function (x) { return x.id !== id; });
       renderAdminFoods(); toast('Deleted');
     }).catch(function (e) { toast(e.message); });
+  }
+
+  /* ---------------- AI Coach chat ---------------- */
+  function coachKey() { return 'hard_coach_' + (state.username || ''); }
+  function loadCoachHistory() {
+    try { return JSON.parse(localStorage.getItem(coachKey()) || '[]'); } catch (e) { return []; }
+  }
+  function saveCoachHistory() {
+    try { localStorage.setItem(coachKey(), JSON.stringify((state.coachHistory || []).slice(-20))); } catch (e) {}
+  }
+  function openCoach() {
+    if (state.coachHistory == null) state.coachHistory = loadCoachHistory();
+    show('#coach-modal');
+    renderCoachMsgs();
+    setTimeout(function () { $('#coach-text').focus(); }, 120);
+  }
+  function coachFormat(text) {
+    var s = esc(text);
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+    s = s.replace(/^\s*[-*]\s+/gm, '• ');
+    return s.replace(/\n/g, '<br>');
+  }
+  function renderCoachMsgs(typing) {
+    var box = $('#coach-msgs'); if (!box) return;
+    var hist = state.coachHistory || [];
+    var html = '';
+    if (!hist.length) {
+      html += '<div class="cm cm-model">Hey ' + esc(firstName(state.user.displayName)) +
+        '! I’m your AI coach and I can see your 75 Hard progress, diet, fasting and mood. ' +
+        'Ask me anything — how you’re tracking, diet tweaks, workout ideas, or a motivation boost. 💪</div>';
+    }
+    hist.forEach(function (m) {
+      html += '<div class="cm cm-' + (m.role === 'model' ? 'model' : 'user') + '">' + coachFormat(m.text) + '</div>';
+    });
+    if (typing) html += '<div class="cm cm-model cm-typing"><span></span><span></span><span></span></div>';
+    box.innerHTML = html;
+    box.scrollTop = box.scrollHeight;
+  }
+  function sendCoach() {
+    if (state.coachBusy) return;
+    var inp = $('#coach-text');
+    var msg = (inp.value || '').trim();
+    if (!msg) return;
+    inp.value = ''; inp.style.height = 'auto';
+    if (state.coachHistory == null) state.coachHistory = [];
+    var priorHistory = state.coachHistory.slice();   // exclude the new message
+    state.coachHistory.push({ role: 'user', text: msg });
+    state.coachBusy = true; $('#coach-send').disabled = true;
+    renderCoachMsgs(true);
+    api('coachChat', { message: msg, history: priorHistory }).then(function (d) {
+      state.coachHistory.push({ role: 'model', text: d.reply || '(no reply)' });
+      saveCoachHistory();
+    }).catch(function (e) {
+      state.coachHistory.push({ role: 'model', text: '⚠️ ' + (e.message || 'Coach unavailable right now.') });
+    }).then(function () {
+      state.coachBusy = false; $('#coach-send').disabled = false;
+      renderCoachMsgs();
+    });
+  }
+  function clearCoach() {
+    if (!(state.coachHistory && state.coachHistory.length)) return;
+    if (!confirm('Clear this conversation?')) return;
+    state.coachHistory = []; saveCoachHistory(); renderCoachMsgs();
   }
 
   /* ---------------- Start ---------------- */

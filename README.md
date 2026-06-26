@@ -140,6 +140,14 @@ Estimated results are clearly marked so you can double-check them before saving.
 2. Apps Script editor → **Project Settings (⚙) → Script properties** → add `GEMINI_API_KEY` = your key.
 3. Paste the latest `Code.gs`, **Deploy → Manage deployments → ✏️ → New version → Deploy.**
 
+### AI Coach chat
+
+The floating **💬** button opens an **AI Coach** that chats about your progress. The backend feeds Gemini a
+compact, always-current snapshot of *your* tracked data — challenge day/streak, per-task consistency,
+average calories & macros, fasting average, recent days & mood — so its advice is grounded in your real
+numbers. It uses the same `GEMINI_API_KEY`; each reply is logged to `ScanLog` (as "💬 Coach chat") so its
+cost shows in the admin dashboard alongside scans. Replies are text-only and cheap (~₹0.05–0.10 each).
+
 Cost is roughly **₹0.02–0.05 per scan** with the default `gemini-2.5-flash-lite` model. The backend
 disables Gemini 2.5's billed "thinking" tokens (`thinkingBudget: 0`), caps the reply length, and the
 app downsizes the photo before sending, so each scan stays cheap. (The free tier likely covers a small
