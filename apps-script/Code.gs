@@ -679,8 +679,8 @@ function handleScanLabel(body) {
   }
   prompt += '\nChoose the best source and set "estimated" accordingly:\n' +
     '- If a NUTRITION INFORMATION PANEL is clearly visible in a photo, READ the exact printed values and set "estimated" to false.\n' +
-    '- If NO panel is available (only the front of pack, or only a product name was given), IDENTIFY the specific branded product and give its TYPICAL published nutrition per 100 g / 100 ml from your knowledge, and set "estimated" to true. If you are unsure what product it is, return calories 0.\n' +
-    'Always fill the product "name" (brand + product).\n\n' +
+    '- Otherwise (only a front-of-pack photo, or just a name was given), ESTIMATE the typical nutrition per 100 g / 100 ml from your knowledge and set "estimated" to true. This works for BOTH branded packaged products (e.g. "Amul Butter") AND generic or home-cooked foods, dishes and recipes (e.g. "air fried chicken", "boiled egg", "grilled paneer", "chicken biryani"). Give sensible typical values for an average preparation. Only return calories 0 if the text is genuinely not a food/drink at all.\n' +
+    'Always fill the "name" with a clean, readable food name.\n\n' +
     'When READING a panel, follow these rules exactly:\n' +
     '1. Tables often have several columns ("per 100 g", "per serving / per 20 g", "%RDA"). ' +
     'Read ONLY the PER-100-g (or per-100-ml) column; IGNORE per-serving and %RDA/%DV. ' +
