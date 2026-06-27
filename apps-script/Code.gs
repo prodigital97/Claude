@@ -27,7 +27,7 @@ var CUSTOM_SHEET = 'CustomFoods';
 
 var USER_HEADERS = ['username', 'displayName', 'passwordHash', 'salt', 'token', 'startDate', 'createdAt'];
 var LOG_HEADERS = ['username', 'date', 'dayNumber', 'workout1', 'workout2', 'outdoor',
-                   'waterMl', 'reading', 'photo', 'diet', 'noAlcohol', 'completed', 'notes', 'updatedAt', 'extra', 'mood'];
+                   'waterMl', 'reading', 'photo', 'diet', 'noAlcohol', 'completed', 'notes', 'updatedAt', 'extra', 'mood', 'gut'];
 // 'sugar' appended at the end so older Food rows keep their column positions.
 var FOOD_HEADERS = ['id', 'username', 'date', 'meal', 'name', 'grams',
                     'calories', 'protein', 'carbs', 'fat', 'createdAt', 'sugar'];
@@ -902,9 +902,11 @@ function buildCoachContext(username, displayName) {
   var elapsed = Math.max(1, logs.length);
   function pct(k) { return Math.round(logs.filter(function (l) { return l[k]; }).length / elapsed * 100); }
   var waterPct = Math.round(logs.filter(function (l) { return Number(l.waterMl) >= WATER_GOAL_ML; }).length / elapsed * 100);
+  var GUT_WORDS = { 1: 'no bowel movement', 2: 'hard/constipated', 3: 'healthy/formed', 4: 'soft', 5: 'loose/watery' };
   var recent = logs.slice(-7).map(function (l) {
     return l.date + ': ' + tasksDoneCount(l) + '/7' + (l.completed ? ' done' : '') +
-      ', water ' + (Math.round((Number(l.waterMl) || 0) / 100) / 10) + 'L' + (l.mood ? (', mood ' + l.mood + '/5') : '');
+      ', water ' + (Math.round((Number(l.waterMl) || 0) / 100) / 10) + 'L' + (l.mood ? (', mood ' + l.mood + '/5') : '') +
+      (l.gut ? (', gut ' + (GUT_WORDS[l.gut] || '')) : '');
   });
 
   var foodRows = getSheet(FOOD_SHEET, FOOD_HEADERS).getDataRange().getValues();
@@ -1017,7 +1019,8 @@ function handleSaveDay(body) {
     noAlcohol: !!day.noAlcohol,
     notes: String(day.notes || ''),
     extra: JSON.stringify(day.extra || {}),
-    mood: Number(day.mood) || 0
+    mood: Number(day.mood) || 0,
+    gut: Number(day.gut) || 0
   };
   record.completed = isDayComplete(record);
   record.updatedAt = new Date().toISOString();
@@ -1468,7 +1471,8 @@ function logFromRow(r, idx) {
     completed: toBool(r[idx.completed]),
     notes: String(r[idx.notes] || ''),
     extra: parseJsonObj(r[idx.extra]),
-    mood: Number(r[idx.mood]) || 0
+    mood: Number(r[idx.mood]) || 0,
+    gut: Number(r[idx.gut]) || 0
   };
 }
 function parseJsonObj(v) {

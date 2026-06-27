@@ -355,7 +355,7 @@
   function emptyDay(date) {
     return { date: date, dayNumber: state.user ? dayNumber(state.user.startDate, date) : 1,
       workout1: false, workout2: false, outdoor: false, waterMl: 0,
-      reading: false, photo: false, diet: false, noAlcohol: false, completed: false, notes: '', extra: {}, mood: 0 };
+      reading: false, photo: false, diet: false, noAlcohol: false, completed: false, notes: '', extra: {}, mood: 0, gut: 0 };
   }
   function logFor(date) {
     return state.logs.filter(function (l) { return l.date === date; })[0];
@@ -613,6 +613,7 @@
     $('#streak-line').textContent = '🔥 ' + streakOf(state.logs) + ' day streak';
 
     renderMood(d);
+    renderGut(d);
     renderExtraTasks(d);
   }
 
@@ -636,6 +637,33 @@
       b.addEventListener('click', function () {
         d.mood = (d.mood === m.v) ? 0 : m.v;
         renderMood(d);
+        queueSave();
+      });
+      box.appendChild(b);
+    });
+  }
+
+  /* ----- Gut health tracker (does NOT affect 75 Hard completion) ----- */
+  var GUT = [
+    { v: 1, label: 'Didn’t go',   emoji: '🚫', color: '#8da3c4' },
+    { v: 2, label: 'Hard',        emoji: '🪨', color: '#ff9f43' },
+    { v: 3, label: 'Healthy',     emoji: '✅', color: '#2fd47a' },
+    { v: 4, label: 'Soft',        emoji: '💧', color: '#4bb6ff' },
+    { v: 5, label: 'Loose',       emoji: '🌊', color: '#ff5470' }
+  ];
+  function gutColor(v) { for (var i = 0; i < GUT.length; i++) if (GUT[i].v === v) return GUT[i].color; return null; }
+  function gutLabel(v) { for (var i = 0; i < GUT.length; i++) if (GUT[i].v === v) return GUT[i].label; return null; }
+  function renderGut(d) {
+    var box = $('#gut-buttons'); if (!box) return;
+    box.innerHTML = '';
+    GUT.forEach(function (g) {
+      var sel = d.gut === g.v;
+      var b = el('button', 'mood-btn' + (sel ? ' sel' : ''));
+      b.style.setProperty('--mc', g.color);
+      b.innerHTML = '<span class="mood-emoji">' + g.emoji + '</span><span class="mood-label">' + g.label + '</span>';
+      b.addEventListener('click', function () {
+        d.gut = (d.gut === g.v) ? 0 : g.v;
+        renderGut(d);
         queueSave();
       });
       box.appendChild(b);
@@ -921,6 +949,7 @@
     });
 
     renderMoodTrend();
+    renderGutTrend();
   }
 
   function renderMoodTrend() {
@@ -940,6 +969,25 @@
       '<div class="muted tiny" style="margin-top:8px">' +
       (n ? ('Average: ' + avgM.emoji + ' ' + avgM.label + ' (' + avg.toFixed(1) + '/5) over ' + n + ' logged day' + (n > 1 ? 's' : '')) : 'No mood logged yet — set it on the Today screen.') +
       '</div>';
+  }
+  function renderGutTrend() {
+    var box = $('#gut-trend'); if (!box) return;
+    var today = todayStr(), dots = '', counts = {}, n = 0;
+    for (var i = 13; i >= 0; i--) {
+      var date = addDays(today, -i);
+      var log = logFor(date);
+      var gv = log && log.gut ? log.gut : 0;
+      var col = gutColor(gv) || 'var(--bg-soft)';
+      dots += '<span class="mt-dot" title="' + shortDate(date) + (gv ? (' · ' + gutLabel(gv)) : '') + '" style="background:' + col + '"></span>';
+      if (gv) { counts[gv] = (counts[gv] || 0) + 1; n++; }
+    }
+    var legend = GUT.map(function (g) {
+      return '<span class="gt-key"><i style="background:' + g.color + '"></i>' + g.label + (counts[g.v] ? (' ' + counts[g.v]) : '') + '</span>';
+    }).join('');
+    box.innerHTML = '<div class="mt-dots">' + dots + '</div>' +
+      '<div class="gt-legend">' + legend + '</div>' +
+      '<div class="muted tiny" style="margin-top:6px">' +
+      (n ? (n + ' logged day' + (n > 1 ? 's' : '') + ' in the last 14') : 'No gut entries yet — log it on the Today screen.') + '</div>';
   }
   function bestStreak(logs) {
     var best = 0, cur = 0;
