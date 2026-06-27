@@ -1148,6 +1148,16 @@ function buildCoachContext(username, displayName) {
 }
 
 
+/* Run this ONCE from the editor after pasting the new code. It forces Google to
+ * grant the "send email" permission and sends you a test email so you can confirm
+ * delivery. Pick testEmail in the function dropdown -> Run -> approve the prompt. */
+function testEmail() {
+  var to = Session.getEffectiveUser().getEmail();
+  MailApp.sendEmail(to, '75 Hard — email works ✅', 'If you received this, the app can now send verification and password-reset codes. You can delete this message.');
+  Logger.log('Test email sent to ' + to);
+  return 'Sent to ' + to;
+}
+
 /* Run this from the editor after setting the script properties to verify the key. */
 function testFatSecret() {
   var token = fatsecretToken();
