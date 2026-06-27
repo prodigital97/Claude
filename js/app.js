@@ -172,7 +172,8 @@
     var d = db();
     function pub(u) {
       return { username: u.username, displayName: u.displayName, startDate: u.startDate,
-        currentDay: dayNumber(u.startDate, todayStr()), challengeLength: LEN, waterGoalMl: WATER_GOAL };
+        currentDay: dayNumber(u.startDate, todayStr()), challengeLength: LEN, waterGoalMl: WATER_GOAL,
+        email: u.email || '', emailVerified: !!u.emailVerified };
     }
     function userLogs(un) { return (d.logs[un] || []).slice().sort(function (a, b) { return a.date < b.date ? -1 : 1; }); }
 
@@ -181,7 +182,7 @@
       if (un.length < 3) throw new Error('Username must be at least 3 characters.');
       if (d.users[un]) throw new Error('That username is already taken.');
       d.users[un] = { username: un, displayName: p.displayName || un, password: p.password,
-        startDate: p.startDate || todayStr(), token: 't_' + un };
+        startDate: p.startDate || todayStr(), token: 't_' + un, email: p.email || '', emailVerified: !!p.email };
       d.logs[un] = []; saveDb(d);
       return { token: 't_' + un, user: pub(d.users[un]) };
     }
@@ -190,8 +191,25 @@
       if (!lu || lu.password !== p.password) throw new Error('Invalid username or password.');
       return { token: lu.token, user: pub(lu) };
     }
+    // Demo mode has no email server — accept any code so the flow still works.
+    if (action === 'requestSignupOtp' || action === 'requestResetOtp') return { sent: true };
+    if (action === 'resetPassword') {
+      var ru = Object.keys(d.users).map(function (k) { return d.users[k]; }).filter(function (x) { return (x.email || '').toLowerCase() === (p.email || '').toLowerCase(); })[0];
+      if (!ru) throw new Error('No account uses that email.');
+      ru.password = p.newPassword; saveDb(d); return { token: ru.token, user: pub(ru) };
+    }
     var me = d.users[(p.username || '').toLowerCase().trim()];
     if (!me || me.token !== p.token) throw new Error('Session expired. Please log in again.');
+
+    if (action === 'requestEmailOtp') return { sent: true };
+    if (action === 'verifyEmail') { me.email = p.email; me.emailVerified = true; saveDb(d); return { user: pub(me) }; }
+    if (action === 'changePassword') { me.password = p.newPassword; saveDb(d); return { ok: true }; }
+    if (action === 'changeUsername') {
+      var nn = (p.newUsername || '').toLowerCase().trim();
+      if (d.users[nn]) throw new Error('That username is already taken.');
+      delete d.users[me.username]; me.username = nn; d.users[nn] = me; saveDb(d);
+      return { token: me.token, user: pub(me) };
+    }
 
     function myFasts() { return (d.fasts && d.fasts[me.username]) || []; }
     function activeFast() { return myFasts().filter(function (f) { return !f.endAt; })[0] || null; }
@@ -383,6 +401,10 @@
         var login = b.dataset.authtab === 'login';
         $('#login-form').classList.toggle('hidden', !login);
         $('#register-form').classList.toggle('hidden', login);
+        $('#reset-form').classList.add('hidden');
+        // reset the signup OTP sub-step so it starts clean
+        $('#reg-fields').classList.remove('hidden');
+        $('#reg-otp-step').classList.add('hidden');
         authMsg('');
       });
     });
@@ -392,13 +414,72 @@
       var f = e.target;
       authSubmit('login', { username: f.username.value, password: f.password.value }, 'Logging in…');
     });
+
+    // ---- Signup with email OTP ----
+    $('#reg-send-otp').addEventListener('click', function () {
+      var f = $('#register-form');
+      if (!f.displayName.value.trim() || f.username.value.trim().length < 3 || !f.password.value || !f.email.value.trim()) {
+        authMsg('Fill in all fields first (username 3+ chars).', 'error'); return;
+      }
+      authMsg('Emailing your code…');
+      this.disabled = true;
+      var self = this;
+      api('requestSignupOtp', { username: f.username.value, email: f.email.value }).then(function () {
+        authMsg('');
+        $('#reg-otp-email').textContent = f.email.value.trim();
+        $('#reg-fields').classList.add('hidden');
+        $('#reg-otp-step').classList.remove('hidden');
+        setTimeout(function () { f.otp.focus(); }, 80);
+      }).catch(function (err) { authMsg(err.message, 'error'); })
+        .then(function () { self.disabled = false; });
+    });
+    $('#reg-resend').addEventListener('click', function () {
+      $('#reg-otp-step').classList.add('hidden');
+      $('#reg-fields').classList.remove('hidden');
+      authMsg('');
+    });
     $('#register-form').addEventListener('submit', function (e) {
       e.preventDefault();
       var f = e.target;
+      if (!f.otp.value.trim()) { authMsg('Enter the code from your email.', 'error'); return; }
       authSubmit('register', {
-        username: f.username.value, password: f.password.value,
-        displayName: f.displayName.value, startDate: f.startDate.value
-      }, 'Setting up…');
+        username: f.username.value, password: f.password.value, displayName: f.displayName.value,
+        startDate: f.startDate.value, email: f.email.value, otp: f.otp.value
+      }, 'Creating your account…');
+    });
+
+    // ---- Forgot / reset password ----
+    $('#forgot-link').addEventListener('click', function () {
+      $('#login-form').classList.add('hidden');
+      $('#register-form').classList.add('hidden');
+      $('#reset-form').classList.remove('hidden');
+      $('#reset-step2').classList.add('hidden');
+      $('#reset-step1').classList.remove('hidden');
+      authMsg('');
+    });
+    $('#reset-back').addEventListener('click', function () {
+      $('#reset-form').classList.add('hidden');
+      $('#login-form').classList.remove('hidden');
+      authMsg('');
+    });
+    $('#reset-send-otp').addEventListener('click', function () {
+      var f = $('#reset-form');
+      if (!f.email.value.trim()) { authMsg('Enter your account email.', 'error'); return; }
+      authMsg('Sending reset code…'); this.disabled = true; var self = this;
+      api('requestResetOtp', { email: f.email.value }).then(function () {
+        authMsg('');
+        $('#reset-email-label').textContent = f.email.value.trim();
+        $('#reset-step1').classList.add('hidden');
+        $('#reset-step2').classList.remove('hidden');
+        setTimeout(function () { f.otp.focus(); }, 80);
+      }).catch(function (err) { authMsg(err.message, 'error'); })
+        .then(function () { self.disabled = false; });
+    });
+    $('#reset-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var f = e.target;
+      if (!f.otp.value.trim() || !f.newPassword.value) { authMsg('Enter the code and a new password.', 'error'); return; }
+      authSubmit('resetPassword', { email: f.email.value, otp: f.otp.value, newPassword: f.newPassword.value }, 'Resetting…');
     });
   }
 
@@ -470,6 +551,10 @@
     $('#logout').addEventListener('click', logout);
     $('#reset-challenge').addEventListener('click', resetChallenge);
     $('#save-profile').addEventListener('click', saveProfile);
+    $('#acct-email-btn').addEventListener('click', acctEmailSend);
+    $('#acct-email-verify').addEventListener('click', acctEmailVerify);
+    $('#acct-username-btn').addEventListener('click', acctChangeUsername);
+    $('#acct-pw-btn').addEventListener('click', acctChangePassword);
     $('#save-startdate').addEventListener('click', saveStartDate);
     $('#delete-account').addEventListener('click', deleteAccount);
     // Journey window buttons + day editor modal
@@ -1116,6 +1201,7 @@
     $('#admin-entry').classList.toggle('hidden', !isAdmin());
     $('#fx-sound').checked = FX.sound;
     $('#fx-haptics').checked = FX.haptics;
+    renderAccount();
     var sd = fmt(parse(state.user.startDate));
     // Guard against a corrupted/ancient stored date (e.g. year 2000) — show today instead.
     if (sd < '2025-01-01' || sd > todayStr()) sd = todayStr();
@@ -1124,6 +1210,58 @@
     prefillGoals();
     renderThemes();
   }
+
+  /* ----- Account: email, username, password ----- */
+  function renderAccount() {
+    var u = state.user || {};
+    var verified = u.emailVerified && u.email;
+    $('#email-banner').classList.toggle('hidden', !!verified);
+    $('#email-status').textContent = verified ? '· verified ✓' : (u.email ? '· not verified' : '· none added');
+    if (!document.activeElement || document.activeElement.id !== 'acct-email') $('#acct-email').value = u.email || '';
+    $('#acct-email-btn').textContent = verified ? 'Change email' : 'Send verification code';
+    $('#acct-email-otp').classList.add('hidden');
+  }
+  function acctEmailSend() {
+    var email = $('#acct-email').value.trim();
+    if (!email) { toast('Enter an email'); return; }
+    var btn = $('#acct-email-btn'); btn.disabled = true;
+    api('requestEmailOtp', { email: email }).then(function () {
+      toast('Code emailed ✓');
+      $('#acct-email-otp').classList.remove('hidden');
+      $('#acct-email-code').value = ''; $('#acct-email-code').focus();
+    }).catch(function (e) { toast(e.message); }).then(function () { btn.disabled = false; });
+  }
+  function acctEmailVerify() {
+    var email = $('#acct-email').value.trim(), code = $('#acct-email-code').value.trim();
+    if (!code) { toast('Enter the code'); return; }
+    api('verifyEmail', { email: email, otp: code }).then(function (d) {
+      state.user = Object.assign(state.user, d.user); cacheState();
+      toast('Email verified ✓'); renderAccount();
+    }).catch(function (e) { toast(e.message); });
+  }
+  function acctChangeUsername() {
+    var newName = $('#acct-username').value.trim().toLowerCase();
+    var pw = $('#acct-username-pw').value;
+    if (newName.length < 3 || !pw) { toast('Enter a new username (3+) and your password'); return; }
+    if (!confirm('Change your username to "' + newName + '"? You\'ll use it to log in from now on.')) return;
+    api('changeUsername', { newUsername: newName, password: pw }).then(function (d) {
+      state.token = d.token; state.username = d.user.username; state.user = Object.assign(state.user, d.user);
+      localStorage.setItem('hard_token', state.token); localStorage.setItem('hard_user', state.username);
+      cacheState();
+      $('#acct-username').value = ''; $('#acct-username-pw').value = '';
+      $('#set-username').textContent = state.user.username;
+      toast('Username changed ✓'); renderAll();
+    }).catch(function (e) { toast(e.message); });
+  }
+  function acctChangePassword() {
+    var cur = $('#acct-curpw').value, next = $('#acct-newpw').value;
+    if (!cur || next.length < 4) { toast('Enter current + a new password (4+ chars)'); return; }
+    api('changePassword', { currentPassword: cur, newPassword: next }).then(function () {
+      $('#acct-curpw').value = ''; $('#acct-newpw').value = '';
+      toast('Password updated ✓');
+    }).catch(function (e) { toast(e.message); });
+  }
+
   function saveStartDate() {
     var v = $('#set-startdate').value;
     if (!v) { toast('Pick a date'); return; }

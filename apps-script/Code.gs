@@ -25,7 +25,8 @@ var PROFILE_SHEET = 'Profiles';
 var FAST_SHEET = 'Fasts';
 var CUSTOM_SHEET = 'CustomFoods';
 
-var USER_HEADERS = ['username', 'displayName', 'passwordHash', 'salt', 'token', 'startDate', 'createdAt'];
+var USER_HEADERS = ['username', 'displayName', 'passwordHash', 'salt', 'token', 'startDate', 'createdAt', 'email', 'emailVerified'];
+var OTP_TTL = 600; // OTP valid for 10 minutes
 var LOG_HEADERS = ['username', 'date', 'dayNumber', 'workout1', 'workout2', 'outdoor',
                    'waterMl', 'reading', 'photo', 'diet', 'noAlcohol', 'completed', 'notes', 'updatedAt', 'extra', 'mood', 'gut'];
 // 'sugar' appended at the end so older Food rows keep their column positions.
@@ -72,6 +73,13 @@ function doPost(e) {
     switch (action) {
       case 'register':   data = handleRegister(body);  break;
       case 'login':      data = handleLogin(body);     break;
+      case 'requestSignupOtp': data = handleRequestSignupOtp(body); break;
+      case 'requestResetOtp':  data = handleRequestResetOtp(body);  break;
+      case 'resetPassword':    data = handleResetPassword(body);    break;
+      case 'requestEmailOtp':  data = handleRequestEmailOtp(body);  break;
+      case 'verifyEmail':      data = handleVerifyEmail(body);      break;
+      case 'changePassword':   data = handleChangePassword(body);   break;
+      case 'changeUsername':   data = handleChangeUsername(body);   break;
       case 'getState':   data = handleGetState(body);  break;
       case 'saveDay':    data = handleSaveDay(body);   break;
       case 'reset':      data = handleReset(body);     break;
@@ -122,23 +130,213 @@ function handleRegister(body) {
   var password = String(body.password || '');
   var displayName = String(body.displayName || username).trim() || username;
   var startDate = normIso(body.startDate) || todayStr();
+  var email = normalizeEmail(body.email);
+  var otp = String(body.otp || '').trim();
 
   if (username.length < 3) throw new Error('Username must be at least 3 characters.');
   if (password.length < 4) throw new Error('Password must be at least 4 characters.');
+  if (!isEmail(email)) throw new Error('Enter a valid email address.');
+
+  // The email must have been verified via the OTP we sent.
+  if (!verifyOtp('signup', email, otp)) throw new Error('That verification code is wrong or expired.');
 
   var sheet = getSheet(USERS_SHEET, USER_HEADERS);
   if (findUserRow(sheet, username)) throw new Error('That username is already taken.');
+  if (findUserByEmail(email)) throw new Error('That email is already registered.');
 
   var salt = Utilities.getUuid();
   var token = Utilities.getUuid();
   var idx = colIndex(USER_HEADERS);
   sheet.appendRow([
-    username, displayName, hashPassword(password, salt), salt, token, startDate, new Date().toISOString()
+    username, displayName, hashPassword(password, salt), salt, token, startDate, new Date().toISOString(), email, true
   ]);
   // Force the start-date cell to plain text so Sheets can never re-interpret it.
   setStartDateCell(sheet, sheet.getLastRow(), idx.startDate + 1, startDate);
+  clearOtp('signup', email);
 
-  return { token: token, user: publicUser(username, displayName, startDate) };
+  return { token: token, user: publicUser(username, displayName, startDate, email, true) };
+}
+
+/* ---------------- Email OTP + account management ---------------- */
+
+function normalizeEmail(e) { return String(e || '').trim().toLowerCase(); }
+function isEmail(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
+function genOtp() { return String(Math.floor(100000 + Math.random() * 900000)); }
+function otpCacheKey(purpose, email) { return 'otp:' + purpose + ':' + normalizeEmail(email); }
+
+function putOtp(purpose, email, code) {
+  CacheService.getScriptCache().put(otpCacheKey(purpose, email), code, OTP_TTL);
+}
+function verifyOtp(purpose, email, code) {
+  code = String(code || '').trim();
+  if (!code) return false;
+  var stored = CacheService.getScriptCache().get(otpCacheKey(purpose, email));
+  return !!stored && stored === code;
+}
+function clearOtp(purpose, email) { CacheService.getScriptCache().remove(otpCacheKey(purpose, email)); }
+
+function sendOtpEmail(email, code, purpose) {
+  var what = purpose === 'reset' ? 'reset your password' : (purpose === 'signup' ? 'create your account' : 'verify your email');
+  var subject = '75 Hard — your verification code: ' + code;
+  var body = 'Your 75 Hard verification code is:\n\n    ' + code + '\n\n' +
+    'Enter this code in the app to ' + what + '. It expires in 10 minutes.\n\n' +
+    'If you did not request this, you can ignore this email.';
+  try {
+    MailApp.sendEmail(email, subject, body);
+  } catch (e) {
+    throw new Error('Could not send the email. ' + (e && e.message ? e.message : ''));
+  }
+}
+
+function findUserByEmail(email) {
+  email = normalizeEmail(email);
+  if (!email) return null;
+  var values = getSheet(USERS_SHEET, USER_HEADERS).getDataRange().getValues();
+  var idx = colIndex(USER_HEADERS);
+  for (var i = 1; i < values.length; i++) {
+    if (normalizeEmail(values[i][idx.email]) === email) return { row: i + 1, values: values[i] };
+  }
+  return null;
+}
+
+// Step 1 of signup: validate + email a code (account not created yet).
+function handleRequestSignupOtp(body) {
+  var username = normalizeUsername(body.username);
+  var email = normalizeEmail(body.email);
+  if (username.length < 3) throw new Error('Username must be at least 3 characters.');
+  if (!isEmail(email)) throw new Error('Enter a valid email address.');
+  var sheet = getSheet(USERS_SHEET, USER_HEADERS);
+  if (findUserRow(sheet, username)) throw new Error('That username is already taken.');
+  if (findUserByEmail(email)) throw new Error('That email is already registered. Try logging in or reset your password.');
+  var code = genOtp();
+  putOtp('signup', email, code);
+  sendOtpEmail(email, code, 'signup');
+  return { sent: true };
+}
+
+// Forgot password: email a reset code if the address is on file.
+function handleRequestResetOtp(body) {
+  var email = normalizeEmail(body.email);
+  if (!isEmail(email)) throw new Error('Enter a valid email address.');
+  var found = findUserByEmail(email);
+  if (found) {
+    var code = genOtp();
+    putOtp('reset', email, code);
+    sendOtpEmail(email, code, 'reset');
+  }
+  // Always report success so we don't reveal which emails exist.
+  return { sent: true };
+}
+
+function handleResetPassword(body) {
+  var email = normalizeEmail(body.email);
+  var otp = String(body.otp || '').trim();
+  var newPassword = String(body.newPassword || '');
+  if (newPassword.length < 4) throw new Error('Password must be at least 4 characters.');
+  if (!verifyOtp('reset', email, otp)) throw new Error('That code is wrong or expired.');
+  var found = findUserByEmail(email);
+  if (!found) throw new Error('No account uses that email.');
+  var sheet = getSheet(USERS_SHEET, USER_HEADERS);
+  var idx = colIndex(USER_HEADERS);
+  var salt = Utilities.getUuid();
+  var token = Utilities.getUuid();
+  sheet.getRange(found.row, idx.salt + 1).setValue(salt);
+  sheet.getRange(found.row, idx.passwordHash + 1).setValue(hashPassword(newPassword, salt));
+  sheet.getRange(found.row, idx.token + 1).setValue(token); // rotate token; log them in
+  clearOtp('reset', email);
+  var row = sheet.getRange(found.row, 1, 1, USER_HEADERS.length).getValues()[0];
+  return { token: token, user: publicUserFromRow(row) };
+}
+
+// Existing user adds / changes their email -> send a verification code.
+function handleRequestEmailOtp(body) {
+  var user = authUser(body);
+  var email = normalizeEmail(body.email);
+  if (!isEmail(email)) throw new Error('Enter a valid email address.');
+  var other = findUserByEmail(email);
+  if (other && normalizeUsername(other.values[colIndex(USER_HEADERS).username]) !== user.username) {
+    throw new Error('That email is already used by another account.');
+  }
+  var code = genOtp();
+  putOtp('verify:' + user.username, email, code);
+  sendOtpEmail(email, code, 'verify');
+  return { sent: true };
+}
+
+function handleVerifyEmail(body) {
+  var user = authUser(body);
+  var email = normalizeEmail(body.email);
+  var otp = String(body.otp || '').trim();
+  if (!verifyOtp('verify:' + user.username, email, otp)) throw new Error('That code is wrong or expired.');
+  var sheet = getSheet(USERS_SHEET, USER_HEADERS);
+  var idx = colIndex(USER_HEADERS);
+  sheet.getRange(user.row, idx.email + 1).setValue(email);
+  sheet.getRange(user.row, idx.emailVerified + 1).setValue(true);
+  clearOtp('verify:' + user.username, email);
+  var row = sheet.getRange(user.row, 1, 1, USER_HEADERS.length).getValues()[0];
+  return { user: publicUserFromRow(row) };
+}
+
+function handleChangePassword(body) {
+  var user = authUser(body);
+  var current = String(body.currentPassword || '');
+  var next = String(body.newPassword || '');
+  if (next.length < 4) throw new Error('New password must be at least 4 characters.');
+  var sheet = getSheet(USERS_SHEET, USER_HEADERS);
+  var idx = colIndex(USER_HEADERS);
+  var row = sheet.getRange(user.row, 1, 1, USER_HEADERS.length).getValues()[0];
+  if (hashPassword(current, row[idx.salt]) !== row[idx.passwordHash]) throw new Error('Current password is incorrect.');
+  var salt = Utilities.getUuid();
+  sheet.getRange(user.row, idx.salt + 1).setValue(salt);
+  sheet.getRange(user.row, idx.passwordHash + 1).setValue(hashPassword(next, salt));
+  return { ok: true };
+}
+
+function handleChangeUsername(body) {
+  var user = authUser(body);
+  var newName = normalizeUsername(body.newUsername);
+  var password = String(body.password || '');
+  if (newName.length < 3) throw new Error('Username must be at least 3 characters.');
+  if (newName === user.username) throw new Error('That is already your username.');
+  var sheet = getSheet(USERS_SHEET, USER_HEADERS);
+  var idx = colIndex(USER_HEADERS);
+  var row = sheet.getRange(user.row, 1, 1, USER_HEADERS.length).getValues()[0];
+  if (hashPassword(password, row[idx.salt]) !== row[idx.passwordHash]) throw new Error('Password is incorrect.');
+  if (findUserRow(sheet, newName)) throw new Error('That username is already taken.');
+
+  var old = user.username;
+  sheet.getRange(user.row, idx.username + 1).setValue(newName);
+  // Cascade the rename across every sheet that stores the username.
+  renameInColumn(LOGS_SHEET, LOG_HEADERS, 'username', old, newName);
+  renameInColumn(FOOD_SHEET, FOOD_HEADERS, 'username', old, newName);
+  renameInColumn(FAST_SHEET, FAST_HEADERS, 'username', old, newName);
+  renameInColumn(SCAN_SHEET, SCAN_HEADERS, 'username', old, newName);
+  renameInColumn(CUSTOM_SHEET, CUSTOM_HEADERS, 'createdBy', old, newName);
+  renameInColumn(FRIEND_SHEET, FRIEND_HEADERS, 'requester', old, newName);
+  renameInColumn(FRIEND_SHEET, FRIEND_HEADERS, 'addressee', old, newName);
+  renameFirstColumn(PROFILE_SHEET, PROFILE_HEADERS, old, newName); // Profiles keyed by col 0
+
+  var token = Utilities.getUuid();
+  sheet.getRange(user.row, idx.token + 1).setValue(token);
+  var fresh = sheet.getRange(user.row, 1, 1, USER_HEADERS.length).getValues()[0];
+  return { token: token, user: publicUserFromRow(fresh) };
+}
+
+function renameInColumn(sheetName, headers, colName, oldVal, newVal) {
+  var sheet = getSheet(sheetName, headers);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(headers);
+  var col = idx[colName];
+  for (var i = 1; i < values.length; i++) {
+    if (normalizeUsername(values[i][col]) === oldVal) sheet.getRange(i + 1, col + 1).setValue(newVal);
+  }
+}
+function renameFirstColumn(sheetName, headers, oldVal, newVal) {
+  var sheet = getSheet(sheetName, headers);
+  var values = sheet.getDataRange().getValues();
+  for (var i = 1; i < values.length; i++) {
+    if (normalizeUsername(values[i][0]) === oldVal) sheet.getRange(i + 1, 1).setValue(newVal);
+  }
 }
 
 function handleLogin(body) {
@@ -161,14 +359,14 @@ function handleLogin(body) {
 
   return {
     token: token,
-    user: publicUser(username, row[idx.displayName], row[idx.startDate])
+    user: publicUser(username, row[idx.displayName], row[idx.startDate], row[idx.email], toBool(row[idx.emailVerified]))
   };
 }
 
 function handleGetState(body) {
   var user = authUser(body);
   return {
-    user: publicUser(user.username, user.displayName, user.startDate),
+    user: publicUser(user.username, user.displayName, user.startDate, user.email, user.emailVerified),
     logs: getUserLogs(user.username),
     profile: getProfile(user.username),
     activeFast: getActiveFast(user.username)
@@ -1045,7 +1243,7 @@ function handleReset(body) {
   var idx = colIndex(USER_HEADERS);
   setStartDateCell(sheet, found.row, idx.startDate + 1, newStart);
 
-  return { user: publicUser(user.username, user.displayName, newStart), logs: getUserLogs(user.username) };
+  return { user: publicUser(user.username, user.displayName, newStart, user.email, user.emailVerified), logs: getUserLogs(user.username) };
 }
 
 /* Writes a start date as PLAIN TEXT so Google Sheets never converts it to a
@@ -1141,7 +1339,7 @@ function handleUpdateProfile(body) {
   var idx = colIndex(USER_HEADERS);
   sheet.getRange(found.row, idx.displayName + 1).setValue(displayName);
 
-  return { user: publicUser(user.username, displayName, user.startDate) };
+  return { user: publicUser(user.username, displayName, user.startDate, user.email, user.emailVerified) };
 }
 
 function handleDeleteAccount(body) {
@@ -1407,19 +1605,31 @@ function authUser(body) {
   return {
     username: username,
     displayName: found.values[idx.displayName],
-    startDate: String(found.values[idx.startDate])
+    startDate: String(found.values[idx.startDate]),
+    email: String(found.values[idx.email] || ''),
+    emailVerified: toBool(found.values[idx.emailVerified]),
+    row: found.row
   };
 }
 
-function publicUser(username, displayName, startDate) {
+function publicUser(username, displayName, startDate, email, emailVerified) {
   return {
     username: username,
     displayName: displayName,
     startDate: formatDate(startDate),
     currentDay: dayNumberFor(startDate, todayStr()),
     challengeLength: CHALLENGE_LENGTH,
-    waterGoalMl: WATER_GOAL_ML
+    waterGoalMl: WATER_GOAL_ML,
+    email: email || '',
+    emailVerified: !!emailVerified
   };
+}
+
+// Build a publicUser straight from a Users-sheet row.
+function publicUserFromRow(row) {
+  var idx = colIndex(USER_HEADERS);
+  return publicUser(normalizeUsername(row[idx.username]), row[idx.displayName], row[idx.startDate],
+    row[idx.email], toBool(row[idx.emailVerified]));
 }
 
 function findUserRow(sheet, username) {

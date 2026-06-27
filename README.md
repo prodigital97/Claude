@@ -42,7 +42,10 @@ Miss any task and 75 Hard says you restart from Day 1 — there's a one-tap **re
   to use your own wallpaper, replace `assets/bg-academia.svg` / `assets/bg-arsenal.svg` with your image
   (keep the same filename, or point the CSS `body::before` rule at your file).
 - **Delete account** — Settings lets a user permanently remove their account and all their data (password-confirmed)
-- **Multi-user** sign-up / login (passwords are salted + SHA-256 hashed in the sheet)
+- **Accounts** — sign-up requires a working **email**, verified by a 6-digit **OTP** emailed via the
+  script (free, no SMS). **Forgot password** sends a reset code to your email. In **Settings → Account**
+  you can change your **username** (it migrates all your data), add/verify an **email**, or change your
+  **password**. (Passwords are salted + SHA-256 hashed in the sheet.)
 - **Auto-save** — every tap syncs; works offline and re-syncs
 - **Installable** to your phone home screen, works full-screen
 
@@ -187,8 +190,13 @@ Everything lives in your Google Sheet, in two tabs:
 
 **`Users`**
 
-| username | displayName | passwordHash | salt | token | startDate | createdAt |
-|----------|-------------|--------------|------|-------|-----------|-----------|
+| username | displayName | passwordHash | salt | token | startDate | createdAt | email | emailVerified |
+|----------|-------------|--------------|------|-------|-----------|-----------|-------|---------------|
+
+> Sign-up emails a 6-digit OTP (via Apps Script's `MailApp`, sent from the deploying account's Gmail) to
+> verify the address. OTPs live in `CacheService` for 10 minutes — there is no OTP sheet. After pasting
+> the latest `Code.gs`, **run the `setup` function once** so Apps Script grants the new "send email"
+> permission, then redeploy.
 
 **`Logs`** (one row per user per day, updated automatically as you tap)
 

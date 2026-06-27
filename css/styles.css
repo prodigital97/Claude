@@ -410,6 +410,13 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 
 .danger-zone { border-color: rgba(255,84,112,.4); }
 .danger-zone input { margin-bottom: 10px; }
+/* Account section */
+.acct-block { padding: 12px 0; border-top: 1px solid var(--line); }
+.acct-block:first-of-type { border-top: 0; }
+.acct-label { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+.acct-block input { margin-bottom: 8px; }
+#acct-email-otp { margin-top: 4px; }
+.email-banner { background: rgba(255,194,75,.14); color: var(--amber); border: 1px solid rgba(255,194,75,.35); border-radius: 10px; padding: 9px 11px; font-size: 12px; margin-bottom: 12px; }
 
 /* ---------- Day editor water stepper ---------- */
 .water-edit { display: flex; align-items: center; gap: 12px; }
