@@ -26,7 +26,6 @@ var FAST_SHEET = 'Fasts';
 var CUSTOM_SHEET = 'CustomFoods';
 
 var USER_HEADERS = ['username', 'displayName', 'passwordHash', 'salt', 'token', 'startDate', 'createdAt', 'email', 'emailVerified'];
-var OTP_TTL = 600; // OTP valid for 10 minutes
 var LOG_HEADERS = ['username', 'date', 'dayNumber', 'workout1', 'workout2', 'outdoor',
                    'waterMl', 'reading', 'photo', 'diet', 'noAlcohol', 'completed', 'notes', 'updatedAt', 'extra', 'mood', 'gut'];
 // 'sugar' appended at the end so older Food rows keep their column positions.
@@ -73,13 +72,10 @@ function doPost(e) {
     switch (action) {
       case 'register':   data = handleRegister(body);  break;
       case 'login':      data = handleLogin(body);     break;
-      case 'requestSignupOtp': data = handleRequestSignupOtp(body); break;
-      case 'requestResetOtp':  data = handleRequestResetOtp(body);  break;
-      case 'resetPassword':    data = handleResetPassword(body);    break;
-      case 'requestEmailOtp':  data = handleRequestEmailOtp(body);  break;
-      case 'verifyEmail':      data = handleVerifyEmail(body);      break;
+      case 'updateEmail':      data = handleUpdateEmail(body);      break;
       case 'changePassword':   data = handleChangePassword(body);   break;
       case 'changeUsername':   data = handleChangeUsername(body);   break;
+      case 'adminResetPassword': data = handleAdminResetPassword(body); break;
       case 'getState':   data = handleGetState(body);  break;
       case 'saveDay':    data = handleSaveDay(body);   break;
       case 'reset':      data = handleReset(body);     break;
@@ -131,62 +127,31 @@ function handleRegister(body) {
   var displayName = String(body.displayName || username).trim() || username;
   var startDate = normIso(body.startDate) || todayStr();
   var email = normalizeEmail(body.email);
-  var otp = String(body.otp || '').trim();
 
   if (username.length < 3) throw new Error('Username must be at least 3 characters.');
   if (password.length < 4) throw new Error('Password must be at least 4 characters.');
-  if (!isEmail(email)) throw new Error('Enter a valid email address.');
-
-  // The email must have been verified via the OTP we sent.
-  if (!verifyOtp('signup', email, otp)) throw new Error('That verification code is wrong or expired.');
+  if (email && !isEmail(email)) throw new Error('Enter a valid email address (or leave it blank).');
 
   var sheet = getSheet(USERS_SHEET, USER_HEADERS);
   if (findUserRow(sheet, username)) throw new Error('That username is already taken.');
-  if (findUserByEmail(email)) throw new Error('That email is already registered.');
+  if (email && findUserByEmail(email)) throw new Error('That email is already on another account.');
 
   var salt = Utilities.getUuid();
   var token = Utilities.getUuid();
   var idx = colIndex(USER_HEADERS);
   sheet.appendRow([
-    username, displayName, hashPassword(password, salt), salt, token, startDate, new Date().toISOString(), email, true
+    username, displayName, hashPassword(password, salt), salt, token, startDate, new Date().toISOString(), email, !!email
   ]);
   // Force the start-date cell to plain text so Sheets can never re-interpret it.
   setStartDateCell(sheet, sheet.getLastRow(), idx.startDate + 1, startDate);
-  clearOtp('signup', email);
 
-  return { token: token, user: publicUser(username, displayName, startDate, email, true) };
+  return { token: token, user: publicUser(username, displayName, startDate, email, !!email) };
 }
 
-/* ---------------- Email OTP + account management ---------------- */
+/* ---------------- Account management (no email is ever sent) ---------------- */
 
 function normalizeEmail(e) { return String(e || '').trim().toLowerCase(); }
 function isEmail(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
-function genOtp() { return String(Math.floor(100000 + Math.random() * 900000)); }
-function otpCacheKey(purpose, email) { return 'otp:' + purpose + ':' + normalizeEmail(email); }
-
-function putOtp(purpose, email, code) {
-  CacheService.getScriptCache().put(otpCacheKey(purpose, email), code, OTP_TTL);
-}
-function verifyOtp(purpose, email, code) {
-  code = String(code || '').trim();
-  if (!code) return false;
-  var stored = CacheService.getScriptCache().get(otpCacheKey(purpose, email));
-  return !!stored && stored === code;
-}
-function clearOtp(purpose, email) { CacheService.getScriptCache().remove(otpCacheKey(purpose, email)); }
-
-function sendOtpEmail(email, code, purpose) {
-  var what = purpose === 'reset' ? 'reset your password' : (purpose === 'signup' ? 'create your account' : 'verify your email');
-  var subject = '75 Hard — your verification code: ' + code;
-  var body = 'Your 75 Hard verification code is:\n\n    ' + code + '\n\n' +
-    'Enter this code in the app to ' + what + '. It expires in 10 minutes.\n\n' +
-    'If you did not request this, you can ignore this email.';
-  try {
-    MailApp.sendEmail(email, subject, body);
-  } catch (e) {
-    throw new Error('Could not send the email. ' + (e && e.message ? e.message : ''));
-  }
-}
 
 function findUserByEmail(email) {
   email = normalizeEmail(email);
@@ -199,82 +164,38 @@ function findUserByEmail(email) {
   return null;
 }
 
-// Step 1 of signup: validate + email a code (account not created yet).
-function handleRequestSignupOtp(body) {
-  var username = normalizeUsername(body.username);
-  var email = normalizeEmail(body.email);
-  if (username.length < 3) throw new Error('Username must be at least 3 characters.');
-  if (!isEmail(email)) throw new Error('Enter a valid email address.');
-  var sheet = getSheet(USERS_SHEET, USER_HEADERS);
-  if (findUserRow(sheet, username)) throw new Error('That username is already taken.');
-  if (findUserByEmail(email)) throw new Error('That email is already registered. Try logging in or reset your password.');
-  var code = genOtp();
-  putOtp('signup', email, code);
-  sendOtpEmail(email, code, 'signup');
-  return { sent: true };
-}
-
-// Forgot password: email a reset code if the address is on file.
-function handleRequestResetOtp(body) {
-  var email = normalizeEmail(body.email);
-  if (!isEmail(email)) throw new Error('Enter a valid email address.');
-  var found = findUserByEmail(email);
-  if (found) {
-    var code = genOtp();
-    putOtp('reset', email, code);
-    sendOtpEmail(email, code, 'reset');
-  }
-  // Always report success so we don't reveal which emails exist.
-  return { sent: true };
-}
-
-function handleResetPassword(body) {
-  var email = normalizeEmail(body.email);
-  var otp = String(body.otp || '').trim();
-  var newPassword = String(body.newPassword || '');
-  if (newPassword.length < 4) throw new Error('Password must be at least 4 characters.');
-  if (!verifyOtp('reset', email, otp)) throw new Error('That code is wrong or expired.');
-  var found = findUserByEmail(email);
-  if (!found) throw new Error('No account uses that email.');
-  var sheet = getSheet(USERS_SHEET, USER_HEADERS);
-  var idx = colIndex(USER_HEADERS);
-  var salt = Utilities.getUuid();
-  var token = Utilities.getUuid();
-  sheet.getRange(found.row, idx.salt + 1).setValue(salt);
-  sheet.getRange(found.row, idx.passwordHash + 1).setValue(hashPassword(newPassword, salt));
-  sheet.getRange(found.row, idx.token + 1).setValue(token); // rotate token; log them in
-  clearOtp('reset', email);
-  var row = sheet.getRange(found.row, 1, 1, USER_HEADERS.length).getValues()[0];
-  return { token: token, user: publicUserFromRow(row) };
-}
-
-// Existing user adds / changes their email -> send a verification code.
-function handleRequestEmailOtp(body) {
+// Save / update the user's email (optional, not verified — we never send to it).
+function handleUpdateEmail(body) {
   var user = authUser(body);
   var email = normalizeEmail(body.email);
-  if (!isEmail(email)) throw new Error('Enter a valid email address.');
-  var other = findUserByEmail(email);
+  if (email && !isEmail(email)) throw new Error('Enter a valid email address (or leave it blank).');
+  var other = email ? findUserByEmail(email) : null;
   if (other && normalizeUsername(other.values[colIndex(USER_HEADERS).username]) !== user.username) {
     throw new Error('That email is already used by another account.');
   }
-  var code = genOtp();
-  putOtp('verify:' + user.username, email, code);
-  sendOtpEmail(email, code, 'verify');
-  return { sent: true };
-}
-
-function handleVerifyEmail(body) {
-  var user = authUser(body);
-  var email = normalizeEmail(body.email);
-  var otp = String(body.otp || '').trim();
-  if (!verifyOtp('verify:' + user.username, email, otp)) throw new Error('That code is wrong or expired.');
   var sheet = getSheet(USERS_SHEET, USER_HEADERS);
   var idx = colIndex(USER_HEADERS);
   sheet.getRange(user.row, idx.email + 1).setValue(email);
-  sheet.getRange(user.row, idx.emailVerified + 1).setValue(true);
-  clearOtp('verify:' + user.username, email);
+  sheet.getRange(user.row, idx.emailVerified + 1).setValue(!!email);
   var row = sheet.getRange(user.row, 1, 1, USER_HEADERS.length).getValues()[0];
   return { user: publicUserFromRow(row) };
+}
+
+// Admin sets a new password for any user (covers forgotten passwords, no email needed).
+function handleAdminResetPassword(body) {
+  requireAdmin(body);
+  var target = normalizeUsername(body.username);
+  var newPassword = String(body.newPassword || '');
+  if (newPassword.length < 4) throw new Error('New password must be at least 4 characters.');
+  var sheet = getSheet(USERS_SHEET, USER_HEADERS);
+  var found = findUserRow(sheet, target);
+  if (!found) throw new Error('User not found.');
+  var idx = colIndex(USER_HEADERS);
+  var salt = Utilities.getUuid();
+  sheet.getRange(found.row, idx.salt + 1).setValue(salt);
+  sheet.getRange(found.row, idx.passwordHash + 1).setValue(hashPassword(newPassword, salt));
+  sheet.getRange(found.row, idx.token + 1).setValue(Utilities.getUuid()); // force re-login
+  return { ok: true, username: target };
 }
 
 function handleChangePassword(body) {
@@ -936,6 +857,7 @@ function handleAdminUsers(body) {
       displayName: u[uIdx.displayName] || name,
       startDate: start,
       createdAt: String(u[uIdx.createdAt] || ''),
+      email: String(u[uIdx.email] || ''),
       currentDay: dayNumberFor(u[uIdx.startDate], today),
       completedDays: Object.keys(doneDates).length,
       streak: currentStreak(logs),
@@ -1147,16 +1069,6 @@ function buildCoachContext(username, displayName) {
   return lines.join('\n');
 }
 
-
-/* Run this ONCE from the editor after pasting the new code. It forces Google to
- * grant the "send email" permission and sends you a test email so you can confirm
- * delivery. Pick testEmail in the function dropdown -> Run -> approve the prompt. */
-function testEmail() {
-  var to = Session.getEffectiveUser().getEmail();
-  MailApp.sendEmail(to, '75 Hard — email works ✅', 'If you received this, the app can now send verification and password-reset codes. You can delete this message.');
-  Logger.log('Test email sent to ' + to);
-  return 'Sent to ' + to;
-}
 
 /* Run this from the editor after setting the script properties to verify the key. */
 function testFatSecret() {

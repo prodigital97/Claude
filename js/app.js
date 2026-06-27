@@ -191,19 +191,16 @@
       if (!lu || lu.password !== p.password) throw new Error('Invalid username or password.');
       return { token: lu.token, user: pub(lu) };
     }
-    // Demo mode has no email server — accept any code so the flow still works.
-    if (action === 'requestSignupOtp' || action === 'requestResetOtp') return { sent: true };
-    if (action === 'resetPassword') {
-      var ru = Object.keys(d.users).map(function (k) { return d.users[k]; }).filter(function (x) { return (x.email || '').toLowerCase() === (p.email || '').toLowerCase(); })[0];
-      if (!ru) throw new Error('No account uses that email.');
-      ru.password = p.newPassword; saveDb(d); return { token: ru.token, user: pub(ru) };
-    }
     var me = d.users[(p.username || '').toLowerCase().trim()];
     if (!me || me.token !== p.token) throw new Error('Session expired. Please log in again.');
 
-    if (action === 'requestEmailOtp') return { sent: true };
-    if (action === 'verifyEmail') { me.email = p.email; me.emailVerified = true; saveDb(d); return { user: pub(me) }; }
+    if (action === 'updateEmail') { me.email = p.email || ''; me.emailVerified = !!p.email; saveDb(d); return { user: pub(me) }; }
     if (action === 'changePassword') { me.password = p.newPassword; saveDb(d); return { ok: true }; }
+    if (action === 'adminResetPassword') {
+      var tu = d.users[(p.username || '').toLowerCase().trim()];
+      if (tu) { tu.password = p.newPassword; saveDb(d); }
+      return { ok: true, username: p.username };
+    }
     if (action === 'changeUsername') {
       var nn = (p.newUsername || '').toLowerCase().trim();
       if (d.users[nn]) throw new Error('That username is already taken.');
@@ -401,10 +398,6 @@
         var login = b.dataset.authtab === 'login';
         $('#login-form').classList.toggle('hidden', !login);
         $('#register-form').classList.toggle('hidden', login);
-        $('#reset-form').classList.add('hidden');
-        // reset the signup OTP sub-step so it starts clean
-        $('#reg-fields').classList.remove('hidden');
-        $('#reg-otp-step').classList.add('hidden');
         authMsg('');
       });
     });
@@ -415,71 +408,13 @@
       authSubmit('login', { username: f.username.value, password: f.password.value }, 'Logging in…');
     });
 
-    // ---- Signup with email OTP ----
-    $('#reg-send-otp').addEventListener('click', function () {
-      var f = $('#register-form');
-      if (!f.displayName.value.trim() || f.username.value.trim().length < 3 || !f.password.value || !f.email.value.trim()) {
-        authMsg('Fill in all fields first (username 3+ chars).', 'error'); return;
-      }
-      authMsg('Emailing your code…');
-      this.disabled = true;
-      var self = this;
-      api('requestSignupOtp', { username: f.username.value, email: f.email.value }).then(function () {
-        authMsg('');
-        $('#reg-otp-email').textContent = f.email.value.trim();
-        $('#reg-fields').classList.add('hidden');
-        $('#reg-otp-step').classList.remove('hidden');
-        setTimeout(function () { f.otp.focus(); }, 80);
-      }).catch(function (err) { authMsg(err.message, 'error'); })
-        .then(function () { self.disabled = false; });
-    });
-    $('#reg-resend').addEventListener('click', function () {
-      $('#reg-otp-step').classList.add('hidden');
-      $('#reg-fields').classList.remove('hidden');
-      authMsg('');
-    });
     $('#register-form').addEventListener('submit', function (e) {
       e.preventDefault();
       var f = e.target;
-      if (!f.otp.value.trim()) { authMsg('Enter the code from your email.', 'error'); return; }
       authSubmit('register', {
         username: f.username.value, password: f.password.value, displayName: f.displayName.value,
-        startDate: f.startDate.value, email: f.email.value, otp: f.otp.value
-      }, 'Creating your account…');
-    });
-
-    // ---- Forgot / reset password ----
-    $('#forgot-link').addEventListener('click', function () {
-      $('#login-form').classList.add('hidden');
-      $('#register-form').classList.add('hidden');
-      $('#reset-form').classList.remove('hidden');
-      $('#reset-step2').classList.add('hidden');
-      $('#reset-step1').classList.remove('hidden');
-      authMsg('');
-    });
-    $('#reset-back').addEventListener('click', function () {
-      $('#reset-form').classList.add('hidden');
-      $('#login-form').classList.remove('hidden');
-      authMsg('');
-    });
-    $('#reset-send-otp').addEventListener('click', function () {
-      var f = $('#reset-form');
-      if (!f.email.value.trim()) { authMsg('Enter your account email.', 'error'); return; }
-      authMsg('Sending reset code…'); this.disabled = true; var self = this;
-      api('requestResetOtp', { email: f.email.value }).then(function () {
-        authMsg('');
-        $('#reset-email-label').textContent = f.email.value.trim();
-        $('#reset-step1').classList.add('hidden');
-        $('#reset-step2').classList.remove('hidden');
-        setTimeout(function () { f.otp.focus(); }, 80);
-      }).catch(function (err) { authMsg(err.message, 'error'); })
-        .then(function () { self.disabled = false; });
-    });
-    $('#reset-form').addEventListener('submit', function (e) {
-      e.preventDefault();
-      var f = e.target;
-      if (!f.otp.value.trim() || !f.newPassword.value) { authMsg('Enter the code and a new password.', 'error'); return; }
-      authSubmit('resetPassword', { email: f.email.value, otp: f.otp.value, newPassword: f.newPassword.value }, 'Resetting…');
+        startDate: f.startDate.value, email: f.email.value
+      }, 'Setting up…');
     });
   }
 
@@ -551,8 +486,7 @@
     $('#logout').addEventListener('click', logout);
     $('#reset-challenge').addEventListener('click', resetChallenge);
     $('#save-profile').addEventListener('click', saveProfile);
-    $('#acct-email-btn').addEventListener('click', acctEmailSend);
-    $('#acct-email-verify').addEventListener('click', acctEmailVerify);
+    $('#acct-email-btn').addEventListener('click', acctEmailSave);
     $('#acct-username-btn').addEventListener('click', acctChangeUsername);
     $('#acct-pw-btn').addEventListener('click', acctChangePassword);
     $('#save-startdate').addEventListener('click', saveStartDate);
@@ -590,6 +524,10 @@
       var save = e.target.closest('[data-save]'); var del = e.target.closest('[data-del]');
       if (save) adminSaveFood(save.getAttribute('data-save'), save);
       if (del) adminDeleteFood(del.getAttribute('data-del'));
+    });
+    $('#admin-users-list').addEventListener('click', function (e) {
+      var r = e.target.closest('[data-resetpw]');
+      if (r) adminResetUserPassword(r.getAttribute('data-resetpw'));
     });
     // Friends tabs + actions
     document.querySelectorAll('#board-tabs [data-btab]').forEach(function (b) {
@@ -1214,30 +1152,15 @@
   /* ----- Account: email, username, password ----- */
   function renderAccount() {
     var u = state.user || {};
-    var verified = u.emailVerified && u.email;
-    $('#email-banner').classList.toggle('hidden', !!verified);
-    $('#email-status').textContent = verified ? '· verified ✓' : (u.email ? '· not verified' : '· none added');
     if (!document.activeElement || document.activeElement.id !== 'acct-email') $('#acct-email').value = u.email || '';
-    $('#acct-email-btn').textContent = verified ? 'Change email' : 'Send verification code';
-    $('#acct-email-otp').classList.add('hidden');
   }
-  function acctEmailSend() {
+  function acctEmailSave() {
     var email = $('#acct-email').value.trim();
-    if (!email) { toast('Enter an email'); return; }
     var btn = $('#acct-email-btn'); btn.disabled = true;
-    api('requestEmailOtp', { email: email }).then(function () {
-      toast('Code emailed ✓');
-      $('#acct-email-otp').classList.remove('hidden');
-      $('#acct-email-code').value = ''; $('#acct-email-code').focus();
-    }).catch(function (e) { toast(e.message); }).then(function () { btn.disabled = false; });
-  }
-  function acctEmailVerify() {
-    var email = $('#acct-email').value.trim(), code = $('#acct-email-code').value.trim();
-    if (!code) { toast('Enter the code'); return; }
-    api('verifyEmail', { email: email, otp: code }).then(function (d) {
+    api('updateEmail', { email: email }).then(function (d) {
       state.user = Object.assign(state.user, d.user); cacheState();
-      toast('Email verified ✓'); renderAccount();
-    }).catch(function (e) { toast(e.message); });
+      toast(email ? 'Email saved ✓' : 'Email cleared');
+    }).catch(function (e) { toast(e.message); }).then(function () { btn.disabled = false; });
   }
   function acctChangeUsername() {
     var newName = $('#acct-username').value.trim().toLowerCase();
@@ -2494,8 +2417,19 @@
           (u.isAdmin ? ' <span class="muted tiny">· admin</span>' : '') + '</span>' +
           '<span class="muted tiny">Day ' + u.currentDay + '</span></div>' +
           '<div class="au-sub">@' + esc(u.username) + ' · 🔥 ' + u.streak + ' streak · ✅ ' + u.completedDays + ' days done · today ' + u.todayDone + '/7<br>' +
-          '🍽 ' + u.foodLogs + ' food logs · joined ' + esc(joined) + ' · started ' + esc(u.startDate) + ' · last active ' + (u.lastActive ? esc(u.lastActive) : '—') + '</div></div>';
+          '🍽 ' + u.foodLogs + ' food logs · joined ' + esc(joined) + ' · started ' + esc(u.startDate) + ' · last active ' + (u.lastActive ? esc(u.lastActive) : '—') +
+          (u.email ? ' · ✉️ ' + esc(u.email) : '') + '</div>' +
+          '<button class="btn fr-mini au-reset" data-resetpw="' + esc(u.username) + '">Reset password</button></div>';
       }).join('');
+  }
+  function adminResetUserPassword(username) {
+    var npw = prompt('Set a new password for @' + username + ' (tell them this; they can change it later):');
+    if (npw == null) return;
+    npw = String(npw).trim();
+    if (npw.length < 4) { toast('Password must be at least 4 characters'); return; }
+    api('adminResetPassword', { username: username, newPassword: npw }).then(function () {
+      toast('Password reset for @' + username + ' ✓');
+    }).catch(function (e) { toast(e.message); });
   }
 
   function renderAdminFoods() {

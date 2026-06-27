@@ -43,57 +43,26 @@
           <input name="password" type="password" autocomplete="current-password" required />
         </label>
         <button class="btn primary block" type="submit">Log in</button>
-        <button id="forgot-link" class="btn link-btn" type="button">Forgot password?</button>
+        <p class="muted tiny center" style="margin-top:10px">Forgot your password? Ask the admin to reset it for you.</p>
       </form>
 
       <form id="register-form" class="auth-form hidden">
-        <div id="reg-fields">
-          <label>Display name
-            <input name="displayName" autocomplete="name" placeholder="e.g. Pronoy" required />
-          </label>
-          <label>Username
-            <input name="username" autocomplete="username" autocapitalize="none" placeholder="lowercase, no spaces" required />
-          </label>
-          <label>Email
-            <input name="email" type="email" autocomplete="email" autocapitalize="none" placeholder="you@example.com" required />
-          </label>
-          <label>Password
-            <input name="password" type="password" autocomplete="new-password" required />
-          </label>
-          <label>Start date
-            <input name="startDate" type="date" required />
-          </label>
-          <button id="reg-send-otp" class="btn primary block" type="button">Send verification code</button>
-        </div>
-        <div id="reg-otp-step" class="hidden">
-          <p class="muted tiny">We emailed a 6-digit code to <b id="reg-otp-email"></b>. Enter it to finish.</p>
-          <label>Verification code
-            <input name="otp" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code" maxlength="6" />
-          </label>
-          <button class="btn primary block" type="submit">Verify &amp; start my 75 Hard</button>
-          <button id="reg-resend" class="btn link-btn" type="button">Use a different email / resend</button>
-        </div>
-      </form>
-
-      <!-- Forgot password -->
-      <form id="reset-form" class="auth-form hidden">
-        <div id="reset-step1">
-          <label>Your account email
-            <input name="email" type="email" autocomplete="email" autocapitalize="none" placeholder="you@example.com" required />
-          </label>
-          <button id="reset-send-otp" class="btn primary block" type="button">Email me a reset code</button>
-        </div>
-        <div id="reset-step2" class="hidden">
-          <p class="muted tiny">Enter the code sent to <b id="reset-email-label"></b> and your new password.</p>
-          <label>Reset code
-            <input name="otp" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code" maxlength="6" />
-          </label>
-          <label>New password
-            <input name="newPassword" type="password" autocomplete="new-password" required />
-          </label>
-          <button class="btn primary block" type="submit">Reset password &amp; log in</button>
-        </div>
-        <button id="reset-back" class="btn link-btn" type="button">‹ Back to log in</button>
+        <label>Display name
+          <input name="displayName" autocomplete="name" placeholder="e.g. Pronoy" required />
+        </label>
+        <label>Username
+          <input name="username" autocomplete="username" autocapitalize="none" placeholder="lowercase, no spaces" required />
+        </label>
+        <label>Email <span class="muted tiny">(optional)</span>
+          <input name="email" type="email" autocomplete="email" autocapitalize="none" placeholder="you@example.com" />
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="new-password" required />
+        </label>
+        <label>Start date
+          <input name="startDate" type="date" required />
+        </label>
+        <button class="btn primary block" type="submit">Start my 75 Hard</button>
       </form>
 
       <p id="auth-msg" class="form-msg"></p>
@@ -368,16 +337,11 @@
 
         <div class="card" id="account-card">
           <h3>Account</h3>
-          <div id="email-banner" class="email-banner hidden">⚠️ Add an email so you can reset your password if you forget it.</div>
 
           <div class="acct-block">
-            <div class="acct-label">Email <span id="email-status" class="muted tiny"></span></div>
+            <div class="acct-label">Email <span class="muted tiny">(optional)</span></div>
             <input id="acct-email" type="email" autocapitalize="none" placeholder="you@example.com" />
-            <button id="acct-email-btn" class="btn block">Send verification code</button>
-            <div id="acct-email-otp" class="hidden">
-              <input id="acct-email-code" inputmode="numeric" placeholder="6-digit code" maxlength="6" />
-              <button id="acct-email-verify" class="btn primary block">Verify email</button>
-            </div>
+            <button id="acct-email-btn" class="btn block">Save email</button>
           </div>
 
           <div class="acct-block">
