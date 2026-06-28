@@ -1324,10 +1324,14 @@ function handleLeaderboard(body) {
   }
 
   var profRows = getSheet(PROFILE_SHEET, PROFILE_HEADERS).getDataRange().getValues();
-  var goalByUser = {};
+  var goalByUser = {}, modeByUser = {};
   for (var c = 1; c < profRows.length; c++) {
     var pu = normalizeUsername(profRows[c][0]);
-    try { goalByUser[pu] = (JSON.parse(profRows[c][1] || '{}').calorieGoal) || 0; } catch (e) { goalByUser[pu] = 0; }
+    try {
+      var pj = JSON.parse(profRows[c][1] || '{}');
+      goalByUser[pu] = pj.calorieGoal || 0;
+      modeByUser[pu] = { mode: pj.mode === 'soft' ? 'soft' : 'hard', target: Number(pj.softTarget) || 70 };
+    } catch (e) { goalByUser[pu] = 0; modeByUser[pu] = { mode: 'hard', target: 70 }; }
   }
 
   var board = [];
@@ -1335,25 +1339,27 @@ function handleLeaderboard(body) {
     var u = users[i];
     var name = normalizeUsername(u[uIdx.username]);
     if (!name || !visible[name]) continue;
+    var um = modeByUser[name] || { mode: 'hard', target: 70 };
     var logs = (logsByUser[name] || []).sort(function (x, y) { return x.date < y.date ? -1 : 1; });
     var todayLog = logs.filter(function (l) { return l.date === today; })[0];
-    // Count distinct complete days within the challenge window (ignores stray/duplicate rows).
+    // Count distinct goal-met days within the challenge window (per the user's mode).
     var startDay = formatDate(u[uIdx.startDate]);
     var doneDates = {};
     logs.forEach(function (l) {
-      if (l.completed && l.date >= startDay && l.date <= today) doneDates[l.date] = true;
+      if (logGoalMet(l, um.mode, um.target) && l.date >= startDay && l.date <= today) doneDates[l.date] = true;
     });
     board.push({
       displayName: u[uIdx.displayName] || name,
       currentDay: dayNumberFor(u[uIdx.startDate], today),
       completedDays: Object.keys(doneDates).length,
-      streak: currentStreak(logs),
+      streak: currentStreak(logs, um.mode, um.target),
       todayDone: todayLog ? tasksDoneCount(todayLog) : 0,
       todayTotal: 7,
-      todayComplete: todayLog ? !!todayLog.completed : false,
+      todayComplete: todayLog ? logGoalMet(todayLog, um.mode, um.target) : false,
       todayWaterMl: todayLog ? (Number(todayLog.waterMl) || 0) : 0,
       todayCalories: Math.round(calToday[name] || 0),
-      calorieGoal: goalByUser[name] || 0
+      calorieGoal: goalByUser[name] || 0,
+      mode: um.mode, softTarget: um.target
     });
   }
   board.sort(function (a, b) { return b.completedDays - a.completedDays || b.todayDone - a.todayDone; });
@@ -1628,10 +1634,18 @@ function isDayComplete(d) {
          d.photo && d.diet && d.noAlcohol && (Number(d.waterMl) >= WATER_GOAL_ML);
 }
 
-function currentStreak(logs) {
-  // Consecutive complete days ending today (or yesterday if today's in progress).
+// Tasks needed for a day to "count" under the given mode ('hard' = all 7).
+function dayGoalCount(mode, target) {
+  return mode === 'soft' ? Math.max(1, Math.ceil((Number(target) || 70) / 100 * 7)) : 7;
+}
+function logGoalMet(l, mode, target) {
+  return tasksDoneCount(l) >= dayGoalCount(mode, target);
+}
+
+function currentStreak(logs, mode, target) {
+  // Consecutive goal-met days ending today (or yesterday if today's in progress).
   var set = {};
-  logs.forEach(function (l) { if (l.completed) set[l.date] = true; });
+  logs.forEach(function (l) { if (mode ? logGoalMet(l, mode, target) : l.completed) set[l.date] = true; });
   var d = parseDate(todayStr());
   if (!set[formatDate(d)]) d.setDate(d.getDate() - 1);
   var s = 0;

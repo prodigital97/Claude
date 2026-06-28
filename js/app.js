@@ -286,7 +286,7 @@
       return { totalCalories: Math.round(total), daysLogged: n, avgCalories: n ? Math.round(total / n) : 0 };
     }
     if (action === 'saveDay') {
-      var day = p.day; day.completed = isComplete(day);
+      var day = p.day; day.completed = goalMet(day);
       var arr = d.logs[me.username] || (d.logs[me.username] = []);
       var i = arr.findIndex(function (l) { return l.date === day.date; });
       if (i >= 0) arr[i] = day; else arr.push(day);
@@ -356,11 +356,20 @@
     if (Number(d.waterMl) >= WATER_GOAL) c++;
     return c;
   }
+  // 75 Hard vs 75 Soft (per-user, stored in profile).
+  function challengeMode() { return (state.profile && state.profile.mode) === 'soft' ? 'soft' : 'hard'; }
+  function softTarget() { var t = Number(state.profile && state.profile.softTarget) || 70; return Math.min(100, Math.max(20, t)); }
+  function softNeeded() { return Math.max(1, Math.ceil(softTarget() / 100 * TOTAL_ITEMS)); }
+  // Does this day count toward streak / "completed days" for the user's chosen mode?
+  function goalMet(d) {
+    if (challengeMode() === 'soft') return completedCount(d) >= softNeeded();
+    return isComplete(d);
+  }
   function streakOf(logs) {
     // Count consecutive complete days ending today (or yesterday if today's
     // still in progress, so an unfinished today doesn't zero your streak).
     var set = {};
-    logs.forEach(function (l) { if (isComplete(l)) set[l.date] = true; });
+    logs.forEach(function (l) { if (goalMet(l)) set[l.date] = true; });
     var d = todayStr();
     if (!set[d]) d = addDays(d, -1);
     var s = 0;
@@ -487,6 +496,10 @@
     $('#reset-challenge').addEventListener('click', resetChallenge);
     $('#save-profile').addEventListener('click', saveProfile);
     $('#acct-email-btn').addEventListener('click', acctEmailSave);
+    document.querySelectorAll('#mode-seg [data-mode]').forEach(function (b) {
+      b.addEventListener('click', function () { pickMode(b.dataset.mode); });
+    });
+    $('#save-mode').addEventListener('click', saveMode);
     $('#acct-username-btn').addEventListener('click', acctChangeUsername);
     $('#acct-pw-btn').addEventListener('click', acctChangePassword);
     $('#save-startdate').addEventListener('click', saveStartDate);
@@ -623,15 +636,17 @@
     // ring / status
     var count = completedCount(d);
     var pct = Math.round((count / TOTAL_ITEMS) * 100);
+    var met = goalMet(d);
+    var soft = challengeMode() === 'soft';
     var ring = $('#ring-fg');
     var circ = 2 * Math.PI * 52;
     ring.style.strokeDashoffset = circ * (1 - count / TOTAL_ITEMS);
-    ring.style.stroke = count === TOTAL_ITEMS ? 'var(--green)' : 'var(--primary)';
+    ring.style.stroke = met ? 'var(--green)' : 'var(--primary)';
     $('#ring-pct').textContent = pct + '%';
 
     var st = $('#today-status');
-    if (count === TOTAL_ITEMS) { st.textContent = 'Day complete! 🎉'; st.className = 'status-chip done'; }
-    else { st.textContent = count + ' / ' + TOTAL_ITEMS + ' done'; st.className = 'status-chip pending'; }
+    if (met) { st.textContent = soft ? 'Goal met! 🎉' : 'Day complete! 🎉'; st.className = 'status-chip done'; }
+    else { st.textContent = count + ' / ' + TOTAL_ITEMS + ' done' + (soft ? ' · need ' + softNeeded() : ''); st.className = 'status-chip pending'; }
 
     $('#streak-line').textContent = '🔥 ' + streakOf(state.logs) + ' day streak';
 
@@ -790,7 +805,7 @@
 
   /* ---------------- Saving ---------------- */
   function queueSave() {
-    state.today.completed = isComplete(state.today);
+    state.today.completed = goalMet(state.today);
     upsertLocal(state.today);
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(function () { pushToday(false); }, 700);
@@ -802,9 +817,9 @@
     cacheState();
   }
   function pushToday(announce) {
-    state.today.completed = isComplete(state.today);
+    state.today.completed = goalMet(state.today);
     api('saveDay', { day: state.today }).then(function () {
-      if (announce) toast(state.today.completed ? 'Day complete — beast! 🔥' : 'Saved ✓');
+      if (announce) toast(state.today.completed ? (challengeMode() === 'soft' ? 'Goal met — nice! 🔥' : 'Day complete — beast! 🔥') : 'Saved ✓');
     }).catch(function (err) {
       toast('Saved locally · ' + err.message);
     });
@@ -823,12 +838,14 @@
     for (var n = 1; n <= LEN; n++) {
       var date = addDays(state.user.startDate, n - 1);
       var log = logFor(date);
-      var done = log && isComplete(log);
+      var met = log && goalMet(log);
+      var attempted = log ? completedCount(log) : 0;
       var cell = el('div', 'cal-cell');
       cell.innerHTML = '<span class="cc-num">' + n + '</span><span class="cc-date">' + shortDate(date) + '</span>';
-      if (date === today) cell.classList.add('today');
-      if (done) cell.classList.add('done');
+      if (met) cell.classList.add('done');
+      else if (date < today && attempted > 0) cell.classList.add('partial');
       else if (date < today) cell.classList.add('miss');
+      if (date === today) cell.classList.add('today');
       if (date <= today) {
         cell.classList.add('editable');
         (function (dt) { cell.addEventListener('click', function () { openDayEditor(dt); }); })(date);
@@ -848,7 +865,7 @@
       var date = addDays(state.user.startDate, curDay - 1 - i);
       if (date > today || date < state.user.startDate) continue;
       var log = logFor(date);
-      if (log && isComplete(log)) completed++;
+      if (log && goalMet(log)) completed++;
       taskTotal += TOTAL_ITEMS;
       if (log) taskHits += completedCount(log);
     }
@@ -936,7 +953,7 @@
     var today = todayStr();
     // Count complete days only within the challenge window (ignores stray logs).
     var done = logs.filter(function (l) {
-      return l.date >= start && l.date <= today && isComplete(l);
+      return l.date >= start && l.date <= today && goalMet(l);
     }).length;
 
     var grid = $('#stats-grid');
@@ -1014,7 +1031,7 @@
   }
   function bestStreak(logs) {
     var best = 0, cur = 0;
-    logs.forEach(function (l) { if (isComplete(l)) { cur++; best = Math.max(best, cur); } else cur = 0; });
+    logs.forEach(function (l) { if (goalMet(l)) { cur++; best = Math.max(best, cur); } else cur = 0; });
     return best;
   }
 
@@ -1050,6 +1067,7 @@
           '<div class="fc-top">' +
             '<div class="fc-rank">' + medal + '</div>' +
             '<div class="fc-name">' + esc(u.displayName) + (mine ? ' <span class="muted">(you)</span>' : '') +
+              (u.mode === 'soft' ? ' <span class="soft-tag">SOFT</span>' : '') +
               '<small>Day ' + Math.min(u.currentDay, LEN) + ' · 🔥 ' + u.streak + ' · ' + u.completedDays + ' days done</small></div>' +
             badge +
           '</div>' +
@@ -1140,6 +1158,7 @@
     $('#fx-sound').checked = FX.sound;
     $('#fx-haptics').checked = FX.haptics;
     renderAccount();
+    renderModeCard();
     var sd = fmt(parse(state.user.startDate));
     // Guard against a corrupted/ancient stored date (e.g. year 2000) — show today instead.
     if (sd < '2025-01-01' || sd > todayStr()) sd = todayStr();
@@ -1147,6 +1166,33 @@
     inp.value = sd; inp.min = '2025-01-01'; inp.max = todayStr();
     prefillGoals();
     renderThemes();
+  }
+
+  /* ----- Challenge mode (75 Hard / 75 Soft) ----- */
+  function renderModeCard() {
+    var mode = challengeMode();
+    document.querySelectorAll('#mode-seg [data-mode]').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.mode === mode);
+    });
+    $('#soft-target-wrap').classList.toggle('hidden', mode !== 'soft');
+    $('#soft-target').value = String(softTarget());
+  }
+  function pickMode(mode) {
+    document.querySelectorAll('#mode-seg [data-mode]').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.mode === mode);
+    });
+    $('#soft-target-wrap').classList.toggle('hidden', mode !== 'soft');
+  }
+  function saveMode() {
+    var mode = $('#mode-seg [data-mode].active') ? $('#mode-seg [data-mode].active').dataset.mode : 'hard';
+    var target = Number($('#soft-target').value) || 70;
+    var profile = Object.assign({}, state.profile, { mode: mode, softTarget: target });
+    state.profile = profile;
+    api('saveGoals', { profile: profile }).then(function (data) {
+      if (data && data.profile) state.profile = data.profile;
+      toast(mode === 'soft' ? 'Switched to 75 Soft (' + softNeeded() + '/' + TOTAL_ITEMS + ' tasks/day) ✓' : 'Switched to 75 Hard ✓');
+      renderAll();
+    }).catch(function (e) { toast(e.message); });
   }
 
   /* ----- Account: email, username, password ----- */

@@ -170,6 +170,7 @@
         <p class="muted tiny" style="margin:2px 2px 12px">Tap any day up to today to add or fix that day’s tasks.</p>
         <div class="legend">
           <span><i class="dot done"></i> Done</span>
+          <span><i class="dot partial"></i> Partial</span>
           <span><i class="dot miss"></i> Missed</span>
           <span><i class="dot today"></i> Today</span>
           <span><i class="dot future"></i> Upcoming</span>
@@ -412,6 +413,25 @@
             <label>Sugar limit (g)<input id="g-sugar" type="number" inputmode="numeric" /></label>
           </div>
           <button id="save-goals" class="btn primary block">Save diet goals</button>
+        </div>
+
+        <div class="card">
+          <h3>Challenge mode</h3>
+          <p class="muted tiny">75 Hard needs all 7 tasks every day. 75 Soft counts a day if you hit your daily target — great for staying consistent even on busy days.</p>
+          <div class="seg" id="mode-seg">
+            <button data-mode="hard" class="active" type="button">💪 75 Hard</button>
+            <button data-mode="soft" type="button">🌱 75 Soft</button>
+          </div>
+          <div id="soft-target-wrap" class="hidden">
+            <label>Daily target
+              <select id="soft-target">
+                <option value="60">60% (4 of 7 tasks)</option>
+                <option value="70" selected>70% (5 of 7 tasks)</option>
+                <option value="80">80% (6 of 7 tasks)</option>
+              </select>
+            </label>
+          </div>
+          <button id="save-mode" class="btn block">Save challenge mode</button>
         </div>
 
         <div class="card">

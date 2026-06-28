@@ -18,6 +18,15 @@ Every day you must complete **all** of:
 
 Miss any task and 75 Hard says you restart from Day 1 — there's a one-tap **restart** button in Settings.
 
+### 75 Hard vs 75 Soft
+
+Each person picks their **Challenge mode** in **Settings → Challenge mode** (it's per-user, on the same shared sheet):
+
+- **75 Hard** (default) — a day counts only if you complete **all 7** tasks.
+- **75 Soft** — a day counts if you hit your **daily target** (60/70/80%, default 70% ≈ 5 of 7 tasks). Great for staying consistent on busy days without "failing."
+
+The Journey calendar shows three colours: 🟢 goal met · 🟡 **partial** (you did some but missed the goal) · 🔴 missed. Streaks, days-completed and the Friends feed all respect each person's mode (soft users get a **SOFT** tag on the leaderboard).
+
 ## Features
 
 - **Today screen** with a live completion ring, big tap targets, and a glass-by-glass water tracker
