@@ -31,7 +31,7 @@ The Journey calendar shows three colours: 🟢 goal met · 🟡 **partial** (you
 
 - **Today screen** with a live completion ring, big tap targets, and a glass-by-glass water tracker
 - **Diet & calorie tracker** (FatSecret-style) — search foods, log meals (breakfast/lunch/dinner/snacks),
-  track calories + protein/carbs/fat against a daily goal, with a built-in TDEE goal calculator.
+  track calories + protein/carbs/fat/sugar/**fibre** against a daily goal, with a built-in TDEE goal calculator.
   Food search uses the free [Open Food Facts](https://world.openfoodfacts.org) database, a built-in
   quick-list of common staples, **a bundled 1,000+ Indian dish database** (per serving), and shared
   custom foods; you can also add custom foods manually.
@@ -213,8 +213,8 @@ Everything lives in your Google Sheet, in two tabs:
 
 **`Food`** (one row per logged food, for the diet tracker)
 
-| id | username | date | meal | name | grams | calories | protein | carbs | fat | createdAt |
-|----|----------|------|------|------|-------|----------|---------|-------|-----|-----------|
+| id | username | date | meal | name | grams | calories | protein | carbs | fat | createdAt | sugar | fiber |
+|----|----------|------|------|------|-------|----------|---------|-------|-----|-----------|-------|-------|
 
 **`Profiles`** (each user's saved diet goals/body stats, as JSON)
 

@@ -28,9 +28,9 @@ var CUSTOM_SHEET = 'CustomFoods';
 var USER_HEADERS = ['username', 'displayName', 'passwordHash', 'salt', 'token', 'startDate', 'createdAt', 'email', 'emailVerified'];
 var LOG_HEADERS = ['username', 'date', 'dayNumber', 'workout1', 'workout2', 'outdoor',
                    'waterMl', 'reading', 'photo', 'diet', 'noAlcohol', 'completed', 'notes', 'updatedAt', 'extra', 'mood', 'gut'];
-// 'sugar' appended at the end so older Food rows keep their column positions.
+// 'sugar' / 'fiber' appended at the end so older Food rows keep their column positions.
 var FOOD_HEADERS = ['id', 'username', 'date', 'meal', 'name', 'grams',
-                    'calories', 'protein', 'carbs', 'fat', 'createdAt', 'sugar'];
+                    'calories', 'protein', 'carbs', 'fat', 'createdAt', 'sugar', 'fiber'];
 var PROFILE_HEADERS = ['username', 'dataJson', 'updatedAt'];
 var FAST_HEADERS = ['id', 'username', 'startAt', 'endAt', 'goalHours', 'createdAt'];
 var CUSTOM_HEADERS = ['id', 'name', 'kcal', 'protein', 'carbs', 'fat', 'sugar', 'createdBy', 'createdAt',
@@ -462,6 +462,7 @@ function handleAddFood(body) {
     carbs: round1(f.carbs),
     fat: round1(f.fat),
     sugar: round1(f.sugar),
+    fiber: round1(f.fiber),
     createdAt: new Date().toISOString()
   };
   var sheet = getSheet(FOOD_SHEET, FOOD_HEADERS);
@@ -499,6 +500,7 @@ function handleUpdateFood(body) {
       sheet.getRange(i + 1, idx.carbs + 1).setValue(round1(f.carbs));
       sheet.getRange(i + 1, idx.fat + 1).setValue(round1(f.fat));
       sheet.getRange(i + 1, idx.sugar + 1).setValue(round1(f.sugar));
+      sheet.getRange(i + 1, idx.fiber + 1).setValue(round1(f.fiber));
       return { food: foodFromRow(sheet.getRange(i + 1, 1, 1, FOOD_HEADERS.length).getValues()[0], idx) };
     }
   }
@@ -562,7 +564,8 @@ function customFromRow(r, idx) {
   return {
     id: String(r[idx.id]), name: String(r[idx.name]),
     kcal: Number(r[idx.kcal]) || 0, protein: Number(r[idx.protein]) || 0,
-    carbs: Number(r[idx.carbs]) || 0, fat: Number(r[idx.fat]) || 0, sugar: Number(r[idx.sugar]) || 0
+    carbs: Number(r[idx.carbs]) || 0, fat: Number(r[idx.fat]) || 0, sugar: Number(r[idx.sugar]) || 0,
+    fiber: Number(r[idx.fiber]) || 0
   };
 }
 
@@ -1111,7 +1114,8 @@ function foodFromRow(r, idx) {
     protein: Number(r[idx.protein]) || 0,
     carbs: Number(r[idx.carbs]) || 0,
     fat: Number(r[idx.fat]) || 0,
-    sugar: Number(r[idx.sugar]) || 0
+    sugar: Number(r[idx.sugar]) || 0,
+    fiber: Number(r[idx.fiber]) || 0
   };
 }
 

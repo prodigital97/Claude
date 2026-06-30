@@ -261,7 +261,7 @@
     if (action === 'updateFood') {
       var farr = (d.foods && d.foods[me.username]) || [];
       var row = farr.filter(function (x) { return x.id === p.id; })[0];
-      if (row) { ['grams', 'calories', 'protein', 'carbs', 'fat', 'sugar'].forEach(function (k) { row[k] = p.food[k]; }); saveDb(d); }
+      if (row) { ['grams', 'calories', 'protein', 'carbs', 'fat', 'sugar', 'fiber'].forEach(function (k) { row[k] = p.food[k]; }); saveDb(d); }
       return { food: row || null };
     }
     if (action === 'getCustomFoods') {
@@ -473,7 +473,7 @@
   function loadCustomFoods() {
     api('getCustomFoods', {}).then(function (data) {
       state.customFoods = (data.foods || []).map(function (f) {
-        return { name: f.name, kcal: f.kcal, p: f.protein, c: f.carbs, f: f.fat, s: f.sugar, serving: 100, shared: true };
+        return { name: f.name, kcal: f.kcal, p: f.protein, c: f.carbs, f: f.fat, s: f.sugar, fb: f.fiber || 0, serving: 100, shared: true };
       });
     }).catch(function () {});
   }
@@ -1283,156 +1283,156 @@
   // Per 100 g unless the item is naturally counted per piece (then grams = avg weight).
   var COMMON_FOODS = [
     // Grains & breads
-    { name: 'White rice (cooked)', kcal: 130, p: 2.7, c: 28, f: 0.3, s: 0.1, serving: 150 },
-    { name: 'Brown rice (cooked)', kcal: 123, p: 2.7, c: 26, f: 1, s: 0.4, serving: 150 },
-    { name: 'Roti / Chapati', kcal: 297, p: 11, c: 50, f: 7, s: 1.5, serving: 40 },
-    { name: 'Paratha (plain)', kcal: 320, p: 6, c: 40, f: 14, s: 1.5, serving: 60 },
-    { name: 'Aloo paratha', kcal: 280, p: 5, c: 38, f: 11, s: 2, serving: 100 },
-    { name: 'Naan', kcal: 310, p: 9, c: 50, f: 8, s: 3, serving: 90 },
-    { name: 'Bread (white slice)', kcal: 265, p: 9, c: 49, f: 3.2, s: 5, serving: 30 },
-    { name: 'Brown bread (slice)', kcal: 247, p: 13, c: 41, f: 4, s: 4, serving: 30 },
-    { name: 'Oats (dry)', kcal: 389, p: 17, c: 66, f: 7, s: 1, serving: 40 },
-    { name: 'Poha (cooked)', kcal: 130, p: 2.5, c: 27, f: 1.5, s: 1, serving: 150 },
-    { name: 'Upma', kcal: 145, p: 3, c: 24, f: 4, s: 1, serving: 150 },
-    { name: 'Idli', kcal: 130, p: 4, c: 25, f: 0.8, s: 0.5, serving: 80 },
-    { name: 'Dosa (plain)', kcal: 168, p: 3.9, c: 30, f: 3.7, s: 1, serving: 80 },
+    { name: 'White rice (cooked)', kcal: 130, p: 2.7, c: 28, f: 0.3, s: 0.1, fb: 0.4, serving: 150 },
+    { name: 'Brown rice (cooked)', kcal: 123, p: 2.7, c: 26, f: 1, s: 0.4, fb: 1.8, serving: 150 },
+    { name: 'Roti / Chapati', kcal: 297, p: 11, c: 50, f: 7, s: 1.5, fb: 4.9, serving: 40 },
+    { name: 'Paratha (plain)', kcal: 320, p: 6, c: 40, f: 14, s: 1.5, fb: 4, serving: 60 },
+    { name: 'Aloo paratha', kcal: 280, p: 5, c: 38, f: 11, s: 2, fb: 3, serving: 100 },
+    { name: 'Naan', kcal: 310, p: 9, c: 50, f: 8, s: 3, fb: 2.2, serving: 90 },
+    { name: 'Bread (white slice)', kcal: 265, p: 9, c: 49, f: 3.2, s: 5, fb: 2.7, serving: 30 },
+    { name: 'Brown bread (slice)', kcal: 247, p: 13, c: 41, f: 4, s: 4, fb: 7, serving: 30 },
+    { name: 'Oats (dry)', kcal: 389, p: 17, c: 66, f: 7, s: 1, fb: 10, serving: 40 },
+    { name: 'Poha (cooked)', kcal: 130, p: 2.5, c: 27, f: 1.5, s: 1, fb: 1, serving: 150 },
+    { name: 'Upma', kcal: 145, p: 3, c: 24, f: 4, s: 1, fb: 1.5, serving: 150 },
+    { name: 'Idli', kcal: 130, p: 4, c: 25, f: 0.8, s: 0.5, fb: 1, serving: 80 },
+    { name: 'Dosa (plain)', kcal: 168, p: 3.9, c: 30, f: 3.7, s: 1, fb: 1.5, serving: 80 },
     // Noodles / pasta / wraps
-    { name: 'Pasta (cooked)', kcal: 131, p: 5, c: 25, f: 1.1, s: 0.6, serving: 150 },
-    { name: 'Hakka noodles (cooked)', kcal: 138, p: 4, c: 25, f: 2, s: 1, serving: 150 },
-    { name: 'Rice vermicelli (cooked)', kcal: 109, p: 1.8, c: 24, f: 0.2, s: 0, serving: 150 },
-    { name: 'Shirataki noodles (cooked)', kcal: 10, p: 0.2, c: 3, f: 0, s: 0, serving: 100 },
-    { name: 'Rice paper / spring roll wrapper', kcal: 330, p: 0.9, c: 81, f: 0.2, s: 0.5, serving: 10 },
+    { name: 'Pasta (cooked)', kcal: 131, p: 5, c: 25, f: 1.1, s: 0.6, fb: 1.8, serving: 150 },
+    { name: 'Hakka noodles (cooked)', kcal: 138, p: 4, c: 25, f: 2, s: 1, fb: 1.8, serving: 150 },
+    { name: 'Rice vermicelli (cooked)', kcal: 109, p: 1.8, c: 24, f: 0.2, s: 0, fb: 0.9, serving: 150 },
+    { name: 'Shirataki noodles (cooked)', kcal: 10, p: 0.2, c: 3, f: 0, s: 0, fb: 3, serving: 100 },
+    { name: 'Rice paper / spring roll wrapper', kcal: 330, p: 0.9, c: 81, f: 0.2, s: 0.5, fb: 1.6, serving: 10 },
     // Dals, legumes, soy
-    { name: 'Dal (cooked)', kcal: 116, p: 7, c: 17, f: 1.5, s: 1, serving: 150 },
-    { name: 'Dal makhani', kcal: 230, p: 9, c: 20, f: 13, s: 3, serving: 150 },
-    { name: 'Rajma (cooked)', kcal: 127, p: 8.7, c: 22, f: 0.5, s: 0.6, serving: 150 },
-    { name: 'Chole / chana masala', kcal: 180, p: 8, c: 22, f: 7, s: 3, serving: 150 },
-    { name: 'Boiled chana', kcal: 164, p: 8.9, c: 27, f: 2.6, s: 5, serving: 100 },
-    { name: 'Tofu', kcal: 76, p: 8, c: 1.9, f: 4.8, s: 0.6, serving: 100 },
-    { name: 'Soya chunks (dry)', kcal: 345, p: 52, c: 33, f: 0.5, s: 9, serving: 30 },
+    { name: 'Dal (cooked)', kcal: 116, p: 7, c: 17, f: 1.5, s: 1, fb: 4, serving: 150 },
+    { name: 'Dal makhani', kcal: 230, p: 9, c: 20, f: 13, s: 3, fb: 5, serving: 150 },
+    { name: 'Rajma (cooked)', kcal: 127, p: 8.7, c: 22, f: 0.5, s: 0.6, fb: 6.4, serving: 150 },
+    { name: 'Chole / chana masala', kcal: 180, p: 8, c: 22, f: 7, s: 3, fb: 6, serving: 150 },
+    { name: 'Boiled chana', kcal: 164, p: 8.9, c: 27, f: 2.6, s: 5, fb: 7.6, serving: 100 },
+    { name: 'Tofu', kcal: 76, p: 8, c: 1.9, f: 4.8, s: 0.6, fb: 0.9, serving: 100 },
+    { name: 'Soya chunks (dry)', kcal: 345, p: 52, c: 33, f: 0.5, s: 9, fb: 13, serving: 30 },
     // Dairy & fats
-    { name: 'Milk (full fat)', kcal: 61, p: 3.2, c: 4.8, f: 3.3, s: 5, serving: 200 },
-    { name: 'Milk (toned)', kcal: 47, p: 3.1, c: 4.7, f: 1.5, s: 5, serving: 200 },
-    { name: 'Curd / Yogurt', kcal: 98, p: 11, c: 3.4, f: 4.3, s: 4.7, serving: 150 },
-    { name: 'Greek yogurt', kcal: 97, p: 9, c: 4, f: 5, s: 4, serving: 150 },
-    { name: 'Buttermilk', kcal: 40, p: 3.3, c: 4.8, f: 0.9, s: 4.8, serving: 200 },
-    { name: 'Paneer', kcal: 296, p: 18, c: 4, f: 22, s: 1.2, serving: 50 },
-    { name: 'Cheddar cheese', kcal: 402, p: 25, c: 1.3, f: 33, s: 0.5, serving: 30 },
-    { name: 'Mozzarella', kcal: 280, p: 28, c: 3.1, f: 17, s: 1, serving: 30 },
-    { name: 'Fresh cream', kcal: 292, p: 2.1, c: 3, f: 30, s: 3, serving: 30 },
-    { name: 'Butter', kcal: 717, p: 0.9, c: 0.1, f: 81, s: 0.1, serving: 10 },
-    { name: 'Ghee', kcal: 900, p: 0, c: 0, f: 100, s: 0, serving: 10 },
-    { name: 'Coconut oil', kcal: 862, p: 0, c: 0, f: 100, s: 0, serving: 10 },
-    { name: 'Mustard oil', kcal: 884, p: 0, c: 0, f: 100, s: 0, serving: 10 },
-    { name: 'Olive oil', kcal: 884, p: 0, c: 0, f: 100, s: 0, serving: 10 },
-    { name: 'Peanut butter', kcal: 588, p: 25, c: 20, f: 50, s: 9, serving: 20 },
+    { name: 'Milk (full fat)', kcal: 61, p: 3.2, c: 4.8, f: 3.3, s: 5, fb: 0, serving: 200 },
+    { name: 'Milk (toned)', kcal: 47, p: 3.1, c: 4.7, f: 1.5, s: 5, fb: 0, serving: 200 },
+    { name: 'Curd / Yogurt', kcal: 98, p: 11, c: 3.4, f: 4.3, s: 4.7, fb: 0, serving: 150 },
+    { name: 'Greek yogurt', kcal: 97, p: 9, c: 4, f: 5, s: 4, fb: 0, serving: 150 },
+    { name: 'Buttermilk', kcal: 40, p: 3.3, c: 4.8, f: 0.9, s: 4.8, fb: 0, serving: 200 },
+    { name: 'Paneer', kcal: 296, p: 18, c: 4, f: 22, s: 1.2, fb: 0, serving: 50 },
+    { name: 'Cheddar cheese', kcal: 402, p: 25, c: 1.3, f: 33, s: 0.5, fb: 0, serving: 30 },
+    { name: 'Mozzarella', kcal: 280, p: 28, c: 3.1, f: 17, s: 1, fb: 0, serving: 30 },
+    { name: 'Fresh cream', kcal: 292, p: 2.1, c: 3, f: 30, s: 3, fb: 0, serving: 30 },
+    { name: 'Butter', kcal: 717, p: 0.9, c: 0.1, f: 81, s: 0.1, fb: 0, serving: 10 },
+    { name: 'Ghee', kcal: 900, p: 0, c: 0, f: 100, s: 0, fb: 0, serving: 10 },
+    { name: 'Coconut oil', kcal: 862, p: 0, c: 0, f: 100, s: 0, fb: 0, serving: 10 },
+    { name: 'Mustard oil', kcal: 884, p: 0, c: 0, f: 100, s: 0, fb: 0, serving: 10 },
+    { name: 'Olive oil', kcal: 884, p: 0, c: 0, f: 100, s: 0, fb: 0, serving: 10 },
+    { name: 'Peanut butter', kcal: 588, p: 25, c: 20, f: 50, s: 9, fb: 6, serving: 20 },
     // Proteins
-    { name: 'Egg (whole)', kcal: 155, p: 13, c: 1.1, f: 11, s: 1.1, serving: 50 },
-    { name: 'Egg white', kcal: 52, p: 11, c: 0.7, f: 0.2, s: 0.7, serving: 33 },
-    { name: 'Chicken breast (cooked)', kcal: 165, p: 31, c: 0, f: 3.6, s: 0, serving: 120 },
-    { name: 'Chicken curry', kcal: 180, p: 14, c: 6, f: 11, s: 3, serving: 200 },
-    { name: 'Butter chicken', kcal: 240, p: 14, c: 8, f: 16, s: 4, serving: 200 },
-    { name: 'Fish (cooked)', kcal: 206, p: 22, c: 0, f: 12, s: 0, serving: 120 },
-    { name: 'Mutton (cooked)', kcal: 258, p: 25, c: 0, f: 17, s: 0, serving: 120 },
-    { name: 'Whey protein (scoop)', kcal: 400, p: 80, c: 8, f: 6, s: 6, serving: 30 },
+    { name: 'Egg (whole)', kcal: 155, p: 13, c: 1.1, f: 11, s: 1.1, fb: 0, serving: 50 },
+    { name: 'Egg white', kcal: 52, p: 11, c: 0.7, f: 0.2, s: 0.7, fb: 0, serving: 33 },
+    { name: 'Chicken breast (cooked)', kcal: 165, p: 31, c: 0, f: 3.6, s: 0, fb: 0, serving: 120 },
+    { name: 'Chicken curry', kcal: 180, p: 14, c: 6, f: 11, s: 3, fb: 1, serving: 200 },
+    { name: 'Butter chicken', kcal: 240, p: 14, c: 8, f: 16, s: 4, fb: 1, serving: 200 },
+    { name: 'Fish (cooked)', kcal: 206, p: 22, c: 0, f: 12, s: 0, fb: 0, serving: 120 },
+    { name: 'Mutton (cooked)', kcal: 258, p: 25, c: 0, f: 17, s: 0, fb: 0, serving: 120 },
+    { name: 'Whey protein (scoop)', kcal: 400, p: 80, c: 8, f: 6, s: 6, fb: 0, serving: 30 },
     // Veg, fruit
-    { name: 'Mixed vegetables', kcal: 65, p: 2.6, c: 13, f: 0.4, s: 5, serving: 150 },
-    { name: 'Mixed veg sabzi', kcal: 110, p: 3, c: 12, f: 6, s: 4, serving: 150 },
-    { name: 'Palak paneer', kcal: 180, p: 8, c: 8, f: 13, s: 3, serving: 150 },
-    { name: 'Potato (boiled)', kcal: 87, p: 1.9, c: 20, f: 0.1, s: 0.8, serving: 150 },
-    { name: 'Spinach (cooked)', kcal: 23, p: 2.9, c: 3.6, f: 0.4, s: 0.4, serving: 100 },
-    { name: 'Cucumber', kcal: 15, p: 0.7, c: 3.6, f: 0.1, s: 1.7, serving: 100 },
-    { name: 'Tomato', kcal: 18, p: 0.9, c: 3.9, f: 0.2, s: 2.6, serving: 100 },
-    { name: 'Banana', kcal: 89, p: 1.1, c: 23, f: 0.3, s: 12, serving: 120 },
-    { name: 'Apple', kcal: 52, p: 0.3, c: 14, f: 0.2, s: 10, serving: 180 },
-    { name: 'Mango', kcal: 60, p: 0.8, c: 15, f: 0.4, s: 14, serving: 150 },
+    { name: 'Mixed vegetables', kcal: 65, p: 2.6, c: 13, f: 0.4, s: 5, fb: 4, serving: 150 },
+    { name: 'Mixed veg sabzi', kcal: 110, p: 3, c: 12, f: 6, s: 4, fb: 4, serving: 150 },
+    { name: 'Palak paneer', kcal: 180, p: 8, c: 8, f: 13, s: 3, fb: 3, serving: 150 },
+    { name: 'Potato (boiled)', kcal: 87, p: 1.9, c: 20, f: 0.1, s: 0.8, fb: 1.8, serving: 150 },
+    { name: 'Spinach (cooked)', kcal: 23, p: 2.9, c: 3.6, f: 0.4, s: 0.4, fb: 2.4, serving: 100 },
+    { name: 'Cucumber', kcal: 15, p: 0.7, c: 3.6, f: 0.1, s: 1.7, fb: 0.5, serving: 100 },
+    { name: 'Tomato', kcal: 18, p: 0.9, c: 3.9, f: 0.2, s: 2.6, fb: 1.2, serving: 100 },
+    { name: 'Banana', kcal: 89, p: 1.1, c: 23, f: 0.3, s: 12, fb: 2.6, serving: 120 },
+    { name: 'Apple', kcal: 52, p: 0.3, c: 14, f: 0.2, s: 10, fb: 2.4, serving: 180 },
+    { name: 'Mango', kcal: 60, p: 0.8, c: 15, f: 0.4, s: 14, fb: 1.6, serving: 150 },
     // Fruits
-    { name: 'Pineapple', kcal: 50, p: 0.5, c: 13, f: 0.1, s: 10, serving: 165 },
-    { name: 'Guava (Amrood)', kcal: 68, p: 2.6, c: 14, f: 1, s: 9, serving: 100 },
-    { name: 'Orange', kcal: 47, p: 0.9, c: 12, f: 0.1, s: 9, serving: 130 },
-    { name: 'Sweet lime (Mosambi)', kcal: 43, p: 0.8, c: 9.3, f: 0.3, s: 8, serving: 130 },
-    { name: 'Grapes', kcal: 69, p: 0.7, c: 18, f: 0.2, s: 16, serving: 100 },
-    { name: 'Watermelon', kcal: 30, p: 0.6, c: 8, f: 0.2, s: 6, serving: 150 },
-    { name: 'Muskmelon (Cantaloupe)', kcal: 34, p: 0.8, c: 8, f: 0.2, s: 8, serving: 150 },
-    { name: 'Papaya', kcal: 43, p: 0.5, c: 11, f: 0.3, s: 8, serving: 140 },
-    { name: 'Pomegranate (Anar)', kcal: 83, p: 1.7, c: 19, f: 1.2, s: 14, serving: 100 },
-    { name: 'Pear', kcal: 57, p: 0.4, c: 15, f: 0.1, s: 10, serving: 150 },
-    { name: 'Peach', kcal: 39, p: 0.9, c: 10, f: 0.3, s: 8, serving: 150 },
-    { name: 'Plum', kcal: 46, p: 0.7, c: 11, f: 0.3, s: 10, serving: 65 },
-    { name: 'Kiwi', kcal: 61, p: 1.1, c: 15, f: 0.5, s: 9, serving: 75 },
-    { name: 'Strawberry', kcal: 32, p: 0.7, c: 8, f: 0.3, s: 5, serving: 100 },
-    { name: 'Litchi (Lychee)', kcal: 66, p: 0.8, c: 17, f: 0.4, s: 15, serving: 100 },
-    { name: 'Sapota (Chikoo)', kcal: 83, p: 0.4, c: 20, f: 1.1, s: 15, serving: 100 },
-    { name: 'Custard apple (Sitaphal)', kcal: 94, p: 2.1, c: 24, f: 0.3, s: 19, serving: 100 },
-    { name: 'Jackfruit', kcal: 95, p: 1.7, c: 23, f: 0.6, s: 19, serving: 100 },
-    { name: 'Fig (Anjeer, fresh)', kcal: 74, p: 0.8, c: 19, f: 0.3, s: 16, serving: 50 },
-    { name: 'Amla (Indian gooseberry)', kcal: 44, p: 0.9, c: 10, f: 0.6, s: 6, serving: 50 },
-    { name: 'Dates (Khajoor)', kcal: 277, p: 1.8, c: 75, f: 0.2, s: 66, serving: 24 },
-    { name: 'Coconut (fresh)', kcal: 354, p: 3.3, c: 15, f: 33, s: 6, serving: 50 },
-    { name: 'Avocado', kcal: 160, p: 2, c: 9, f: 15, s: 0.7, serving: 100 },
-    { name: 'Blueberries', kcal: 57, p: 0.7, c: 14, f: 0.3, s: 10, serving: 100 },
+    { name: 'Pineapple', kcal: 50, p: 0.5, c: 13, f: 0.1, s: 10, fb: 1.4, serving: 165 },
+    { name: 'Guava (Amrood)', kcal: 68, p: 2.6, c: 14, f: 1, s: 9, fb: 5.4, serving: 100 },
+    { name: 'Orange', kcal: 47, p: 0.9, c: 12, f: 0.1, s: 9, fb: 2.4, serving: 130 },
+    { name: 'Sweet lime (Mosambi)', kcal: 43, p: 0.8, c: 9.3, f: 0.3, s: 8, fb: 2, serving: 130 },
+    { name: 'Grapes', kcal: 69, p: 0.7, c: 18, f: 0.2, s: 16, fb: 0.9, serving: 100 },
+    { name: 'Watermelon', kcal: 30, p: 0.6, c: 8, f: 0.2, s: 6, fb: 0.4, serving: 150 },
+    { name: 'Muskmelon (Cantaloupe)', kcal: 34, p: 0.8, c: 8, f: 0.2, s: 8, fb: 0.9, serving: 150 },
+    { name: 'Papaya', kcal: 43, p: 0.5, c: 11, f: 0.3, s: 8, fb: 1.7, serving: 140 },
+    { name: 'Pomegranate (Anar)', kcal: 83, p: 1.7, c: 19, f: 1.2, s: 14, fb: 4, serving: 100 },
+    { name: 'Pear', kcal: 57, p: 0.4, c: 15, f: 0.1, s: 10, fb: 3.1, serving: 150 },
+    { name: 'Peach', kcal: 39, p: 0.9, c: 10, f: 0.3, s: 8, fb: 1.5, serving: 150 },
+    { name: 'Plum', kcal: 46, p: 0.7, c: 11, f: 0.3, s: 10, fb: 1.4, serving: 65 },
+    { name: 'Kiwi', kcal: 61, p: 1.1, c: 15, f: 0.5, s: 9, fb: 3, serving: 75 },
+    { name: 'Strawberry', kcal: 32, p: 0.7, c: 8, f: 0.3, s: 5, fb: 2, serving: 100 },
+    { name: 'Litchi (Lychee)', kcal: 66, p: 0.8, c: 17, f: 0.4, s: 15, fb: 1.3, serving: 100 },
+    { name: 'Sapota (Chikoo)', kcal: 83, p: 0.4, c: 20, f: 1.1, s: 15, fb: 5.3, serving: 100 },
+    { name: 'Custard apple (Sitaphal)', kcal: 94, p: 2.1, c: 24, f: 0.3, s: 19, fb: 4.4, serving: 100 },
+    { name: 'Jackfruit', kcal: 95, p: 1.7, c: 23, f: 0.6, s: 19, fb: 1.5, serving: 100 },
+    { name: 'Fig (Anjeer, fresh)', kcal: 74, p: 0.8, c: 19, f: 0.3, s: 16, fb: 2.9, serving: 50 },
+    { name: 'Amla (Indian gooseberry)', kcal: 44, p: 0.9, c: 10, f: 0.6, s: 6, fb: 3.4, serving: 50 },
+    { name: 'Dates (Khajoor)', kcal: 277, p: 1.8, c: 75, f: 0.2, s: 66, fb: 6.7, serving: 24 },
+    { name: 'Coconut (fresh)', kcal: 354, p: 3.3, c: 15, f: 33, s: 6, fb: 9, serving: 50 },
+    { name: 'Avocado', kcal: 160, p: 2, c: 9, f: 15, s: 0.7, fb: 6.7, serving: 100 },
+    { name: 'Blueberries', kcal: 57, p: 0.7, c: 14, f: 0.3, s: 10, fb: 2.4, serving: 100 },
     // Nuts
-    { name: 'Almonds', kcal: 579, p: 21, c: 22, f: 50, s: 4, serving: 28 },
-    { name: 'Peanuts', kcal: 567, p: 26, c: 16, f: 49, s: 4, serving: 30 },
-    { name: 'Cashews', kcal: 553, p: 18, c: 30, f: 44, s: 6, serving: 30 },
-    { name: 'Walnuts', kcal: 654, p: 15, c: 14, f: 65, s: 2.6, serving: 30 },
-    { name: 'Pistachios', kcal: 562, p: 20, c: 28, f: 45, s: 8, serving: 30 },
-    { name: 'Hazelnuts', kcal: 628, p: 15, c: 17, f: 61, s: 4.3, serving: 28 },
+    { name: 'Almonds', kcal: 579, p: 21, c: 22, f: 50, s: 4, fb: 12.5, serving: 28 },
+    { name: 'Peanuts', kcal: 567, p: 26, c: 16, f: 49, s: 4, fb: 8.5, serving: 30 },
+    { name: 'Cashews', kcal: 553, p: 18, c: 30, f: 44, s: 6, fb: 3.3, serving: 30 },
+    { name: 'Walnuts', kcal: 654, p: 15, c: 14, f: 65, s: 2.6, fb: 6.7, serving: 30 },
+    { name: 'Pistachios', kcal: 562, p: 20, c: 28, f: 45, s: 8, fb: 10, serving: 30 },
+    { name: 'Hazelnuts', kcal: 628, p: 15, c: 17, f: 61, s: 4.3, fb: 9.7, serving: 28 },
     // Dry fruits & seeds
-    { name: 'Raisins (Kishmish)', kcal: 299, p: 3.1, c: 79, f: 0.5, s: 59, serving: 30 },
-    { name: 'Dried apricots (Khubani)', kcal: 241, p: 3.4, c: 63, f: 0.5, s: 53, serving: 30 },
-    { name: 'Prunes (dried plums)', kcal: 240, p: 2.2, c: 64, f: 0.4, s: 38, serving: 30 },
-    { name: 'Dried figs (Anjeer)', kcal: 249, p: 3.3, c: 64, f: 0.9, s: 48, serving: 30 },
-    { name: 'Pumpkin seeds', kcal: 559, p: 30, c: 11, f: 49, s: 1, serving: 28 },
-    { name: 'Sunflower seeds', kcal: 584, p: 21, c: 20, f: 51, s: 2.6, serving: 28 },
-    { name: 'Chia seeds', kcal: 486, p: 17, c: 42, f: 31, s: 0, serving: 15 },
-    { name: 'Flax seeds (Alsi)', kcal: 534, p: 18, c: 29, f: 42, s: 1.5, serving: 15 },
+    { name: 'Raisins (Kishmish)', kcal: 299, p: 3.1, c: 79, f: 0.5, s: 59, fb: 3.7, serving: 30 },
+    { name: 'Dried apricots (Khubani)', kcal: 241, p: 3.4, c: 63, f: 0.5, s: 53, fb: 7.3, serving: 30 },
+    { name: 'Prunes (dried plums)', kcal: 240, p: 2.2, c: 64, f: 0.4, s: 38, fb: 7, serving: 30 },
+    { name: 'Dried figs (Anjeer)', kcal: 249, p: 3.3, c: 64, f: 0.9, s: 48, fb: 9.8, serving: 30 },
+    { name: 'Pumpkin seeds', kcal: 559, p: 30, c: 11, f: 49, s: 1, fb: 6, serving: 28 },
+    { name: 'Sunflower seeds', kcal: 584, p: 21, c: 20, f: 51, s: 2.6, fb: 8.6, serving: 28 },
+    { name: 'Chia seeds', kcal: 486, p: 17, c: 42, f: 31, s: 0, fb: 34, serving: 15 },
+    { name: 'Flax seeds (Alsi)', kcal: 534, p: 18, c: 29, f: 42, s: 1.5, fb: 27, serving: 15 },
     // Vegetables (raw unless noted)
-    { name: 'Broccoli', kcal: 34, p: 2.8, c: 7, f: 0.4, s: 1.7, serving: 100 },
-    { name: 'Cauliflower (Gobi)', kcal: 25, p: 1.9, c: 5, f: 0.3, s: 1.9, serving: 100 },
-    { name: 'Cabbage (Patta gobi)', kcal: 25, p: 1.3, c: 6, f: 0.1, s: 3.2, serving: 100 },
-    { name: 'Capsicum / Bell pepper', kcal: 31, p: 1, c: 6, f: 0.3, s: 4.2, serving: 100 },
-    { name: 'French beans', kcal: 31, p: 1.8, c: 7, f: 0.2, s: 3.3, serving: 100 },
-    { name: 'Okra (Bhindi)', kcal: 33, p: 1.9, c: 7, f: 0.2, s: 1.5, serving: 100 },
-    { name: 'Carrot', kcal: 41, p: 0.9, c: 10, f: 0.2, s: 4.7, serving: 100 },
-    { name: 'Onion', kcal: 40, p: 1.1, c: 9, f: 0.1, s: 4.2, serving: 100 },
-    { name: 'Green peas', kcal: 81, p: 5.4, c: 14, f: 0.4, s: 6, serving: 100 },
-    { name: 'Brinjal / Eggplant (Baingan)', kcal: 25, p: 1, c: 6, f: 0.2, s: 3.5, serving: 100 },
-    { name: 'Bottle gourd (Lauki)', kcal: 14, p: 0.6, c: 3.4, f: 0, s: 1.4, serving: 100 },
-    { name: 'Bitter gourd (Karela)', kcal: 17, p: 1, c: 3.7, f: 0.2, s: 0, serving: 100 },
-    { name: 'Pumpkin (Kaddu)', kcal: 26, p: 1, c: 7, f: 0.1, s: 2.8, serving: 100 },
-    { name: 'Beetroot', kcal: 43, p: 1.6, c: 10, f: 0.2, s: 7, serving: 100 },
-    { name: 'Sweet potato (Shakarkandi)', kcal: 86, p: 1.6, c: 20, f: 0.1, s: 4.2, serving: 100 },
-    { name: 'Mushroom', kcal: 22, p: 3.1, c: 3.3, f: 0.3, s: 2, serving: 100 },
-    { name: 'Sweet corn', kcal: 86, p: 3.2, c: 19, f: 1.2, s: 6.3, serving: 100 },
-    { name: 'Radish (Mooli)', kcal: 16, p: 0.7, c: 3.4, f: 0.1, s: 1.9, serving: 100 },
+    { name: 'Broccoli', kcal: 34, p: 2.8, c: 7, f: 0.4, s: 1.7, fb: 2.6, serving: 100 },
+    { name: 'Cauliflower (Gobi)', kcal: 25, p: 1.9, c: 5, f: 0.3, s: 1.9, fb: 2, serving: 100 },
+    { name: 'Cabbage (Patta gobi)', kcal: 25, p: 1.3, c: 6, f: 0.1, s: 3.2, fb: 2.5, serving: 100 },
+    { name: 'Capsicum / Bell pepper', kcal: 31, p: 1, c: 6, f: 0.3, s: 4.2, fb: 2.1, serving: 100 },
+    { name: 'French beans', kcal: 31, p: 1.8, c: 7, f: 0.2, s: 3.3, fb: 3.4, serving: 100 },
+    { name: 'Okra (Bhindi)', kcal: 33, p: 1.9, c: 7, f: 0.2, s: 1.5, fb: 3.2, serving: 100 },
+    { name: 'Carrot', kcal: 41, p: 0.9, c: 10, f: 0.2, s: 4.7, fb: 2.8, serving: 100 },
+    { name: 'Onion', kcal: 40, p: 1.1, c: 9, f: 0.1, s: 4.2, fb: 1.7, serving: 100 },
+    { name: 'Green peas', kcal: 81, p: 5.4, c: 14, f: 0.4, s: 6, fb: 5.5, serving: 100 },
+    { name: 'Brinjal / Eggplant (Baingan)', kcal: 25, p: 1, c: 6, f: 0.2, s: 3.5, fb: 3, serving: 100 },
+    { name: 'Bottle gourd (Lauki)', kcal: 14, p: 0.6, c: 3.4, f: 0, s: 1.4, fb: 1.2, serving: 100 },
+    { name: 'Bitter gourd (Karela)', kcal: 17, p: 1, c: 3.7, f: 0.2, s: 0, fb: 2.8, serving: 100 },
+    { name: 'Pumpkin (Kaddu)', kcal: 26, p: 1, c: 7, f: 0.1, s: 2.8, fb: 0.5, serving: 100 },
+    { name: 'Beetroot', kcal: 43, p: 1.6, c: 10, f: 0.2, s: 7, fb: 2.8, serving: 100 },
+    { name: 'Sweet potato (Shakarkandi)', kcal: 86, p: 1.6, c: 20, f: 0.1, s: 4.2, fb: 3, serving: 100 },
+    { name: 'Mushroom', kcal: 22, p: 3.1, c: 3.3, f: 0.3, s: 2, fb: 1, serving: 100 },
+    { name: 'Sweet corn', kcal: 86, p: 3.2, c: 19, f: 1.2, s: 6.3, fb: 2.7, serving: 100 },
+    { name: 'Radish (Mooli)', kcal: 16, p: 0.7, c: 3.4, f: 0.1, s: 1.9, fb: 1.6, serving: 100 },
     // Raw meat & seafood (per 100 g, uncooked)
-    { name: 'Chicken breast (raw, skinless)', kcal: 120, p: 22.5, c: 0, f: 2.6, s: 0, serving: 100 },
-    { name: 'Chicken thigh (raw, skinless)', kcal: 121, p: 19.7, c: 0, f: 4.3, s: 0, serving: 100 },
-    { name: 'Chicken (whole, raw, with skin)', kcal: 215, p: 18, c: 0, f: 15, s: 0, serving: 100 },
-    { name: 'Mutton / Goat (raw)', kcal: 109, p: 20.6, c: 0, f: 2.3, s: 0, serving: 100 },
-    { name: 'Lamb (raw)', kcal: 294, p: 25, c: 0, f: 21, s: 0, serving: 100 },
-    { name: 'Pork (raw)', kcal: 242, p: 27, c: 0, f: 14, s: 0, serving: 100 },
-    { name: 'Pork (lean, raw)', kcal: 143, p: 21, c: 0, f: 6, s: 0, serving: 100 },
-    { name: 'Beef (raw)', kcal: 250, p: 26, c: 0, f: 15, s: 0, serving: 100 },
-    { name: 'Fish (raw, white)', kcal: 96, p: 20, c: 0, f: 1.5, s: 0, serving: 100 },
-    { name: 'Rohu fish (raw)', kcal: 97, p: 16.6, c: 0, f: 1.4, s: 0, serving: 100 },
-    { name: 'Salmon (raw)', kcal: 208, p: 20, c: 0, f: 13, s: 0, serving: 100 },
-    { name: 'Prawns / Shrimp (raw)', kcal: 99, p: 24, c: 0.2, f: 0.3, s: 0, serving: 100 },
-    { name: 'Egg (raw, whole)', kcal: 143, p: 12.6, c: 0.7, f: 9.5, s: 0.4, serving: 50 },
+    { name: 'Chicken breast (raw, skinless)', kcal: 120, p: 22.5, c: 0, f: 2.6, s: 0, fb: 0, serving: 100 },
+    { name: 'Chicken thigh (raw, skinless)', kcal: 121, p: 19.7, c: 0, f: 4.3, s: 0, fb: 0, serving: 100 },
+    { name: 'Chicken (whole, raw, with skin)', kcal: 215, p: 18, c: 0, f: 15, s: 0, fb: 0, serving: 100 },
+    { name: 'Mutton / Goat (raw)', kcal: 109, p: 20.6, c: 0, f: 2.3, s: 0, fb: 0, serving: 100 },
+    { name: 'Lamb (raw)', kcal: 294, p: 25, c: 0, f: 21, s: 0, fb: 0, serving: 100 },
+    { name: 'Pork (raw)', kcal: 242, p: 27, c: 0, f: 14, s: 0, fb: 0, serving: 100 },
+    { name: 'Pork (lean, raw)', kcal: 143, p: 21, c: 0, f: 6, s: 0, fb: 0, serving: 100 },
+    { name: 'Beef (raw)', kcal: 250, p: 26, c: 0, f: 15, s: 0, fb: 0, serving: 100 },
+    { name: 'Fish (raw, white)', kcal: 96, p: 20, c: 0, f: 1.5, s: 0, fb: 0, serving: 100 },
+    { name: 'Rohu fish (raw)', kcal: 97, p: 16.6, c: 0, f: 1.4, s: 0, fb: 0, serving: 100 },
+    { name: 'Salmon (raw)', kcal: 208, p: 20, c: 0, f: 13, s: 0, fb: 0, serving: 100 },
+    { name: 'Prawns / Shrimp (raw)', kcal: 99, p: 24, c: 0.2, f: 0.3, s: 0, fb: 0, serving: 100 },
+    { name: 'Egg (raw, whole)', kcal: 143, p: 12.6, c: 0.7, f: 9.5, s: 0.4, fb: 0, serving: 50 },
     // Snacks, sweets, drinks
-    { name: 'Samosa', kcal: 308, p: 5, c: 32, f: 18, s: 2, serving: 50 },
-    { name: 'Veg biryani', kcal: 180, p: 4, c: 28, f: 6, s: 2, serving: 200 },
-    { name: 'Chicken biryani', kcal: 200, p: 9, c: 26, f: 7, s: 2, serving: 200 },
-    { name: 'Curd rice', kcal: 150, p: 4, c: 22, f: 5, s: 3, serving: 200 },
-    { name: 'Dark chocolate', kcal: 546, p: 4.9, c: 61, f: 31, s: 48, serving: 20 },
-    { name: 'Honey', kcal: 304, p: 0.3, c: 82, f: 0, s: 82, serving: 20 },
-    { name: 'Jaggery', kcal: 383, p: 0.4, c: 98, f: 0.1, s: 97, serving: 10 },
-    { name: 'Sugar', kcal: 387, p: 0, c: 100, f: 0, s: 100, serving: 5 },
-    { name: 'Tea with milk & sugar', kcal: 40, p: 1, c: 6, f: 1, s: 5, serving: 150 },
-    { name: 'Black coffee (no sugar)', kcal: 1, p: 0.1, c: 0, f: 0, s: 0, serving: 240 },
-    { name: 'Cola / soft drink', kcal: 42, p: 0, c: 10.6, f: 0, s: 10.6, serving: 330 },
-    { name: 'Orange juice', kcal: 45, p: 0.7, c: 10, f: 0.2, s: 8, serving: 200 }
+    { name: 'Samosa', kcal: 308, p: 5, c: 32, f: 18, s: 2, fb: 3, serving: 50 },
+    { name: 'Veg biryani', kcal: 180, p: 4, c: 28, f: 6, s: 2, fb: 2, serving: 200 },
+    { name: 'Chicken biryani', kcal: 200, p: 9, c: 26, f: 7, s: 2, fb: 1.5, serving: 200 },
+    { name: 'Curd rice', kcal: 150, p: 4, c: 22, f: 5, s: 3, fb: 0.5, serving: 200 },
+    { name: 'Dark chocolate', kcal: 546, p: 4.9, c: 61, f: 31, s: 48, fb: 7, serving: 20 },
+    { name: 'Honey', kcal: 304, p: 0.3, c: 82, f: 0, s: 82, fb: 0.2, serving: 20 },
+    { name: 'Jaggery', kcal: 383, p: 0.4, c: 98, f: 0.1, s: 97, fb: 0, serving: 10 },
+    { name: 'Sugar', kcal: 387, p: 0, c: 100, f: 0, s: 100, fb: 0, serving: 5 },
+    { name: 'Tea with milk & sugar', kcal: 40, p: 1, c: 6, f: 1, s: 5, fb: 0, serving: 150 },
+    { name: 'Black coffee (no sugar)', kcal: 1, p: 0.1, c: 0, f: 0, s: 0, fb: 0, serving: 240 },
+    { name: 'Cola / soft drink', kcal: 42, p: 0, c: 10.6, f: 0, s: 10.6, fb: 0, serving: 330 },
+    { name: 'Orange juice', kcal: 45, p: 0.7, c: 10, f: 0.2, s: 8, fb: 0.2, serving: 200 }
   ];
 
   // Bundled Indian dish database. Source values are per serving; we estimate a
@@ -1453,7 +1453,7 @@
   var INDIAN_POOL = (window.INDIAN_FOODS || []).map(function (a) {
     var sg = estServingGrams(a[0]);
     var k = 100 / sg;
-    return { name: a[0], kcal: Math.round(a[1] * k), c: round1(a[2] * k), p: round1(a[3] * k), f: round1(a[4] * k), s: round1(a[5] * k), serving: sg };
+    return { name: a[0], kcal: Math.round(a[1] * k), c: round1(a[2] * k), p: round1(a[3] * k), f: round1(a[4] * k), s: round1(a[5] * k), fb: 0, serving: sg };
   });
 
   function dietGoals() {
@@ -1463,7 +1463,8 @@
       protein: Number(p.proteinGoal) || 0,
       carbs: Number(p.carbGoal) || 0,
       fat: Number(p.fatGoal) || 0,
-      sugar: Number(p.sugarGoal) || 0
+      sugar: Number(p.sugarGoal) || 0,
+      fiber: Number(p.fiberGoal) || 0
     };
   }
 
@@ -1691,8 +1692,8 @@
   function renderDietBody() {
     var g = dietGoals();
     var t = state.foods.reduce(function (s, f) {
-      s.cal += f.calories; s.p += f.protein; s.c += f.carbs; s.f += f.fat; s.s += (f.sugar || 0); return s;
-    }, { cal: 0, p: 0, c: 0, f: 0, s: 0 });
+      s.cal += f.calories; s.p += f.protein; s.c += f.carbs; s.f += f.fat; s.s += (f.sugar || 0); s.fb += (f.fiber || 0); return s;
+    }, { cal: 0, p: 0, c: 0, f: 0, s: 0, fb: 0 });
 
     $('#cal-eaten').textContent = Math.round(t.cal);
     $('#cal-goal').textContent = g.cal ? g.cal : '—';
@@ -1708,11 +1709,12 @@
     var bars = $('#macro-bars');
     bars.innerHTML = '';
     [['p', 'Protein', t.p, g.protein], ['c', 'Carbs', t.c, g.carbs],
-     ['f', 'Fat', t.f, g.fat], ['s', 'Sugar', t.s, g.sugar]].forEach(function (m) {
-      var over = m[3] && m[2] > m[3];
+     ['f', 'Fat', t.f, g.fat], ['s', 'Sugar', t.s, g.sugar], ['fb', 'Fibre', t.fb, g.fiber]].forEach(function (m) {
+      // Sugar is a cap (going over is bad); fibre is a target (more is good).
+      var over = m[0] !== 'fb' && m[3] && m[2] > m[3];
       var pct = m[3] ? Math.min(100, Math.round((m[2] / m[3]) * 100)) : 0;
       var row = el('div', 'macro ' + m[0] + (over ? ' over' : ''));
-      var goalTxt = m[3] ? ' / ' + m[3] + 'g' + (m[0] === 's' ? ' max' : '') : '';
+      var goalTxt = m[3] ? ' / ' + m[3] + 'g' + (m[0] === 's' ? ' max' : (m[0] === 'fb' ? ' goal' : '')) : '';
       row.innerHTML = '<div class="ml"><span>' + m[1] + '</span><span><b>' + Math.round(m[2]) + 'g</b>' +
         goalTxt + '</span></div>' +
         '<div class="bar"><span style="width:' + pct + '%"></span></div>';
@@ -1737,7 +1739,7 @@
         var it = el('div', 'food-item');
         it.innerHTML =
           '<div class="fi-body"><div class="fi-name">' + esc(f.name) + '</div>' +
-          '<div class="fi-sub">' + (f.grams ? Math.round(f.grams) + ' g · ' : '') + 'P' + Math.round(f.protein) + ' C' + Math.round(f.carbs) + ' F' + Math.round(f.fat) + ' S' + Math.round(f.sugar || 0) + ' · <span class="fi-edit-hint">tap to edit</span></div></div>' +
+          '<div class="fi-sub">' + (f.grams ? Math.round(f.grams) + ' g · ' : '') + 'P' + Math.round(f.protein) + ' C' + Math.round(f.carbs) + ' F' + Math.round(f.fat) + ' S' + Math.round(f.sugar || 0) + ' Fb' + Math.round(f.fiber || 0) + ' · <span class="fi-edit-hint">tap to edit</span></div></div>' +
           '<div class="fi-cal">' + Math.round(f.calories) + '</div>' +
           '<button class="fi-del" title="Remove">✕</button>';
         it.querySelector('.fi-body').addEventListener('click', function () { editFoodEntry(f); });
@@ -1777,7 +1779,7 @@
     var k = food.name.toLowerCase();
     var ex = m[k] || { count: 0 };
     m[k] = {
-      name: food.name, kcal: food.kcal, p: food.p, c: food.c, f: food.f, s: food.s,
+      name: food.name, kcal: food.kcal, p: food.p, c: food.c, f: food.f, s: food.s, fb: food.fb || 0,
       serving: food.serving || 100, perServing: !!food.perServing,
       count: (ex.count || 0) + 1, last: Date.now()
     };
@@ -1905,7 +1907,7 @@
     state.pendingFood = {
       name: f.name, serving: 100,
       kcal: f.calories / g * 100, p: f.protein / g * 100,
-      c: f.carbs / g * 100, f: f.fat / g * 100, s: (f.sugar || 0) / g * 100
+      c: f.carbs / g * 100, f: f.fat / g * 100, s: (f.sugar || 0) / g * 100, fb: (f.fiber || 0) / g * 100
     };
     state.editingFoodId = f.id;
     $('#food-modal-title').textContent = 'Edit quantity';
@@ -1939,19 +1941,20 @@
   function updatePortion() {
     var f = state.pendingFood; if (!f) return;
     var x = portionGrams() / 100;
-    var k = f.kcal * x, p = f.p * x, c = f.c * x, ft = f.f * x, su = (f.s || 0) * x;
+    var k = f.kcal * x, p = f.p * x, c = f.c * x, ft = f.f * x, su = (f.s || 0) * x, fi = (f.fb || 0) * x;
     $('#p-macros').innerHTML =
       '<div class="pm-chip"><b>' + Math.round(k) + '</b>kcal</div>' +
       '<div class="pm-chip"><b>' + Math.round(p) + '</b>protein</div>' +
       '<div class="pm-chip"><b>' + Math.round(c) + '</b>carbs</div>' +
       '<div class="pm-chip"><b>' + Math.round(ft) + '</b>fat</div>' +
-      '<div class="pm-chip"><b>' + Math.round(su) + '</b>sugar</div>';
+      '<div class="pm-chip"><b>' + Math.round(su) + '</b>sugar</div>' +
+      '<div class="pm-chip"><b>' + Math.round(fi) + '</b>fibre</div>';
   }
   function addPortion() {
     var f = state.pendingFood; if (!f) return;
     var grams = portionGrams();
     var x = grams / 100;
-    var macros = { calories: f.kcal * x, protein: f.p * x, carbs: f.c * x, fat: f.f * x, sugar: (f.s || 0) * x };
+    var macros = { calories: f.kcal * x, protein: f.p * x, carbs: f.c * x, fat: f.f * x, sugar: (f.s || 0) * x, fiber: (f.fb || 0) * x };
     if (state.editingFoodId) {
       var id = state.editingFoodId;
       api('updateFood', { id: id, food: Object.assign({ grams: Math.round(grams), meal: $('#p-meal').value }, macros) })
@@ -1970,6 +1973,7 @@
     var name = $('#m-name').value.trim();
     if (!name) { toast('Enter a food name'); return; }
     var sd = state.scanData || {};
+    var fibre = Number($('#m-fiber').value) || sd.fiber || 0;
     var food = {
       name: name,
       kcal: Number($('#m-cal').value) || 0,
@@ -1977,20 +1981,21 @@
       c: Number($('#m-carbs').value) || 0,
       f: Number($('#m-fat').value) || 0,
       s: Number($('#m-sugar').value) || 0,
+      fb: fibre,
       serving: 100,
       // full panel (from a scan) — stored in the backend dataset, not shown here
-      satFat: sd.saturatedFat || 0, transFat: sd.transFat || 0, fiber: sd.fiber || 0, addedSugar: sd.addedSugar || 0,
+      satFat: sd.saturatedFat || 0, transFat: sd.transFat || 0, fiber: fibre, addedSugar: sd.addedSugar || 0,
       sodium: sd.sodium || 0, cholesterol: sd.cholesterol || 0, calcium: sd.calcium || 0, iron: sd.iron || 0,
       servingSize: sd.servingSize || '', data: state.scanData
     };
     saveCustomFood(food);   // share with everyone so it's searchable
     pickFood(food);
     state.scanData = null;
-    $('#m-name').value = $('#m-cal').value = $('#m-protein').value = $('#m-carbs').value = $('#m-fat').value = $('#m-sugar').value = '';
+    $('#m-name').value = $('#m-cal').value = $('#m-protein').value = $('#m-carbs').value = $('#m-fat').value = $('#m-sugar').value = $('#m-fiber').value = '';
   }
   function saveCustomFood(food) {
     var exists = (state.customFoods || []).some(function (f) { return f.name.toLowerCase() === food.name.toLowerCase(); });
-    if (!exists) state.customFoods.push({ name: food.name, kcal: food.kcal, p: food.p, c: food.c, f: food.f, s: food.s, serving: 100, shared: true });
+    if (!exists) state.customFoods.push({ name: food.name, kcal: food.kcal, p: food.p, c: food.c, f: food.f, s: food.s, fb: food.fb || food.fiber || 0, serving: 100, shared: true });
     api('addCustomFood', { food: {
       name: food.name, kcal: food.kcal, p: food.p, c: food.c, f: food.f, s: food.s,
       satFat: food.satFat || 0, transFat: food.transFat || 0, fiber: food.fiber || 0, addedSugar: food.addedSugar || 0,
@@ -2072,7 +2077,7 @@
     state.scanData = d;   // full panel kept for the backend dataset
     var any = false;
     function put(sel, v, intval) { if (v) { $(sel).value = intval ? Math.round(v) : Math.round(v * 10) / 10; any = true; } }
-    put('#m-cal', d.calories, true); put('#m-protein', d.protein); put('#m-carbs', d.carbs); put('#m-fat', d.fat); put('#m-sugar', d.sugar);
+    put('#m-cal', d.calories, true); put('#m-protein', d.protein); put('#m-carbs', d.carbs); put('#m-fat', d.fat); put('#m-sugar', d.sugar); put('#m-fiber', d.fiber);
     if (d.name && !$('#m-name').value) $('#m-name').value = d.name;
     var warn = d.estimated ? ' ⚠️ AI estimate — please double-check the values.' : '';
     scanStatus(any
@@ -2172,6 +2177,8 @@
     var carbs = firstNumAfter(t, 'carbohydrate'); if (carbs == null) carbs = firstNumAfter(t, 'carb');
     var fat = firstNumAfter(t, 'total fat'); if (fat == null) fat = firstNumAfter(t, 'fat');
     var sugar = firstNumAfter(t, 'total sugar'); if (sugar == null) sugar = firstNumAfter(t, 'sugar');
+    var fiber = firstNumAfter(t, 'dietary fibre'); if (fiber == null) fiber = firstNumAfter(t, 'dietary fiber');
+    if (fiber == null) fiber = firstNumAfter(t, 'fibre'); if (fiber == null) fiber = firstNumAfter(t, 'fiber');
 
     // Convert per-serving labels to per-100.
     var scale = 1, note = 'per 100';
@@ -2180,7 +2187,7 @@
 
     var any = false;
     function put(sel, v, intval) { if (v != null) { var x = v * scale; $(sel).value = intval ? Math.round(x) : Math.round(x * 10) / 10; any = true; } }
-    put('#m-cal', kcal, true); put('#m-protein', protein); put('#m-carbs', carbs); put('#m-fat', fat); put('#m-sugar', sugar);
+    put('#m-cal', kcal, true); put('#m-protein', protein); put('#m-carbs', carbs); put('#m-fat', fat); put('#m-sugar', sugar); put('#m-fiber', fiber);
     return { any: any, note: note };
   }
 
@@ -2248,18 +2255,21 @@
     var fat = Math.round(cal * 0.25 / 9);
     var carbs = Math.max(0, Math.round((cal - protein * 4 - fat * 9) / 4));
     var sugar = Math.round(cal * 0.10 / 4); // WHO: keep free sugars under ~10% of calories
+    var fiber = Math.round(cal / 1000 * 14); // ~14 g fibre per 1000 kcal (USDA guideline)
     $('#g-cal').value = cal; $('#g-protein').value = protein; $('#g-carbs').value = carbs; $('#g-fat').value = fat;
-    $('#g-sugar').value = sugar;
+    $('#g-sugar').value = sugar; $('#g-fiber').value = fiber;
     toast('Targets calculated — tap Save');
   }
 
   function saveGoals() {
-    var profile = {
+    // Merge into the existing profile so we don't wipe mode/softTarget/customTasks.
+    var profile = Object.assign({}, state.profile, {
       sex: $('#g-sex').value, age: +$('#g-age').value || '', heightCm: +$('#g-height').value || '',
       weightKg: +$('#g-weight').value || '', activity: $('#g-activity').value, goalType: $('#g-goaltype').value,
       calorieGoal: +$('#g-cal').value || 0, proteinGoal: +$('#g-protein').value || 0,
-      carbGoal: +$('#g-carbs').value || 0, fatGoal: +$('#g-fat').value || 0, sugarGoal: +$('#g-sugar').value || 0
-    };
+      carbGoal: +$('#g-carbs').value || 0, fatGoal: +$('#g-fat').value || 0, sugarGoal: +$('#g-sugar').value || 0,
+      fiberGoal: +$('#g-fiber').value || 0
+    });
     api('saveGoals', { profile: profile }).then(function (data) {
       state.profile = data.profile || profile;
       toast('Diet goals saved ✓');
@@ -2279,6 +2289,7 @@
     $('#g-carbs').value = p.carbGoal || '';
     $('#g-fat').value = p.fatGoal || '';
     $('#g-sugar').value = p.sugarGoal || '';
+    $('#g-fiber').value = p.fiberGoal || '';
   }
 
   /* ---------------- Fitness calculators ---------------- */
