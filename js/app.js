@@ -474,6 +474,7 @@
     loadCustomFoods();
     renderAll();
     switchView('today');
+    prefetchStats();   // warm Stats averages in the background
   }
 
   function loadCustomFoods() {
@@ -934,22 +935,32 @@
   }
 
   /* ---------------- Stats ---------------- */
-  function renderStats() {
-    renderStatsBody({ avgFast: '…', avgCal: '…' });
+  function statsCacheKey() { return 'hard_stats_' + (state.username || ''); }
+  // Fetch the network-backed averages and cache them. Returns a Promise of the vals.
+  function loadStatsVals() {
     var fast = api('getFasts', {}).then(function (d) { return avgFastLabel(d.fasts || []); }).catch(function () { return '—'; });
     var food = api('foodSummary', {}).then(function (d) { return d; }).catch(function () { return {}; });
-    Promise.all([fast, food]).then(function (res) {
+    return Promise.all([fast, food]).then(function (res) {
       var d = res[1] || {};
-      renderStatsBody({
+      var g = function (v) { return v != null ? (v + ' g') : '—'; };
+      var vals = {
         avgFast: res[0],
         avgCal: d.avgCalories ? (d.avgCalories + ' kcal') : '—',
-        avgProtein: d.daysLogged ? (d.avgProtein + ' g') : '—',
-        avgCarbs: d.daysLogged ? (d.avgCarbs + ' g') : '—',
-        avgFat: d.daysLogged ? (d.avgFat + ' g') : '—',
-        avgSugar: d.daysLogged ? (d.avgSugar + ' g') : '—',
-        avgFiber: d.daysLogged ? (d.avgFiber + ' g') : '—'
-      });
+        avgProtein: g(d.avgProtein), avgCarbs: g(d.avgCarbs), avgFat: g(d.avgFat),
+        avgSugar: g(d.avgSugar), avgFiber: g(d.avgFiber)
+      };
+      try { localStorage.setItem(statsCacheKey(), JSON.stringify(vals)); } catch (e) {}
+      return vals;
     });
+  }
+  // Warm the cache in the background at launch so Stats is instant on first open.
+  function prefetchStats() { try { loadStatsVals(); } catch (e) {} }
+  function renderStats() {
+    // Show last-known averages instantly (Apps Script calls are slow), then refresh.
+    var cached = null;
+    try { cached = JSON.parse(localStorage.getItem(statsCacheKey()) || 'null'); } catch (e) {}
+    renderStatsBody(cached || { avgFast: '…', avgCal: '…' });
+    loadStatsVals().then(renderStatsBody);
   }
 
   function avgFastLabel(fasts) {
