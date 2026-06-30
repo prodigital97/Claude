@@ -1093,14 +1093,23 @@ function handleFoodSummary(body) {
   var sheet = getSheet(FOOD_SHEET, FOOD_HEADERS);
   var values = sheet.getDataRange().getValues();
   var idx = colIndex(FOOD_HEADERS);
-  var total = 0, days = {};
+  var tot = { cal: 0, p: 0, c: 0, f: 0, s: 0, fb: 0 }, days = {};
   for (var i = 1; i < values.length; i++) {
     if (normalizeUsername(values[i][idx.username]) !== user.username) continue;
-    total += Number(values[i][idx.calories]) || 0;
+    tot.cal += Number(values[i][idx.calories]) || 0;
+    tot.p += Number(values[i][idx.protein]) || 0;
+    tot.c += Number(values[i][idx.carbs]) || 0;
+    tot.f += Number(values[i][idx.fat]) || 0;
+    tot.s += Number(values[i][idx.sugar]) || 0;
+    tot.fb += Number(values[i][idx.fiber]) || 0;
     days[formatDate(values[i][idx.date])] = true;
   }
   var n = Object.keys(days).length;
-  return { totalCalories: Math.round(total), daysLogged: n, avgCalories: n ? Math.round(total / n) : 0 };
+  function avg(v) { return n ? Math.round(v / n) : 0; }
+  return {
+    totalCalories: Math.round(tot.cal), daysLogged: n, avgCalories: avg(tot.cal),
+    avgProtein: avg(tot.p), avgCarbs: avg(tot.c), avgFat: avg(tot.f), avgSugar: avg(tot.s), avgFiber: avg(tot.fb)
+  };
 }
 
 function foodFromRow(r, idx) {

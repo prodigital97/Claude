@@ -280,10 +280,16 @@
     }
     if (action === 'foodSummary') {
       var all = (d.foods && d.foods[me.username]) || [];
-      var total = all.reduce(function (s, x) { return s + (Number(x.calories) || 0); }, 0);
+      var tt = { cal: 0, p: 0, c: 0, f: 0, s: 0, fb: 0 };
+      all.forEach(function (x) {
+        tt.cal += Number(x.calories) || 0; tt.p += Number(x.protein) || 0; tt.c += Number(x.carbs) || 0;
+        tt.f += Number(x.fat) || 0; tt.s += Number(x.sugar) || 0; tt.fb += Number(x.fiber) || 0;
+      });
       var days = {}; all.forEach(function (x) { days[x.date] = true; });
       var n = Object.keys(days).length;
-      return { totalCalories: Math.round(total), daysLogged: n, avgCalories: n ? Math.round(total / n) : 0 };
+      var av = function (v) { return n ? Math.round(v / n) : 0; };
+      return { totalCalories: Math.round(tt.cal), daysLogged: n, avgCalories: av(tt.cal),
+        avgProtein: av(tt.p), avgCarbs: av(tt.c), avgFat: av(tt.f), avgSugar: av(tt.s), avgFiber: av(tt.fb) };
     }
     if (action === 'saveDay') {
       var day = p.day; day.completed = goalMet(day);
@@ -931,9 +937,18 @@
   function renderStats() {
     renderStatsBody({ avgFast: '…', avgCal: '…' });
     var fast = api('getFasts', {}).then(function (d) { return avgFastLabel(d.fasts || []); }).catch(function () { return '—'; });
-    var food = api('foodSummary', {}).then(function (d) { return d.avgCalories ? (d.avgCalories + ' kcal') : '—'; }).catch(function () { return '—'; });
+    var food = api('foodSummary', {}).then(function (d) { return d; }).catch(function () { return {}; });
     Promise.all([fast, food]).then(function (res) {
-      renderStatsBody({ avgFast: res[0], avgCal: res[1] });
+      var d = res[1] || {};
+      renderStatsBody({
+        avgFast: res[0],
+        avgCal: d.avgCalories ? (d.avgCalories + ' kcal') : '—',
+        avgProtein: d.daysLogged ? (d.avgProtein + ' g') : '—',
+        avgCarbs: d.daysLogged ? (d.avgCarbs + ' g') : '—',
+        avgFat: d.daysLogged ? (d.avgFat + ' g') : '—',
+        avgSugar: d.daysLogged ? (d.avgSugar + ' g') : '—',
+        avgFiber: d.daysLogged ? (d.avgFiber + ' g') : '—'
+      });
     });
   }
 
@@ -964,7 +979,12 @@
       ['Days completed', done],
       ['Days left', Math.max(0, LEN - Math.min(curDay, LEN))],
       ['Avg fast', vals.avgFast],
-      ['Avg calories / day', vals.avgCal]
+      ['Avg calories / day', vals.avgCal],
+      ['Avg protein / day', vals.avgProtein || '…'],
+      ['Avg carbs / day', vals.avgCarbs || '…'],
+      ['Avg fat / day', vals.avgFat || '…'],
+      ['Avg sugar / day', vals.avgSugar || '…'],
+      ['Avg fibre / day', vals.avgFiber || '…']
     ].forEach(function (s) {
       var c = el('div', 'stat');
       c.innerHTML = '<div class="num">' + s[1] + '</div><div class="lbl">' + s[0] + '</div>';
