@@ -50,6 +50,7 @@ The Journey calendar shows three colours: 🟢 goal met · 🟡 **partial** (you
   Settings (saved on your device). Academia and Arsenal use a wallpaper background with frosted cards —
   to use your own wallpaper, replace `assets/bg-academia.svg` / `assets/bg-arsenal.svg` with your image
   (keep the same filename, or point the CSS `body::before` rule at your file).
+- **Businesses — work log** — track multiple businesses/projects: add them in **Settings → My businesses**, then log **time spent** and **tasks completed** for each one every day on the Today screen. **Stats** shows per-business totals, days worked and this week's time/tasks so you can see if you're being productive.
 - **Delete account** — Settings lets a user permanently remove their account and all their data (password-confirmed)
 - **Accounts** — sign-up with a username + password (email **optional**, never verified or emailed). In
   **Settings → Account** you can change your **username** (it migrates all your data), save an **email**,

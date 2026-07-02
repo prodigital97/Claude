@@ -385,7 +385,7 @@
   function emptyDay(date) {
     return { date: date, dayNumber: state.user ? dayNumber(state.user.startDate, date) : 1,
       workout1: false, workout2: false, outdoor: false, waterMl: 0,
-      reading: false, photo: false, diet: false, noAlcohol: false, completed: false, notes: '', extra: {}, mood: 0, gut: 0 };
+      reading: false, photo: false, diet: false, noAlcohol: false, completed: false, notes: '', extra: {}, mood: 0, gut: 0, biz: {} };
   }
   function logFor(date) {
     return state.logs.filter(function (l) { return l.date === date; })[0];
@@ -499,6 +499,8 @@
     });
     $('#add-habit-btn').addEventListener('click', addHabit);
     $('#new-habit').addEventListener('keydown', function (e) { if (e.key === 'Enter') addHabit(); });
+    $('#add-biz-btn').addEventListener('click', addBusiness);
+    $('#new-biz').addEventListener('keydown', function (e) { if (e.key === 'Enter') addBusiness(); });
     $('#logout').addEventListener('click', logout);
     $('#reset-challenge').addEventListener('click', resetChallenge);
     $('#save-profile').addEventListener('click', saveProfile);
@@ -659,6 +661,7 @@
 
     renderMood(d);
     renderGut(d);
+    renderBusinesses(d);
     renderExtraTasks(d);
   }
 
@@ -766,6 +769,97 @@
     api('saveGoals', { profile: profile }).then(function (data) {
       if (data && data.profile) state.profile = data.profile;
     }).catch(function (e) { toast(e.message); });
+  }
+
+  /* ----- Businesses: time + tasks per business per day (not part of 75 Hard) ----- */
+  function businesses() { return (state.profile && state.profile.businesses) || []; }
+  function hoursMin(min) {
+    min = Math.round(Number(min) || 0);
+    if (min <= 0) return '0m';
+    var h = Math.floor(min / 60), m = min % 60;
+    return (h ? h + 'h ' : '') + (m ? m + 'm' : (h ? '' : '0m'));
+  }
+  function renderBusinesses(d) {
+    var box = $('#biz-list'); if (!box) return;
+    if (!d.biz) d.biz = {};
+    var list = businesses();
+    box.innerHTML = '';
+    if (!list.length) {
+      box.innerHTML = '<p class="muted tiny" style="margin:2px 2px 10px">No businesses yet — add them in <b>Settings → My businesses</b> to log time &amp; tasks here each day.</p>';
+      return;
+    }
+    list.forEach(function (b) {
+      var e = d.biz[b.id] || { m: 0, t: 0 };
+      var card = el('div', 'biz-card');
+      card.innerHTML =
+        '<div class="biz-top"><span class="biz-name">' + esc(b.name) + '</span>' +
+          '<span class="biz-tot">⏱ ' + hoursMin(e.m) + ' · ✅ ' + (Number(e.t) || 0) + '</span></div>' +
+        '<div class="biz-row"><span class="biz-lbl">Time</span>' +
+          '<button class="biz-q" data-add="15">+15m</button>' +
+          '<button class="biz-q" data-add="30">+30m</button>' +
+          '<button class="biz-q" data-add="60">+1h</button>' +
+          '<input class="biz-min" type="number" inputmode="numeric" value="' + (Number(e.m) || 0) + '" /> <span class="muted tiny">min</span>' +
+          '<button class="biz-clear" data-clear="m">✕</button></div>' +
+        '<div class="biz-row"><span class="biz-lbl">Tasks</span>' +
+          '<button class="biz-q" data-tadd="1">+1</button>' +
+          '<input class="biz-task" type="number" inputmode="numeric" value="' + (Number(e.t) || 0) + '" />' +
+          '<button class="biz-clear" data-clear="t">✕</button></div>';
+      function commit(rerender) {
+        d.biz[b.id] = { m: Math.max(0, Number(card.querySelector('.biz-min').value) || 0), t: Math.max(0, Number(card.querySelector('.biz-task').value) || 0) };
+        queueSave();
+        if (rerender) renderBusinesses(d);
+      }
+      card.querySelectorAll('[data-add]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var inp = card.querySelector('.biz-min'); inp.value = (Number(inp.value) || 0) + Number(btn.getAttribute('data-add')); commit(true);
+        });
+      });
+      card.querySelector('[data-tadd]').addEventListener('click', function () {
+        var inp = card.querySelector('.biz-task'); inp.value = (Number(inp.value) || 0) + 1; commit(true);
+      });
+      card.querySelectorAll('[data-clear]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          card.querySelector(btn.getAttribute('data-clear') === 'm' ? '.biz-min' : '.biz-task').value = 0; commit(true);
+        });
+      });
+      card.querySelector('.biz-min').addEventListener('change', function () { commit(true); });
+      card.querySelector('.biz-task').addEventListener('change', function () { commit(true); });
+      box.appendChild(card);
+    });
+  }
+  function addBusiness() {
+    var name = $('#new-biz').value.trim();
+    if (!name) return;
+    var list = businesses().slice();
+    if (list.length >= 8) { toast('Up to 8 businesses'); return; }
+    list.push({ id: 'b_' + Date.now().toString(36), name: name });
+    $('#new-biz').value = '';
+    saveBusinesses(list);
+  }
+  function removeBusiness(id) {
+    if (!confirm('Remove this business? Past logged time/tasks stay in your history.')) return;
+    var list = businesses().filter(function (b) { return b.id !== id; });
+    saveBusinesses(list);
+  }
+  function saveBusinesses(list) {
+    var profile = Object.assign({}, state.profile, { businesses: list });
+    state.profile = profile;
+    renderBusinesses(state.today);
+    renderBizSettings();
+    api('saveGoals', { profile: profile }).then(function (data) {
+      if (data && data.profile) state.profile = data.profile;
+    }).catch(function (e) { toast(e.message); });
+  }
+  function renderBizSettings() {
+    var box = $('#biz-settings-list'); if (!box) return;
+    var list = businesses();
+    box.innerHTML = list.length ? '' : '<p class="muted tiny">No businesses yet.</p>';
+    list.forEach(function (b) {
+      var row = el('div', 'biz-setting-row');
+      row.innerHTML = '<span>' + esc(b.name) + '</span><button class="habit-del" data-rm="' + esc(b.id) + '">✕</button>';
+      row.querySelector('[data-rm]').addEventListener('click', function () { removeBusiness(b.id); });
+      box.appendChild(row);
+    });
   }
 
   function litres(ml) {
@@ -1021,6 +1115,37 @@
 
     renderMoodTrend();
     renderGutTrend();
+    renderBizStats();
+  }
+
+  function renderBizStats() {
+    var box = $('#biz-stats'), card = $('#biz-stats-card'); if (!box) return;
+    var list = businesses();
+    if (!list.length) { if (card) card.classList.add('hidden'); return; }
+    if (card) card.classList.remove('hidden');
+    var today = todayStr(), weekAgo = addDays(today, -6);
+    var agg = {};
+    list.forEach(function (b) { agg[b.id] = { name: b.name, min: 0, tasks: 0, days: {}, wkMin: 0, wkTasks: 0 }; });
+    (state.logs || []).forEach(function (l) {
+      var biz = l.biz || {};
+      Object.keys(biz).forEach(function (id) {
+        if (!agg[id]) return; // business since removed
+        var e = biz[id] || {}, m = Number(e.m) || 0, t = Number(e.t) || 0;
+        if (m <= 0 && t <= 0) return;
+        agg[id].min += m; agg[id].tasks += t; agg[id].days[l.date] = true;
+        if (l.date >= weekAgo && l.date <= today) { agg[id].wkMin += m; agg[id].wkTasks += t; }
+      });
+    });
+    box.innerHTML = list.map(function (b) {
+      var a = agg[b.id], days = Object.keys(a.days).length;
+      return '<div class="biz-stat">' +
+        '<div class="biz-stat-name">' + esc(a.name) + '</div>' +
+        '<div class="biz-stat-nums"><span>⏱ <b>' + hoursMin(a.min) + '</b></span>' +
+        '<span>✅ <b>' + a.tasks + '</b></span>' +
+        '<span>📅 <b>' + days + '</b>d</span></div>' +
+        '<div class="muted tiny">This week: ' + hoursMin(a.wkMin) + ' · ' + a.wkTasks + ' tasks</div>' +
+        '</div>';
+    }).join('');
   }
 
   function renderMoodTrend() {
@@ -1190,6 +1315,7 @@
     $('#fx-haptics').checked = FX.haptics;
     renderAccount();
     renderModeCard();
+    renderBizSettings();
     var sd = fmt(parse(state.user.startDate));
     // Guard against a corrupted/ancient stored date (e.g. year 2000) — show today instead.
     if (sd < '2025-01-01' || sd > todayStr()) sd = todayStr();

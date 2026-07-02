@@ -109,6 +109,9 @@
         <div class="extra-head">Gut health <span class="muted tiny">· not part of 75 Hard</span></div>
         <div id="gut-buttons" class="mood-buttons"></div>
 
+        <div class="extra-head">Businesses — work log <span class="muted tiny">· time &amp; tasks today</span></div>
+        <div id="biz-list"></div>
+
         <div class="extra-head">My daily habits <span class="muted tiny">· not part of 75 Hard</span></div>
         <div id="extra-tasks" class="tasklist"></div>
         <div class="add-habit">
@@ -189,6 +192,10 @@
         <div class="card">
           <h3>Gut health — last 14 days</h3>
           <div id="gut-trend"></div>
+        </div>
+        <div class="card" id="biz-stats-card">
+          <h3>Business productivity</h3>
+          <div id="biz-stats"></div>
         </div>
         <div class="card">
           <h3>Per-task consistency</h3>
@@ -414,6 +421,16 @@
             <label>Fibre goal (g)<input id="g-fiber" type="number" inputmode="numeric" /></label>
           </div>
           <button id="save-goals" class="btn primary block">Save diet goals</button>
+        </div>
+
+        <div class="card">
+          <h3>My businesses</h3>
+          <p class="muted tiny">Add the businesses/projects you want to track. On the Today screen you'll log time &amp; tasks for each, every day.</p>
+          <div id="biz-settings-list"></div>
+          <div class="add-habit">
+            <input id="new-biz" placeholder="Add a business (e.g. Acme Co)" maxlength="40" />
+            <button id="add-biz-btn" class="btn">Add</button>
+          </div>
         </div>
 
         <div class="card">
