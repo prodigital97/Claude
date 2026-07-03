@@ -38,6 +38,7 @@
     dietDate: null,
     customFoods: [],
     friends: null,
+    bizSelected: null,
     coachHistory: null,
     coachBusy: false,
     scanData: null,
@@ -788,44 +789,65 @@
       box.innerHTML = '<p class="muted tiny" style="margin:2px 2px 10px">No businesses yet — add them in <b>Settings → My businesses</b> to log time &amp; tasks here each day.</p>';
       return;
     }
+
+    // Overall totals for the whole day, across all businesses.
+    var totM = 0, totT = 0, worked = 0;
+    list.forEach(function (b) { var e = d.biz[b.id] || {}; var m = Number(e.m) || 0, t = Number(e.t) || 0; totM += m; totT += t; if (m > 0 || t > 0) worked++; });
+    var overall = el('div', 'biz-overall');
+    overall.innerHTML = '<span class="biz-ov-lbl">Today\'s total</span>' +
+      '<span class="biz-ov-val">⏱ <b>' + hoursMin(totM) + '</b> · ✅ <b>' + totT + '</b> tasks · ' + worked + '/' + list.length + ' worked</span>';
+    box.appendChild(overall);
+
+    // Dropdown to pick which business to log/edit (keeps it compact).
+    if (!state.bizSelected || !list.some(function (b) { return b.id === state.bizSelected; })) state.bizSelected = list[0].id;
+    var sel = el('select', 'biz-select');
     list.forEach(function (b) {
-      var e = d.biz[b.id] || { m: 0, t: 0 };
-      var card = el('div', 'biz-card');
-      card.innerHTML =
-        '<div class="biz-top"><span class="biz-name">' + esc(b.name) + '</span>' +
-          '<span class="biz-tot">⏱ ' + hoursMin(e.m) + ' · ✅ ' + (Number(e.t) || 0) + '</span></div>' +
-        '<div class="biz-row"><span class="biz-lbl">Time</span>' +
-          '<button class="biz-q" data-add="15">+15m</button>' +
-          '<button class="biz-q" data-add="30">+30m</button>' +
-          '<button class="biz-q" data-add="60">+1h</button>' +
-          '<input class="biz-min" type="number" inputmode="numeric" value="' + (Number(e.m) || 0) + '" /> <span class="muted tiny">min</span>' +
-          '<button class="biz-clear" data-clear="m">✕</button></div>' +
-        '<div class="biz-row"><span class="biz-lbl">Tasks</span>' +
-          '<button class="biz-q" data-tadd="1">+1</button>' +
-          '<input class="biz-task" type="number" inputmode="numeric" value="' + (Number(e.t) || 0) + '" />' +
-          '<button class="biz-clear" data-clear="t">✕</button></div>';
-      function commit(rerender) {
-        d.biz[b.id] = { m: Math.max(0, Number(card.querySelector('.biz-min').value) || 0), t: Math.max(0, Number(card.querySelector('.biz-task').value) || 0) };
-        queueSave();
-        if (rerender) renderBusinesses(d);
-      }
-      card.querySelectorAll('[data-add]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          var inp = card.querySelector('.biz-min'); inp.value = (Number(inp.value) || 0) + Number(btn.getAttribute('data-add')); commit(true);
-        });
-      });
-      card.querySelector('[data-tadd]').addEventListener('click', function () {
-        var inp = card.querySelector('.biz-task'); inp.value = (Number(inp.value) || 0) + 1; commit(true);
-      });
-      card.querySelectorAll('[data-clear]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          card.querySelector(btn.getAttribute('data-clear') === 'm' ? '.biz-min' : '.biz-task').value = 0; commit(true);
-        });
-      });
-      card.querySelector('.biz-min').addEventListener('change', function () { commit(true); });
-      card.querySelector('.biz-task').addEventListener('change', function () { commit(true); });
-      box.appendChild(card);
+      var e = d.biz[b.id] || {};
+      var o = document.createElement('option');
+      o.value = b.id;
+      o.textContent = b.name + '  —  ' + hoursMin(e.m) + ' · ' + (Number(e.t) || 0) + ' tasks';
+      if (b.id === state.bizSelected) o.selected = true;
+      sel.appendChild(o);
     });
+    sel.addEventListener('change', function () { state.bizSelected = this.value; renderBusinesses(d); });
+    box.appendChild(sel);
+
+    // Editor for the selected business only.
+    var b = list.filter(function (x) { return x.id === state.bizSelected; })[0];
+    var e = d.biz[b.id] || { m: 0, t: 0 };
+    var card = el('div', 'biz-card');
+    card.innerHTML =
+      '<div class="biz-row"><span class="biz-lbl">Time</span>' +
+        '<button class="biz-q" data-add="15">+15m</button>' +
+        '<button class="biz-q" data-add="30">+30m</button>' +
+        '<button class="biz-q" data-add="60">+1h</button>' +
+        '<input class="biz-min" type="number" inputmode="numeric" value="' + (Number(e.m) || 0) + '" /> <span class="muted tiny">min</span>' +
+        '<button class="biz-clear" data-clear="m">✕</button></div>' +
+      '<div class="biz-row"><span class="biz-lbl">Tasks</span>' +
+        '<button class="biz-q" data-tadd="1">+1</button>' +
+        '<input class="biz-task" type="number" inputmode="numeric" value="' + (Number(e.t) || 0) + '" />' +
+        '<button class="biz-clear" data-clear="t">✕</button></div>';
+    function commit(rerender) {
+      d.biz[b.id] = { m: Math.max(0, Number(card.querySelector('.biz-min').value) || 0), t: Math.max(0, Number(card.querySelector('.biz-task').value) || 0) };
+      queueSave();
+      if (rerender) renderBusinesses(d);
+    }
+    card.querySelectorAll('[data-add]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var inp = card.querySelector('.biz-min'); inp.value = (Number(inp.value) || 0) + Number(btn.getAttribute('data-add')); commit(true);
+      });
+    });
+    card.querySelector('[data-tadd]').addEventListener('click', function () {
+      var inp = card.querySelector('.biz-task'); inp.value = (Number(inp.value) || 0) + 1; commit(true);
+    });
+    card.querySelectorAll('[data-clear]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        card.querySelector(btn.getAttribute('data-clear') === 'm' ? '.biz-min' : '.biz-task').value = 0; commit(true);
+      });
+    });
+    card.querySelector('.biz-min').addEventListener('change', function () { commit(true); });
+    card.querySelector('.biz-task').addEventListener('change', function () { commit(true); });
+    box.appendChild(card);
   }
   function addBusiness() {
     var name = $('#new-biz').value.trim();
