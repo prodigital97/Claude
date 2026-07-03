@@ -3,31 +3,33 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#0b1220" />
-  <meta name="description" content="Track your 75 Hard challenge from your phone." />
+  <meta name="theme-color" content="#0a0b0e" />
+  <meta name="description" content="ATLAS — your life as apps. Challenge, diet, money, habits & more." />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="75 Hard" />
-  <title>75 Hard Tracker</title>
+  <meta name="apple-mobile-web-app-title" content="ATLAS" />
+  <title>ATLAS</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="assets/icon.svg" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
   <!-- Splash / loading -->
   <div id="splash" class="splash">
-    <div class="splash-logo">75</div>
-    <div class="splash-text">HARD</div>
+    <div class="splash-logo">A</div>
+    <div class="splash-text">ATLAS</div>
   </div>
 
   <!-- ===================== AUTH ===================== -->
   <section id="auth-screen" class="screen auth hidden">
     <div class="auth-card">
       <div class="brand">
-        <div class="brand-badge">75</div>
-        <h1>75 Hard Tracker</h1>
-        <p class="muted">Mental toughness, one day at a time.</p>
+        <div class="brand-badge">A</div>
+        <h1>ATLAS</h1>
+        <p class="muted">Your life, as apps. Challenge, diet, money &amp; more.</p>
       </div>
 
       <div class="tabs" role="tablist">
@@ -81,8 +83,37 @@
     </header>
 
     <main id="views">
+      <!-- HOME (ATLAS 2b) -->
+      <div id="view-home" class="view">
+        <div class="atlas-hero">
+          <div class="atlas-brand">
+            <span class="eyebrow">Pocket OS</span>
+            <div class="atlas-word">ATLAS</div>
+          </div>
+          <div id="home-daychip" class="daychip mono"></div>
+        </div>
+        <div id="home-rings" class="pillar-rings"></div>
+        <div id="home-brief" class="brief-card"></div>
+        <div id="home-spotlight" class="spotlight-card"></div>
+        <div id="home-tiles" class="home-tiles"></div>
+        <div class="home-actions">
+          <button class="qa" data-qa="water">💧 +250 ml</button>
+          <button class="qa" data-qa="scan">📷 Scan food</button>
+          <button class="qa" data-qa="coach">✨ Ask Coach</button>
+        </div>
+      </div>
+
+      <!-- APP LIBRARY (ATLAS 2a) -->
+      <div id="view-library" class="view hidden">
+        <div class="lib-head">
+          <div><span class="eyebrow">Library</span><h2 class="view-title" style="margin:2px 0 0">Your apps</h2></div>
+          <span id="lib-count" class="mono tiny muted"></span>
+        </div>
+        <div id="library-groups"></div>
+      </div>
+
       <!-- TODAY -->
-      <div id="view-today" class="view">
+      <div id="view-today" class="view hidden">
         <div class="hero card">
           <div class="hero-ring">
             <svg viewBox="0 0 120 120" class="ring">
@@ -511,12 +542,10 @@
     <button id="coach-fab" class="coach-fab" title="AI Coach" type="button">💬</button>
 
     <nav class="bottom-nav">
-      <button class="nav-btn active" data-view="today"><span class="ico">✓</span><span>Today</span></button>
+      <button class="nav-btn active" data-view="home"><span class="ico">◎</span><span>Home</span></button>
+      <button class="nav-btn" data-view="library"><span class="ico">▦</span><span>Apps</span></button>
+      <button class="nav-btn" data-view="today"><span class="ico">✓</span><span>Today</span></button>
       <button class="nav-btn" data-view="diet"><span class="ico">🍽️</span><span>Diet</span></button>
-      <button class="nav-btn" data-view="calendar"><span class="ico">▦</span><span>Journey</span></button>
-      <button class="nav-btn" data-view="stats"><span class="ico">📊</span><span>Stats</span></button>
-      <button class="nav-btn" data-view="board"><span class="ico">👥</span><span>Friends</span></button>
-      <button class="nav-btn" data-view="calc"><span class="ico">🧮</span><span>Calc</span></button>
       <button class="nav-btn" data-view="settings"><span class="ico">⚙</span><span>Settings</span></button>
     </nav>
   </section>

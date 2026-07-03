@@ -474,7 +474,7 @@
     bindAppEvents();
     loadCustomFoods();
     renderAll();
-    switchView('today');
+    switchView('home');
     prefetchStats();   // warm Stats averages in the background
   }
 
@@ -573,6 +573,16 @@
       else if (t.hasAttribute('data-decline')) respondFriend(t.getAttribute('data-decline'), false);
       else if (t.hasAttribute('data-cancel')) { e.preventDefault(); removeFriend(t.getAttribute('data-cancel')); }
     });
+    // ATLAS home + library
+    $('#view-home').addEventListener('click', function (e) {
+      var qa = e.target.closest('[data-qa]'); var pil = e.target.closest('[data-pillar]');
+      if (qa) homeQuickAction(qa.getAttribute('data-qa'));
+      else if (pil) switchView('library');
+    });
+    $('#library-groups').addEventListener('click', function (e) {
+      var t = e.target.closest('[data-app]');
+      if (t) openApp(t.getAttribute('data-app'));
+    });
     // AI Coach
     $('#coach-fab').addEventListener('click', openCoach);
     $('#coach-close').addEventListener('click', function () { hide('#coach-modal'); });
@@ -593,6 +603,9 @@
       b.classList.toggle('active', b.dataset.view === name);
     });
     if (name !== 'diet') stopFastTimer();
+    if (name === 'home') renderHome();
+    if (name === 'library') renderLibrary();
+    if (name === 'today') renderToday();
     if (name === 'diet') renderDiet();
     if (name === 'calendar') renderCalendar();
     if (name === 'stats') renderStats();
@@ -2715,6 +2728,164 @@
       state.adminFoods = (state.adminFoods || []).filter(function (x) { return x.id !== id; });
       renderAdminFoods(); toast('Deleted');
     }).catch(function (e) { toast(e.message); });
+  }
+
+  /* ---------------- ATLAS home + app library ---------------- */
+  var APPS = [
+    { id: 'challenge', name: 'Challenge', icon: '🔥', pillar: 'body', open: function () { switchView('today'); } },
+    { id: 'diet',      name: 'Diet',      icon: '🥗', pillar: 'body', open: function () { switchView('diet'); } },
+    { id: 'fast',      name: 'Fast',      icon: '⏳', pillar: 'body', open: function () { switchView('diet'); } },
+    { id: 'water',     name: 'Water',     icon: '💧', pillar: 'body', open: function () { switchView('today'); } },
+    { id: 'steps',     name: 'Steps',     icon: '👟', pillar: 'body' },
+    { id: 'sleep',     name: 'Sleep',     icon: '😴', pillar: 'body' },
+    { id: 'body',      name: 'Body',      icon: '⚖️', pillar: 'body' },
+    { id: 'gym',       name: 'Gym Log',   icon: '🏋️', pillar: 'body' },
+    { id: 'calc',      name: 'Calc',      icon: '🧮', pillar: 'body', open: function () { switchView('calc'); } },
+    { id: 'journal',   name: 'Journal',   icon: '📓', pillar: 'mind', open: function () { switchView('today'); } },
+    { id: 'reading',   name: 'Reading',   icon: '📖', pillar: 'mind', open: function () { switchView('today'); } },
+    { id: 'breathe',   name: 'Breathe',   icon: '🫁', pillar: 'mind' },
+    { id: 'detox',     name: 'Detox',     icon: '📵', pillar: 'mind' },
+    { id: 'money',     name: 'Money',     icon: '💸', pillar: 'money' },
+    { id: 'budgets',   name: 'Budgets',   icon: '📊', pillar: 'money' },
+    { id: 'subs',      name: 'Subs',      icon: '🔁', pillar: 'money' },
+    { id: 'savings',   name: 'Savings',   icon: '🐷', pillar: 'money' },
+    { id: 'habits',    name: 'Habits',    icon: '🔗', pillar: 'life', open: function () { switchView('today'); } },
+    { id: 'work',      name: 'Work',      icon: '💼', pillar: 'life', open: function () { switchView('today'); } },
+    { id: 'tasks',     name: 'Tasks',     icon: '✅', pillar: 'life' },
+    { id: 'goals',     name: 'Goals',     icon: '🎯', pillar: 'life' },
+    { id: 'friends',   name: 'Friends',   icon: '👥', pillar: 'life', open: function () { switchView('board'); } },
+    { id: 'coach',     name: 'Coach',     icon: '✨', pillar: 'life', open: function () { openCoach(); } },
+    { id: 'stats',     name: 'Stats',     icon: '📈', pillar: 'life', open: function () { switchView('stats'); } },
+    { id: 'journey',   name: 'Journey',   icon: '🗓️', pillar: 'life', open: function () { switchView('calendar'); } }
+  ];
+  var PILLARS = [
+    { id: 'body', name: 'BODY', color: 'var(--body-c)' },
+    { id: 'mind', name: 'MIND', color: 'var(--mind-c)' },
+    { id: 'money', name: 'MONEY', color: 'var(--money-c)' },
+    { id: 'life', name: 'LIFE', color: 'var(--life-c)' }
+  ];
+
+  function pctOf(a, b) { return b ? Math.min(100, Math.round(a / b * 100)) : 0; }
+  function pillarScores() {
+    var d = state.today || {};
+    var taskPct = pctOf(completedCount(d), TOTAL_ITEMS);
+    var waterPct = pctOf(Number(d.waterMl) || 0, WATER_GOAL);
+    var body = Math.round(taskPct * 0.6 + waterPct * 0.4);
+    // MIND — mood + reading
+    var moodPct = d.mood ? Math.round(d.mood / 5 * 100) : null;
+    var readPct = d.reading ? 100 : 0;
+    var mind = moodPct == null ? readPct : Math.round(moodPct * 0.6 + readPct * 0.4);
+    // LIFE — habits done + businesses worked today
+    var habits = (state.profile && state.profile.customTasks) || [];
+    var hPct = habits.length ? pctOf(habits.filter(function (h) { return d.extra && d.extra[h.id]; }).length, habits.length) : null;
+    var bizList = businesses(), worked = 0;
+    bizList.forEach(function (b) { var e = (d.biz || {})[b.id] || {}; if ((Number(e.m) || 0) > 0 || (Number(e.t) || 0) > 0) worked++; });
+    var wPct = bizList.length ? pctOf(worked, bizList.length) : null;
+    var lp = [hPct, wPct].filter(function (x) { return x != null; });
+    var life = lp.length ? Math.round(lp.reduce(function (a, b) { return a + b; }, 0) / lp.length) : null;
+    return { body: body, mind: mind, money: null, life: life }; // money apps arrive later
+  }
+
+  function renderHome() {
+    if (!state.user) return;
+    var d = state.today || {};
+    var cd = Math.max(1, state.user.currentDay);
+    var chip = $('#home-daychip');
+    if (chip) chip.innerHTML = 'DAY ' + Math.min(cd, LEN) + ' · ' + streakOf(state.logs) + '🔥';
+
+    var sc = pillarScores();
+    var rings = $('#home-rings');
+    if (rings) {
+      var circ = 2 * Math.PI * 26;
+      rings.innerHTML = PILLARS.map(function (p) {
+        var v = sc[p.id];
+        var frac = v == null ? 0 : v / 100;
+        return '<button class="pillar" data-pillar="' + p.id + '" style="--pc:' + p.color + '">' +
+          '<span class="pring-wrap"><svg viewBox="0 0 64 64" class="pring">' +
+          '<circle class="pring-bg" cx="32" cy="32" r="26"></circle>' +
+          '<circle class="pring-fg" cx="32" cy="32" r="26" stroke-dasharray="' + circ + '" stroke-dashoffset="' + (circ * (1 - frac)) + '"></circle></svg>' +
+          '<span class="pillar-val">' + (v == null ? '—' : v) + '</span></span>' +
+          '<span class="pillar-name eyebrow">' + p.name + '</span></button>';
+      }).join('');
+    }
+
+    var brief = $('#home-brief');
+    if (brief) {
+      var parts = [];
+      parts.push(completedCount(d) + '/' + TOTAL_ITEMS + ' tasks');
+      parts.push(litres(Number(d.waterMl) || 0) + '/' + litres(WATER_GOAL) + ' L water');
+      if (state.activeFast) parts.push('fasting');
+      if (d.mood) parts.push('mood ' + d.mood + '/5');
+      brief.innerHTML = '<span class="eyebrow">ATLAS Brief</span><div class="brief-line">' +
+        (goalMet(d) ? '🎉 Day goal met — keep the streak alive.' : 'Today so far: ' + parts.join(' · ') + '.') + '</div>';
+    }
+
+    var spot = $('#home-spotlight');
+    if (spot) {
+      var left = TOTAL_ITEMS - completedCount(d);
+      var html;
+      if (!goalMet(d)) {
+        html = '<span class="eyebrow">Spotlight · Challenge</span>' +
+          '<div class="spot-big">' + left + ' task' + (left === 1 ? '' : 's') + ' left today</div>' +
+          '<div class="muted tiny">Day ' + Math.min(cd, LEN) + ' of ' + LEN + ' · ' + streakOf(state.logs) + '-day streak</div>' +
+          '<button class="btn primary block spot-cta" data-qa="today">Open Challenge</button>';
+      } else {
+        html = '<span class="eyebrow">Spotlight · Coach</span>' +
+          '<div class="spot-big">Nice work today 💪</div>' +
+          '<div class="muted tiny">Ask your AI coach what to focus on next.</div>' +
+          '<button class="btn primary block spot-cta" data-qa="coach">Ask Coach</button>';
+      }
+      spot.innerHTML = html;
+    }
+
+    var tiles = $('#home-tiles');
+    if (tiles) {
+      var t = [
+        ['💧 Water', litres(Number(d.waterMl) || 0) + ' / ' + litres(WATER_GOAL) + ' L'],
+        ['✓ Tasks', completedCount(d) + ' / ' + TOTAL_ITEMS],
+        ['🔥 Streak', streakOf(state.logs) + ' days'],
+        ['⚖ Mode', challengeMode() === 'soft' ? '75 Soft' : '75 Hard']
+      ];
+      tiles.innerHTML = t.map(function (x) {
+        return '<div class="htile"><div class="htile-lbl eyebrow">' + x[0] + '</div><div class="htile-val">' + x[1] + '</div></div>';
+      }).join('');
+    }
+  }
+
+  function renderLibrary() {
+    var box = $('#library-groups'); if (!box) return;
+    var live = APPS.filter(function (a) { return a.open; }).length;
+    $('#lib-count').textContent = APPS.length + ' apps · ' + live + ' live';
+    box.innerHTML = PILLARS.map(function (p) {
+      var apps = APPS.filter(function (a) { return a.pillar === p.id; });
+      var tiles = apps.map(function (a) {
+        return '<button class="app-tile' + (a.open ? '' : ' soon') + '" data-app="' + a.id + '" style="--pc:' + p.color + '">' +
+          '<span class="app-ico">' + a.icon + '</span><span class="app-name">' + a.name + '</span>' +
+          (a.open ? '' : '<span class="app-soon">soon</span>') + '</button>';
+      }).join('');
+      return '<div class="lib-group"><div class="lib-group-head eyebrow" style="color:' + p.color + '">' + p.name + '</div>' +
+        '<div class="app-grid">' + tiles + '</div></div>';
+    }).join('');
+  }
+  function openApp(id) {
+    var a = APPS.filter(function (x) { return x.id === id; })[0];
+    if (!a) return;
+    if (a.open) a.open();
+    else toast(a.name + ' — coming soon ✨');
+  }
+  function homeQuickAction(qa) {
+    if (qa === 'water') {
+      state.today.waterMl = (Number(state.today.waterMl) || 0) + 250;
+      queueSave(); renderHome();
+      toast('+250 ml 💧');
+    } else if (qa === 'scan') {
+      openFoodModal('Snacks');
+      setTimeout(function () { $('#food-manual').classList.remove('hidden'); }, 150);
+    } else if (qa === 'coach') {
+      openCoach();
+    } else if (qa === 'today') {
+      switchView('today');
+    }
   }
 
   /* ---------------- AI Coach chat ---------------- */

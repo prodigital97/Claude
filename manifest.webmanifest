@@ -1,13 +1,13 @@
 {
-  "name": "75 Hard Tracker",
-  "short_name": "75 Hard",
-  "description": "Track your 75 Hard challenge from your phone, synced to a Google Sheet.",
+  "name": "ATLAS — Life OS",
+  "short_name": "ATLAS",
+  "description": "Your life as apps — 75 Hard challenge, diet, money, habits, coach and more, synced to a Google Sheet.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0b1220",
-  "theme_color": "#0b1220",
+  "background_color": "#0a0b0e",
+  "theme_color": "#0a0b0e",
   "icons": [
     { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "assets/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
