@@ -686,23 +686,26 @@ function handleScanLabel(body) {
   }
   prompt += '\nChoose the best source and set "estimated" accordingly:\n' +
     '- If a NUTRITION INFORMATION PANEL is clearly visible in a photo, READ the exact printed values and set "estimated" to false.\n' +
-    '- Otherwise (only a front-of-pack photo, or just a name was given), ESTIMATE the typical nutrition per 100 g / 100 ml from your knowledge and set "estimated" to true. This works for BOTH branded packaged products (e.g. "Amul Butter") AND generic or home-cooked foods, dishes and recipes (e.g. "air fried chicken", "boiled egg", "grilled paneer", "chicken biryani"). Give sensible typical values for an average preparation. Only return calories 0 if the text is genuinely not a food/drink at all.\n' +
+    '- Otherwise (only a front-of-pack photo, or just a name was given), ESTIMATE the typical nutrition per 100 g / 100 ml from your knowledge and set "estimated" to true. This works for BOTH branded packaged products (e.g. "Amul Butter") AND generic or home-cooked foods, dishes and recipes (e.g. "air fried chicken", "boiled egg", "grilled paneer", "chicken biryani"). For an ESTIMATE, always give values per 100 g and set "basisGrams" to 100. Only return calories 0 if the text is genuinely not a food/drink at all.\n' +
     'Always fill the "name" with a clean, readable food name.\n\n' +
-    'When READING a panel, follow these rules exactly:\n' +
-    '1. Tables often have several columns ("per 100 g", "per serving / per 20 g", "%RDA"). ' +
-    'Read ONLY the PER-100-g (or per-100-ml) column; IGNORE per-serving and %RDA/%DV. ' +
-    'If there is no per-100 column, convert the per-serving values to per-100 using the serving size.\n' +
-    '2. Map each row to the RIGHT field — do NOT mix them up:\n' +
+    'CRITICAL — when READING a printed panel, follow these rules exactly:\n' +
+    '1. Pick ONE data column and report every value EXACTLY AS PRINTED in that column — do NOT do any math or conversion yourself. ' +
+    'Prefer a "per 100 g" / "per 100 ml" column if one exists. If the only amounts are per serving (e.g. the header says "Per 40 g serve", "per 30 g", "per serving (25 g)"), use that column.\n' +
+    '2. Set "basisGrams" to the grams that your chosen column represents: 100 for a per-100g/ml column; the serving grams (e.g. 40, 30, 25) if you used a per-serving column. If unsure, use 100.\n' +
+    '3. NEVER read the "%DV", "%RDA" or "%" column as a value.\n' +
+    '4. The panel may split nutrients across TWO side-by-side sub-columns under the same basis (e.g. Energy/Protein/Carb on the left, Total Fat/Sodium/Calcium on the right) — read rows from BOTH.\n' +
+    '5. Map each row to the RIGHT field — do NOT mix them up:\n' +
     '   - "fat" = the TOTAL Fat row ONLY (never Saturated or Trans).\n' +
-    '   - "saturatedFat" = Saturated Fat row. "transFat" = Trans Fat row.\n' +
+    '   - "saturatedFat" = Saturated Fat / SAFA row. "transFat" = Trans Fat row.\n' +
     '   - "carbs" = Total Carbohydrate row (never the Sugars row).\n' +
     '   - "sugar" = Total Sugars row (never Added Sugars). "addedSugar" = Added Sugars row.\n' +
     '   - "fiber" = Dietary Fibre. "sodium" = Sodium (mg). "cholesterol" = Cholesterol (mg). ' +
     '"calcium" = Calcium (mg). "iron" = Iron (mg).\n' +
-    '3. Values like "<16.0", "≈", "Approx 25.0", "*" -> use just the number.\n' +
-    '4. Use 0 for any value you cannot determine. Numbers only, no units.\n\n' +
+    '6. Values like "<16.0", "≈", "Approx 25.0", "*" -> use just the number.\n' +
+    '7. Use 0 for any value not printed. Numbers only, no units.\n' +
+    'Example: a column headed "Per 40 g serve" with Energy 164, Protein 10 -> report calories:164, protein:10, basisGrams:40 (the app converts to per-100g itself).\n\n' +
     'Return ONLY JSON, no markdown, matching this schema exactly: ' +
-    '{"name":string,"estimated":boolean,"servingSize":string,"calories":number,"protein":number,"carbs":number,"fat":number,' +
+    '{"name":string,"estimated":boolean,"servingSize":string,"basisGrams":number,"calories":number,"protein":number,"carbs":number,"fat":number,' +
     '"sugar":number,"addedSugar":number,"saturatedFat":number,"transFat":number,"fiber":number,' +
     '"sodium":number,"cholesterol":number,"calcium":number,"iron":number}.';
 
@@ -751,11 +754,18 @@ function handleScanLabel(body) {
   try { p = JSON.parse(txt); }
   catch (e) { var m = txt.match(/\{[\s\S]*\}/); p = m ? JSON.parse(m[0]) : {}; }
   function n(x) { return Number(x) || 0; }
+  // Values are reported as-printed for a column of `basisGrams` grams (e.g. 40 g serve).
+  // Convert everything to per-100 g deterministically here (don't trust the model's math).
+  var basis = Number(p.basisGrams) || 100;
+  if (!(basis > 0) || basis > 1000) basis = 100;
+  var factor = 100 / basis;
+  function per100(x, intval) { var v = n(x) * factor; return intval ? Math.round(v) : Math.round(v * 10) / 10; }
   var result = {
     name: String(p.name || ''), estimated: !!p.estimated, servingSize: String(p.servingSize || ''),
-    calories: n(p.calories), protein: n(p.protein), carbs: n(p.carbs), fat: n(p.fat), sugar: n(p.sugar),
-    addedSugar: n(p.addedSugar), saturatedFat: n(p.saturatedFat), transFat: n(p.transFat),
-    fiber: n(p.fiber), sodium: n(p.sodium), cholesterol: n(p.cholesterol), calcium: n(p.calcium), iron: n(p.iron)
+    basisGrams: basis,
+    calories: per100(p.calories, true), protein: per100(p.protein), carbs: per100(p.carbs), fat: per100(p.fat), sugar: per100(p.sugar),
+    addedSugar: per100(p.addedSugar), saturatedFat: per100(p.saturatedFat), transFat: per100(p.transFat),
+    fiber: per100(p.fiber), sodium: per100(p.sodium, true), cholesterol: per100(p.cholesterol, true), calcium: per100(p.calcium, true), iron: per100(p.iron)
   };
   try { logScan(body, usedModel, imgs.length, usage, result.name); } catch (e) { /* logging must never break a scan */ }
   return result;
