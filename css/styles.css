@@ -661,3 +661,9 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .water-quick { display: flex; gap: 8px; flex-wrap: wrap; }
 .water-quick .btn { flex: 1; min-width: 70px; }
 .home-journey .calendar-grid { margin-top: 4px; }
+
+/* Steps / Sleep / Body metric apps */
+.metric-big { font-size: 22px; font-weight: 600; }
+.metric-big b { font-size: 38px; font-weight: 700; }
+.mbars { display: flex; align-items: flex-end; gap: 8px; height: 50px; }
+.mbar { flex: 1; background: linear-gradient(180deg, var(--primary), var(--primary-2)); border-radius: 5px 5px 3px 3px; min-height: 4px; }

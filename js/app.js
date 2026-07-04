@@ -386,7 +386,7 @@
   function emptyDay(date) {
     return { date: date, dayNumber: state.user ? dayNumber(state.user.startDate, date) : 1,
       workout1: false, workout2: false, outdoor: false, waterMl: 0,
-      reading: false, photo: false, diet: false, noAlcohol: false, completed: false, notes: '', extra: {}, mood: 0, gut: 0, biz: {} };
+      reading: false, photo: false, diet: false, noAlcohol: false, completed: false, notes: '', extra: {}, mood: 0, gut: 0, biz: {}, metrics: {} };
   }
   function logFor(date) {
     return state.logs.filter(function (l) { return l.date === date; })[0];
@@ -615,6 +615,9 @@
     if (name === 'work') renderBusinesses(state.today);
     if (name === 'journal') renderJournal();
     if (name === 'reading') renderReading();
+    if (name === 'steps') renderSteps();
+    if (name === 'sleep') renderSleep();
+    if (name === 'body') renderBody();
     if (name === 'diet') renderDiet();
     if (name === 'calendar') renderCalendar();
     if (name === 'stats') renderStats();
@@ -2750,9 +2753,9 @@
     { id: 'water',     name: 'Water',     icon: '💧', pillar: 'body', open: function () { switchView('water'); } },
     { id: 'mood',      name: 'Mood',      icon: '🙂', pillar: 'body', open: function () { switchView('mood'); } },
     { id: 'gut',       name: 'Gut',       icon: '🌿', pillar: 'body', open: function () { switchView('gut'); } },
-    { id: 'steps',     name: 'Steps',     icon: '👟', pillar: 'body' },
-    { id: 'sleep',     name: 'Sleep',     icon: '😴', pillar: 'body' },
-    { id: 'body',      name: 'Body',      icon: '⚖️', pillar: 'body' },
+    { id: 'steps',     name: 'Steps',     icon: '👟', pillar: 'body', open: function () { switchView('steps'); } },
+    { id: 'sleep',     name: 'Sleep',     icon: '😴', pillar: 'body', open: function () { switchView('sleep'); } },
+    { id: 'body',      name: 'Body',      icon: '⚖️', pillar: 'body', open: function () { switchView('body'); } },
     { id: 'gym',       name: 'Gym Log',   icon: '🏋️', pillar: 'body' },
     { id: 'calc',      name: 'Calc',      icon: '🧮', pillar: 'body', open: function () { switchView('calc'); } },
     { id: 'journal',   name: 'Journal',   icon: '📓', pillar: 'mind', open: function () { switchView('journal'); } },
@@ -2917,6 +2920,85 @@
       state.profile = prof;
       api('saveGoals', { profile: prof }).then(function (dd) { if (dd && dd.profile) state.profile = dd.profile; toast('Saved ✓'); renderReading(); }).catch(function (e) { toast(e.message); });
     });
+  }
+
+  /* ----- Steps / Sleep / Body — stored in day-log metrics {} ----- */
+  function metricsOf(d) { if (!d.metrics) d.metrics = {}; return d.metrics; }
+  function setMetric(k, v) { metricsOf(state.today)[k] = v; queueSave(); }
+  function metricTrend(key, sel, unit, div) {
+    var box = $(sel); if (!box) return;
+    var today = todayStr(), bars = '', max = 0, vals = [];
+    for (var i = 6; i >= 0; i--) { var lg = logFor(addDays(today, -i)); var v = lg && lg.metrics ? Number(lg.metrics[key]) || 0 : 0; vals.push(v); if (v > max) max = v; }
+    vals.forEach(function (v) {
+      var h = max ? Math.max(4, Math.round(v / max * 46)) : 4;
+      bars += '<div class="mbar" style="height:' + h + 'px"' + (v ? ' title="' + (div ? (v / div).toFixed(1) : v) + unit + '"' : '') + '></div>';
+    });
+    box.innerHTML = '<div class="mbars">' + bars + '</div><div class="muted tiny" style="margin-top:6px">Last 7 days</div>';
+  }
+  function renderSteps() {
+    var box = $('#steps-app'); if (!box) return;
+    var m = metricsOf(state.today);
+    var steps = Number(m.steps) || 0, goal = Number(state.profile && state.profile.stepGoal) || 10000;
+    box.innerHTML =
+      '<div class="card"><div class="metric-big"><b>' + steps.toLocaleString() + '</b> <span class="muted">/ ' + goal.toLocaleString() + ' steps</span></div>' +
+      '<div class="fc-bar" style="margin:10px 0 14px"><span style="width:' + pctOf(steps, goal) + '%"></span></div>' +
+      '<div class="water-quick"><button class="btn" data-s="1000">+1,000</button><button class="btn" data-s="2500">+2,500</button><button class="btn" data-s="set">Set exact</button><button class="btn danger" data-s="reset">Reset</button></div></div>' +
+      '<div class="card"><div class="manual-grid">' +
+      '<label>Calories burned<input id="mt-burn" type="number" inputmode="numeric" value="' + (m.burn || '') + '" /></label>' +
+      '<label>Active min<input id="mt-active" type="number" inputmode="numeric" value="' + (m.active || '') + '" /></label></div>' +
+      '<button id="mt-save" class="btn block">Save</button></div>' +
+      '<div class="card"><div class="eyebrow">Steps</div><div id="steps-trend"></div></div>';
+    box.querySelectorAll('[data-s]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var v = b.getAttribute('data-s');
+        if (v === 'reset') m.steps = 0;
+        else if (v === 'set') { var x = prompt('Steps today:', steps); if (x == null) return; m.steps = Math.max(0, Number(x) || 0); }
+        else m.steps = steps + Number(v);
+        queueSave(); renderSteps();
+      });
+    });
+    $('#mt-save').addEventListener('click', function () { m.burn = Number($('#mt-burn').value) || 0; m.active = Number($('#mt-active').value) || 0; queueSave(); toast('Saved ✓'); });
+    metricTrend('steps', '#steps-trend', '');
+  }
+  function renderSleep() {
+    var box = $('#sleep-app'); if (!box) return;
+    var m = metricsOf(state.today);
+    var mins = Number(m.sleepMin) || 0;
+    box.innerHTML =
+      '<div class="card"><div class="metric-big"><b>' + (mins ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : '—') + '</b> <span class="muted">last night</span></div>' +
+      '<div class="manual-grid" style="margin-top:12px"><label>Hours<input id="sl-h" type="number" inputmode="numeric" value="' + (mins ? Math.floor(mins / 60) : '') + '" /></label>' +
+      '<label>Minutes<input id="sl-m" type="number" inputmode="numeric" value="' + (mins ? mins % 60 : '') + '" /></label></div>' +
+      '<button id="sl-save" class="btn primary block">Save sleep</button></div>' +
+      '<div class="card"><div class="eyebrow">Sleep · hours</div><div id="sleep-trend"></div></div>';
+    $('#sl-save').addEventListener('click', function () {
+      m.sleepMin = (Number($('#sl-h').value) || 0) * 60 + (Number($('#sl-m').value) || 0);
+      queueSave(); toast('Saved ✓'); renderSleep();
+    });
+    metricTrend('sleepMin', '#sleep-trend', 'h', 60);
+  }
+  function renderBody() {
+    var box = $('#body-app'); if (!box) return;
+    var m = metricsOf(state.today);
+    // latest known weight across logs for trend context
+    var goal = Number(state.profile && state.profile.weightGoal) || 0;
+    box.innerHTML =
+      '<div class="card"><div class="metric-big"><b>' + (m.weight || '—') + '</b> <span class="muted">kg' + (goal ? ' · goal ' + goal : '') + '</span></div>' +
+      '<div class="manual-grid" style="margin-top:12px">' +
+      '<label>Weight (kg)<input id="bd-w" type="number" inputmode="decimal" value="' + (m.weight || '') + '" /></label>' +
+      '<label>Waist (cm)<input id="bd-waist" type="number" inputmode="decimal" value="' + (m.waist || '') + '" /></label>' +
+      '<label>Body fat (%)<input id="bd-bf" type="number" inputmode="decimal" value="' + (m.bodyfat || '') + '" /></label>' +
+      '<label>Goal weight<input id="bd-goal" type="number" inputmode="decimal" value="' + (goal || '') + '" /></label></div>' +
+      '<button id="bd-save" class="btn primary block">Log today</button></div>' +
+      '<div class="card"><div class="eyebrow">Weight · kg</div><div id="body-trend"></div></div>';
+    $('#bd-save').addEventListener('click', function () {
+      m.weight = Number($('#bd-w').value) || 0; m.waist = Number($('#bd-waist').value) || 0; m.bodyfat = Number($('#bd-bf').value) || 0;
+      var g = Number($('#bd-goal').value) || 0;
+      state.profile = Object.assign({}, state.profile, { weightGoal: g });
+      queueSave();
+      api('saveGoals', { profile: state.profile }).catch(function () {});
+      toast('Logged ✓'); renderBody();
+    });
+    metricTrend('weight', '#body-trend', 'kg');
   }
 
   function renderLibrary() {

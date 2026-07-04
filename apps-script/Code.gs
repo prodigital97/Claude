@@ -27,7 +27,7 @@ var CUSTOM_SHEET = 'CustomFoods';
 
 var USER_HEADERS = ['username', 'displayName', 'passwordHash', 'salt', 'token', 'startDate', 'createdAt', 'email', 'emailVerified'];
 var LOG_HEADERS = ['username', 'date', 'dayNumber', 'workout1', 'workout2', 'outdoor',
-                   'waterMl', 'reading', 'photo', 'diet', 'noAlcohol', 'completed', 'notes', 'updatedAt', 'extra', 'mood', 'gut', 'biz'];
+                   'waterMl', 'reading', 'photo', 'diet', 'noAlcohol', 'completed', 'notes', 'updatedAt', 'extra', 'mood', 'gut', 'biz', 'metrics'];
 // 'sugar' / 'fiber' appended at the end so older Food rows keep their column positions.
 var FOOD_HEADERS = ['id', 'username', 'date', 'meal', 'name', 'grams',
                     'calories', 'protein', 'carbs', 'fat', 'createdAt', 'sugar', 'fiber'];
@@ -1154,7 +1154,8 @@ function handleSaveDay(body) {
     extra: JSON.stringify(day.extra || {}),
     mood: Number(day.mood) || 0,
     gut: Number(day.gut) || 0,
-    biz: JSON.stringify(day.biz || {})
+    biz: JSON.stringify(day.biz || {}),
+    metrics: JSON.stringify(day.metrics || {})
   };
   record.completed = isDayComplete(record);
   record.updatedAt = new Date().toISOString();
@@ -1625,7 +1626,8 @@ function logFromRow(r, idx) {
     extra: parseJsonObj(r[idx.extra]),
     mood: Number(r[idx.mood]) || 0,
     gut: Number(r[idx.gut]) || 0,
-    biz: parseJsonObj(r[idx.biz])
+    biz: parseJsonObj(r[idx.biz]),
+    metrics: parseJsonObj(r[idx.metrics])
   };
 }
 function parseJsonObj(v) {
