@@ -667,3 +667,14 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .metric-big b { font-size: 38px; font-weight: 700; }
 .mbars { display: flex; align-items: flex-end; gap: 8px; height: 50px; }
 .mbar { flex: 1; background: linear-gradient(180deg, var(--primary), var(--primary-2)); border-radius: 5px 5px 3px 3px; min-height: 4px; }
+
+/* Generic list apps (Money / Subs / Savings / Tasks / Goals) */
+.list-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.list-row:last-child { border-bottom: 0; }
+.list-row.off { opacity: .5; }
+.list-del { border: 0; background: transparent; color: var(--red); font-size: 15px; padding: 4px 6px; cursor: pointer; }
+.tk-check { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; cursor: pointer; }
+.tk-check input { width: auto; transform: scale(1.15); }
+.tk-done { text-decoration: line-through; color: var(--muted); }
+.tk-over { color: var(--red); }
+.fc-bar.over > span { background: var(--red); }

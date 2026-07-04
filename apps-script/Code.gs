@@ -72,6 +72,10 @@ function doPost(e) {
     switch (action) {
       case 'register':   data = handleRegister(body);  break;
       case 'login':      data = handleLogin(body);     break;
+      case 'listGet':          data = handleListGet(body);          break;
+      case 'listAdd':          data = handleListAdd(body);          break;
+      case 'listUpdate':       data = handleListUpdate(body);       break;
+      case 'listDelete':       data = handleListDelete(body);       break;
       case 'updateEmail':      data = handleUpdateEmail(body);      break;
       case 'changePassword':   data = handleChangePassword(body);   break;
       case 'changeUsername':   data = handleChangeUsername(body);   break;
@@ -1528,6 +1532,79 @@ function tasksDoneCount(l) {
   });
   if (Number(l.waterMl) >= WATER_GOAL_ML) c++;
   return c;
+}
+
+/* ---------------- Generic per-user lists (Money, Subs, Savings, Tasks, Goals) ----------------
+ * One CRUD for all list-style apps. Each 'kind' maps to its own sheet + fields.
+ * ------------------------------------------------------------------------------------------ */
+var LIST_KINDS = {
+  expense: { sheet: 'Expenses', fields: ['date', 'amount', 'category', 'note'] },
+  sub:     { sheet: 'Subs',     fields: ['name', 'amount', 'cycle', 'renewDay', 'active'] },
+  saving:  { sheet: 'Savings',  fields: ['name', 'target', 'saved'] },
+  task:    { sheet: 'Tasks',    fields: ['title', 'due', 'priority', 'done'] },
+  goal:    { sheet: 'Goals',    fields: ['title', 'status', 'note'] }
+};
+function listHeaders(kind) { return ['id', 'username'].concat(LIST_KINDS[kind].fields).concat(['createdAt', 'updatedAt']); }
+function listKind(kind) { var k = LIST_KINDS[kind]; if (!k) throw new Error('Unknown list kind.'); return k; }
+function listSheetFor(kind) { return getSheet(listKind(kind).sheet, listHeaders(kind)); }
+function listRowToObj(r, idx, k) {
+  var o = { id: String(r[idx.id]) };
+  k.fields.forEach(function (f) { o[f] = r[idx[f]]; });
+  o.createdAt = String(r[idx.createdAt] || '');
+  return o;
+}
+
+function handleListGet(body) {
+  var user = authUser(body);
+  var kind = String(body.kind || ''); var k = listKind(kind);
+  var sheet = listSheetFor(kind);
+  var rows = sheet.getDataRange().getValues();
+  var idx = colIndex(listHeaders(kind));
+  var out = [];
+  for (var i = 1; i < rows.length; i++) {
+    if (normalizeUsername(rows[i][idx.username]) !== user.username) continue;
+    out.push(listRowToObj(rows[i], idx, k));
+  }
+  return { items: out };
+}
+function handleListAdd(body) {
+  var user = authUser(body);
+  var kind = String(body.kind || ''); var k = listKind(kind);
+  var sheet = listSheetFor(kind); var headers = listHeaders(kind);
+  var it = body.item || {}, now = new Date().toISOString();
+  var rec = { id: Utilities.getUuid(), username: user.username, createdAt: now, updatedAt: now };
+  k.fields.forEach(function (f) { rec[f] = (it[f] !== undefined && it[f] !== null) ? it[f] : ''; });
+  sheet.appendRow(headers.map(function (h) { return rec[h]; }));
+  return { item: rec };
+}
+function handleListUpdate(body) {
+  var user = authUser(body);
+  var kind = String(body.kind || ''); var k = listKind(kind);
+  var id = String(body.id || ''); if (!id) throw new Error('id required.');
+  var sheet = listSheetFor(kind); var idx = colIndex(listHeaders(kind));
+  var rows = sheet.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][idx.id]) === id && normalizeUsername(rows[i][idx.username]) === user.username) {
+      var it = body.item || {};
+      k.fields.forEach(function (f) { if (it[f] !== undefined) sheet.getRange(i + 1, idx[f] + 1).setValue(it[f]); });
+      sheet.getRange(i + 1, idx.updatedAt + 1).setValue(new Date().toISOString());
+      return { ok: true, id: id };
+    }
+  }
+  throw new Error('Item not found.');
+}
+function handleListDelete(body) {
+  var user = authUser(body);
+  var kind = String(body.kind || ''); listKind(kind);
+  var id = String(body.id || '');
+  var sheet = listSheetFor(kind); var idx = colIndex(listHeaders(kind));
+  var rows = sheet.getDataRange().getValues();
+  for (var i = 1; i < rows.length; i++) {
+    if (String(rows[i][idx.id]) === id && normalizeUsername(rows[i][idx.username]) === user.username) {
+      sheet.deleteRow(i + 1); return { ok: true, id: id };
+    }
+  }
+  return { ok: true, id: id };
 }
 
 /* ----------------------------------------------------------------------- *

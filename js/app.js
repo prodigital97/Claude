@@ -349,6 +349,21 @@
     if (action === 'respondFriend') return { status: 'friend' };
     if (action === 'removeFriend') return { status: 'removed' };
     if (action === 'coachChat') return { reply: 'The AI coach needs the online backend (Gemini) — it isn’t available in demo mode.' };
+    if (action === 'listGet') { return { items: ((d.lists && d.lists[me.username] && d.lists[me.username][p.kind]) || []).slice() }; }
+    if (action === 'listAdd') {
+      d.lists = d.lists || {}; d.lists[me.username] = d.lists[me.username] || {};
+      var la = d.lists[me.username][p.kind] || (d.lists[me.username][p.kind] = []);
+      var rec = Object.assign({ id: 'l_' + Date.now() + Math.random().toString(36).slice(2, 6), createdAt: new Date().toISOString() }, p.item);
+      la.push(rec); saveDb(d); return { item: rec };
+    }
+    if (action === 'listUpdate') {
+      var lu = ((d.lists && d.lists[me.username] && d.lists[me.username][p.kind]) || []).filter(function (x) { return x.id === p.id; })[0];
+      if (lu) { Object.assign(lu, p.item); saveDb(d); } return { ok: true, id: p.id };
+    }
+    if (action === 'listDelete') {
+      if (d.lists && d.lists[me.username] && d.lists[me.username][p.kind]) d.lists[me.username][p.kind] = d.lists[me.username][p.kind].filter(function (x) { return x.id !== p.id; });
+      saveDb(d); return { ok: true, id: p.id };
+    }
     throw new Error('Unknown action');
   }
 
@@ -618,6 +633,11 @@
     if (name === 'steps') renderSteps();
     if (name === 'sleep') renderSleep();
     if (name === 'body') renderBody();
+    if (name === 'money') renderMoney();
+    if (name === 'subs') renderSubs();
+    if (name === 'savings') renderSavings();
+    if (name === 'tasks') renderTasks();
+    if (name === 'goals') renderGoals();
     if (name === 'diet') renderDiet();
     if (name === 'calendar') renderCalendar();
     if (name === 'stats') renderStats();
@@ -2762,14 +2782,14 @@
     { id: 'reading',   name: 'Reading',   icon: '📖', pillar: 'mind', open: function () { switchView('reading'); } },
     { id: 'breathe',   name: 'Breathe',   icon: '🫁', pillar: 'mind' },
     { id: 'detox',     name: 'Detox',     icon: '📵', pillar: 'mind' },
-    { id: 'money',     name: 'Money',     icon: '💸', pillar: 'money' },
-    { id: 'budgets',   name: 'Budgets',   icon: '📊', pillar: 'money' },
-    { id: 'subs',      name: 'Subs',      icon: '🔁', pillar: 'money' },
-    { id: 'savings',   name: 'Savings',   icon: '🐷', pillar: 'money' },
+    { id: 'money',     name: 'Money',     icon: '💸', pillar: 'money', open: function () { switchView('money'); } },
+    { id: 'budgets',   name: 'Budgets',   icon: '📊', pillar: 'money', open: function () { switchView('money'); } },
+    { id: 'subs',      name: 'Subs',      icon: '🔁', pillar: 'money', open: function () { switchView('subs'); } },
+    { id: 'savings',   name: 'Savings',   icon: '🐷', pillar: 'money', open: function () { switchView('savings'); } },
     { id: 'habits',    name: 'Habits',    icon: '🔗', pillar: 'life', open: function () { switchView('habits'); } },
     { id: 'work',      name: 'Work',      icon: '💼', pillar: 'life', open: function () { switchView('work'); } },
-    { id: 'tasks',     name: 'Tasks',     icon: '✅', pillar: 'life' },
-    { id: 'goals',     name: 'Goals',     icon: '🎯', pillar: 'life' },
+    { id: 'tasks',     name: 'Tasks',     icon: '✅', pillar: 'life', open: function () { switchView('tasks'); } },
+    { id: 'goals',     name: 'Goals',     icon: '🎯', pillar: 'life', open: function () { switchView('goals'); } },
     { id: 'friends',   name: 'Friends',   icon: '👥', pillar: 'life', open: function () { switchView('board'); } },
     { id: 'coach',     name: 'Coach',     icon: '✨', pillar: 'life', open: function () { openCoach(); } },
     { id: 'stats',     name: 'Stats',     icon: '📈', pillar: 'life', open: function () { switchView('stats'); } },
@@ -2999,6 +3019,141 @@
       toast('Logged ✓'); renderBody();
     });
     metricTrend('weight', '#body-trend', 'kg');
+  }
+
+  /* ----- Money / Subs / Savings / Tasks / Goals (generic list apps) ----- */
+  function rupee(v) { return '₹' + (Math.round(Number(v) || 0)).toLocaleString('en-IN'); }
+  function saveProfileKey(key, val, cb) {
+    var p = Object.assign({}, state.profile); p[key] = val; state.profile = p;
+    api('saveGoals', { profile: p }).then(function (d) { if (d && d.profile) state.profile = d.profile; toast('Saved ✓'); if (cb) cb(); }).catch(function (e) { toast(e.message); });
+  }
+  function truthy(v) { return v === true || v === 1 || String(v).toLowerCase() === 'true'; }
+
+  function renderMoney() {
+    var box = $('#money-app'); if (!box) return;
+    box.innerHTML = '<p class="muted tiny">Loading…</p>';
+    var budget = Number(state.profile && state.profile.moneyBudget) || 0;
+    api('listGet', { kind: 'expense' }).then(function (dd) {
+      var items = (dd.items || []).map(function (x) { return { id: x.id, amount: Number(x.amount) || 0, category: String(x.category || ''), note: String(x.note || ''), date: String(x.date || '').slice(0, 10) }; });
+      var today = todayStr(), mp = today.slice(0, 7), month = 0;
+      items.forEach(function (x) { if (x.date.slice(0, 7) === mp) month += x.amount; });
+      var left = budget - month;
+      var monthItems = items.filter(function (x) { return x.date.slice(0, 7) === mp; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+      box.innerHTML =
+        '<div class="card"><div class="eyebrow">This month</div>' +
+          '<div class="metric-big"><b>' + rupee(left > 0 ? left : 0) + '</b> <span class="muted">left of ' + rupee(budget) + '</span></div>' +
+          '<div class="fc-bar' + (left < 0 ? ' over' : '') + '" style="margin:10px 0"><span style="width:' + (budget ? Math.min(100, Math.round(month / budget * 100)) : 0) + '%"></span></div>' +
+          '<div class="muted tiny">Spent ' + rupee(month) + ' this month</div>' +
+          '<label style="margin-top:10px">Monthly budget (₹)<input id="mn-budget" type="number" inputmode="numeric" value="' + (budget || '') + '" /></label>' +
+          '<button id="mn-budget-save" class="btn block">Save budget</button></div>' +
+        '<div class="card"><div class="eyebrow">Add expense</div>' +
+          '<div class="manual-grid"><label>Amount (₹)<input id="mn-amt" type="number" inputmode="numeric" /></label>' +
+          '<label>Category<select id="mn-cat"><option>Food</option><option>Groceries</option><option>Transport</option><option>Shopping</option><option>Bills</option><option>Health</option><option>Fun</option><option>Other</option></select></label></div>' +
+          '<label>Note<input id="mn-note" placeholder="optional" /></label>' +
+          '<button id="mn-add" class="btn primary block">Add expense</button></div>' +
+        '<div class="card"><div class="eyebrow">This month · ' + monthItems.length + '</div><div id="mn-list">' +
+          (monthItems.length ? monthItems.map(function (x) { return '<div class="list-row"><div><b>' + rupee(x.amount) + '</b> <span class="muted tiny">' + esc(x.category) + (x.note ? ' · ' + esc(x.note) : '') + '</span><br><span class="muted tiny">' + esc(x.date) + '</span></div><button class="list-del" data-del="' + x.id + '">✕</button></div>'; }).join('') : '<p class="muted tiny">No expenses yet.</p>') +
+          '</div></div>';
+      $('#mn-budget-save').addEventListener('click', function () { saveProfileKey('moneyBudget', Number($('#mn-budget').value) || 0, renderMoney); });
+      $('#mn-add').addEventListener('click', function () {
+        var amt = Number($('#mn-amt').value) || 0; if (amt <= 0) { toast('Enter an amount'); return; }
+        api('listAdd', { kind: 'expense', item: { date: today, amount: amt, category: $('#mn-cat').value, note: $('#mn-note').value.trim() } }).then(function () { toast('Added ✓'); renderMoney(); }).catch(function (e) { toast(e.message); });
+      });
+      $('#mn-list').addEventListener('click', function (e) { var t = e.target.closest('[data-del]'); if (t) api('listDelete', { kind: 'expense', id: t.getAttribute('data-del') }).then(renderMoney); });
+    }).catch(function (e) { box.innerHTML = '<p class="muted tiny">' + esc(e.message) + '</p>'; });
+  }
+
+  function renderSubs() {
+    var box = $('#subs-app'); if (!box) return;
+    box.innerHTML = '<p class="muted tiny">Loading…</p>';
+    api('listGet', { kind: 'sub' }).then(function (dd) {
+      var items = (dd.items || []);
+      function monthly(x) { var a = Number(x.amount) || 0; return String(x.cycle) === 'yearly' ? a / 12 : a; }
+      var active = items.filter(function (x) { return truthy(x.active); });
+      var burn = active.reduce(function (s, x) { return s + monthly(x); }, 0);
+      box.innerHTML =
+        '<div class="card"><div class="eyebrow">Monthly burn</div><div class="metric-big"><b>' + rupee(burn) + '</b> <span class="muted">/mo</span></div><div class="muted tiny">' + rupee(burn * 12) + ' / year · ' + active.length + ' active</div></div>' +
+        '<div class="card"><div class="eyebrow">Add subscription</div>' +
+          '<label>Name<input id="sb-name" placeholder="e.g. Spotify" /></label>' +
+          '<div class="manual-grid"><label>Amount (₹)<input id="sb-amt" type="number" inputmode="numeric" /></label>' +
+          '<label>Cycle<select id="sb-cycle"><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label></div>' +
+          '<button id="sb-add" class="btn primary block">Add</button></div>' +
+        '<div class="card"><div class="eyebrow">Your subscriptions · ' + items.length + '</div><div id="sb-list">' +
+          (items.length ? items.map(function (x) { var on = truthy(x.active); return '<div class="list-row' + (on ? '' : ' off') + '"><div><b>' + esc(x.name) + '</b> <span class="muted tiny">' + rupee(x.amount) + '/' + (String(x.cycle) === 'yearly' ? 'yr' : 'mo') + '</span></div><span class="fr-acts"><button class="btn fr-mini" data-toggle="' + x.id + '">' + (on ? 'Pause' : 'Resume') + '</button><button class="list-del" data-del="' + x.id + '">✕</button></span></div>'; }).join('') : '<p class="muted tiny">No subscriptions yet.</p>') +
+          '</div></div>';
+      $('#sb-add').addEventListener('click', function () {
+        var name = $('#sb-name').value.trim(), amt = Number($('#sb-amt').value) || 0;
+        if (!name || amt <= 0) { toast('Enter name & amount'); return; }
+        api('listAdd', { kind: 'sub', item: { name: name, amount: amt, cycle: $('#sb-cycle').value, renewDay: '', active: true } }).then(function () { toast('Added ✓'); renderSubs(); }).catch(function (e) { toast(e.message); });
+      });
+      $('#sb-list').addEventListener('click', function (e) {
+        var del = e.target.closest('[data-del]'), tg = e.target.closest('[data-toggle]');
+        if (del) api('listDelete', { kind: 'sub', id: del.getAttribute('data-del') }).then(renderSubs);
+        else if (tg) { var id = tg.getAttribute('data-toggle'); var it = items.filter(function (x) { return x.id === id; })[0]; api('listUpdate', { kind: 'sub', id: id, item: { active: !truthy(it.active) } }).then(renderSubs); }
+      });
+    }).catch(function (e) { box.innerHTML = '<p class="muted tiny">' + esc(e.message) + '</p>'; });
+  }
+
+  function renderSavings() {
+    var box = $('#savings-app'); if (!box) return;
+    box.innerHTML = '<p class="muted tiny">Loading…</p>';
+    api('listGet', { kind: 'saving' }).then(function (dd) {
+      var items = (dd.items || []);
+      var total = items.reduce(function (s, x) { return s + (Number(x.saved) || 0); }, 0);
+      box.innerHTML =
+        '<div class="card"><div class="eyebrow">Total saved</div><div class="metric-big"><b>' + rupee(total) + '</b></div></div>' +
+        '<div class="card"><div class="eyebrow">New goal</div>' +
+          '<label>Name<input id="sv-name" placeholder="e.g. Emergency fund" /></label>' +
+          '<label>Target (₹)<input id="sv-target" type="number" inputmode="numeric" /></label>' +
+          '<button id="sv-add" class="btn primary block">Create goal</button></div>' +
+        items.map(function (x) { var saved = Number(x.saved) || 0, target = Number(x.target) || 0, pct = target ? Math.min(100, Math.round(saved / target * 100)) : 0; return '<div class="card"><div class="list-row"><b>' + esc(x.name) + '</b><button class="list-del" data-del="' + x.id + '">✕</button></div><div class="muted tiny">' + rupee(saved) + ' / ' + rupee(target) + ' · ' + pct + '%</div><div class="fc-bar" style="margin:8px 0"><span style="width:' + pct + '%"></span></div><button class="btn block" data-add-amt="' + x.id + '">+ Add money</button></div>'; }).join('');
+      $('#sv-add').addEventListener('click', function () {
+        var name = $('#sv-name').value.trim(), target = Number($('#sv-target').value) || 0;
+        if (!name) { toast('Enter a name'); return; }
+        api('listAdd', { kind: 'saving', item: { name: name, target: target, saved: 0 } }).then(function () { toast('Created ✓'); renderSavings(); }).catch(function (e) { toast(e.message); });
+      });
+      box.querySelectorAll('[data-del]').forEach(function (b) { b.addEventListener('click', function () { api('listDelete', { kind: 'saving', id: b.getAttribute('data-del') }).then(renderSavings); }); });
+      box.querySelectorAll('[data-add-amt]').forEach(function (b) { b.addEventListener('click', function () { var id = b.getAttribute('data-add-amt'); var it = items.filter(function (x) { return x.id === id; })[0]; var x = prompt('Add how much to ' + it.name + '? (₹)'); if (x == null) return; var add = Number(x) || 0; if (add <= 0) return; api('listUpdate', { kind: 'saving', id: id, item: { saved: (Number(it.saved) || 0) + add } }).then(function () { toast('Added ✓'); renderSavings(); }); }); });
+    }).catch(function (e) { box.innerHTML = '<p class="muted tiny">' + esc(e.message) + '</p>'; });
+  }
+
+  function renderTasks() {
+    var box = $('#tasks-app'); if (!box) return;
+    box.innerHTML = '<p class="muted tiny">Loading…</p>';
+    api('listGet', { kind: 'task' }).then(function (dd) {
+      var items = (dd.items || []), today = todayStr();
+      var open = items.filter(function (x) { return !truthy(x.done); }).sort(function (a, b) { return String(a.due || '9999') < String(b.due || '9999') ? -1 : 1; });
+      var done = items.filter(function (x) { return truthy(x.done); });
+      function row(x) { var over = x.due && String(x.due) < today && !truthy(x.done); return '<div class="list-row"><label class="tk-check"><input type="checkbox" data-done="' + x.id + '"' + (truthy(x.done) ? ' checked' : '') + ' /> <span class="' + (truthy(x.done) ? 'tk-done' : '') + '">' + esc(x.title) + '</span></label><span class="fr-acts">' + (x.due ? '<span class="muted tiny' + (over ? ' tk-over' : '') + '">' + esc(String(x.due)) + '</span>' : '') + '<button class="list-del" data-del="' + x.id + '">✕</button></span></div>'; }
+      box.innerHTML =
+        '<div class="card"><div class="eyebrow">Add task</div>' +
+          '<label>Task<input id="tk-title" placeholder="e.g. Submit tax documents" /></label>' +
+          '<div class="manual-grid"><label>Due<input id="tk-due" type="date" /></label>' +
+          '<label>Priority<select id="tk-pri"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></label></div>' +
+          '<button id="tk-add" class="btn primary block">Add task</button></div>' +
+        '<div class="card"><div class="eyebrow">Open · ' + open.length + '</div>' + (open.length ? open.map(row).join('') : '<p class="muted tiny">Nothing open 🎉</p>') + '</div>' +
+        (done.length ? '<div class="card"><div class="eyebrow">Done · ' + done.length + '</div>' + done.map(row).join('') + '</div>' : '');
+      $('#tk-add').addEventListener('click', function () { var t = $('#tk-title').value.trim(); if (!t) { toast('Enter a task'); return; } api('listAdd', { kind: 'task', item: { title: t, due: $('#tk-due').value, priority: $('#tk-pri').value, done: false } }).then(function () { toast('Added ✓'); renderTasks(); }).catch(function (e) { toast(e.message); }); });
+      box.querySelectorAll('[data-done]').forEach(function (c) { c.addEventListener('change', function () { api('listUpdate', { kind: 'task', id: c.getAttribute('data-done'), item: { done: c.checked } }).then(renderTasks); }); });
+      box.querySelectorAll('[data-del]').forEach(function (b) { b.addEventListener('click', function () { api('listDelete', { kind: 'task', id: b.getAttribute('data-del') }).then(renderTasks); }); });
+    }).catch(function (e) { box.innerHTML = '<p class="muted tiny">' + esc(e.message) + '</p>'; });
+  }
+
+  function renderGoals() {
+    var box = $('#goals-app'); if (!box) return;
+    box.innerHTML = '<p class="muted tiny">Loading…</p>';
+    api('listGet', { kind: 'goal' }).then(function (dd) {
+      var items = (dd.items || []);
+      box.innerHTML =
+        '<div class="card"><div class="eyebrow">New yearly goal</div>' +
+          '<label>Goal<input id="gl-title" placeholder="e.g. Read 12 books" /></label>' +
+          '<div class="manual-grid"><label>Status<select id="gl-status"><option value="on-track">On track</option><option value="behind">Behind</option><option value="done">Done</option></select></label>' +
+          '<label>Note<input id="gl-note" placeholder="optional" /></label></div>' +
+          '<button id="gl-add" class="btn primary block">Add goal</button></div>' +
+        (items.length ? items.map(function (x) { var st = String(x.status || 'on-track'); return '<div class="card"><div class="list-row"><b>' + esc(x.title) + '</b><button class="list-del" data-del="' + x.id + '">✕</button></div><span class="fc-badge ' + (st === 'behind' ? 'pend' : 'done') + '">' + esc(st.replace('-', ' ')) + '</span>' + (x.note ? '<div class="muted tiny" style="margin-top:6px">' + esc(x.note) + '</div>' : '') + '</div>'; }).join('') : '<p class="muted tiny" style="margin:10px 2px">No goals yet.</p>');
+      $('#gl-add').addEventListener('click', function () { var t = $('#gl-title').value.trim(); if (!t) { toast('Enter a goal'); return; } api('listAdd', { kind: 'goal', item: { title: t, status: $('#gl-status').value, note: $('#gl-note').value.trim() } }).then(function () { toast('Added ✓'); renderGoals(); }).catch(function (e) { toast(e.message); }); });
+      box.querySelectorAll('[data-del]').forEach(function (b) { b.addEventListener('click', function () { api('listDelete', { kind: 'goal', id: b.getAttribute('data-del') }).then(renderGoals); }); });
+    }).catch(function (e) { box.innerHTML = '<p class="muted tiny">' + esc(e.message) + '</p>'; });
   }
 
   function renderLibrary() {
