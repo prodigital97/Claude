@@ -101,6 +101,21 @@
           <button class="qa" data-qa="scan">📷 Scan food</button>
           <button class="qa" data-qa="coach">✨ Ask Coach</button>
         </div>
+
+        <div class="home-journey">
+          <div class="lib-head" style="margin:20px 0 12px">
+            <div><span class="eyebrow">Journey</span><h2 class="view-title" style="margin:2px 0 0">Your 75 days</h2></div>
+            <button id="home-journey-open" class="btn link-btn" type="button">Open ›</button>
+          </div>
+          <div class="legend">
+            <span><i class="dot done"></i> Done</span>
+            <span><i class="dot partial"></i> Partial</span>
+            <span><i class="dot miss"></i> Missed</span>
+            <span><i class="dot today"></i> Today</span>
+            <span><i class="dot future"></i> Upcoming</span>
+          </div>
+          <div id="home-calendar" class="calendar-grid"></div>
+        </div>
       </div>
 
       <!-- APP LIBRARY (ATLAS 2a) -->
@@ -134,36 +149,77 @@
 
         <div id="tasklist" class="tasklist"></div>
 
-        <div class="extra-head">Today's mood <span class="muted tiny">· not part of 75 Hard</span></div>
+        <button id="save-day" class="btn primary block save-day">Save today</button>
+        <p class="muted tiny center">Your progress saves automatically as you tap. The button just forces a sync.</p>
+      </div>
+
+      <!-- WATER (mini-app, shared with Challenge) -->
+      <div id="view-water" class="view hidden">
+        <h2 class="view-title">Water</h2>
+        <div id="water-app"></div>
+      </div>
+
+      <!-- FAST (mini-app) -->
+      <div id="view-fast" class="view hidden">
+        <h2 class="view-title">Fasting</h2>
+        <div id="fasting"></div>
+      </div>
+
+      <!-- MOOD (mini-app, Body) -->
+      <div id="view-mood" class="view hidden">
+        <h2 class="view-title">Mood</h2>
+        <p class="muted tiny" style="margin:0 2px 12px">How are you feeling today?</p>
         <div id="mood-buttons" class="mood-buttons"></div>
+        <div class="card"><h3>Last 14 days</h3><div id="mood-app-trend"></div></div>
+      </div>
 
-        <div class="extra-head">Gut health <span class="muted tiny">· not part of 75 Hard</span></div>
+      <!-- GUT (mini-app, Body) -->
+      <div id="view-gut" class="view hidden">
+        <h2 class="view-title">Gut health</h2>
+        <p class="muted tiny" style="margin:0 2px 12px">Log today's gut health.</p>
         <div id="gut-buttons" class="mood-buttons"></div>
+        <div class="card"><h3>Last 14 days</h3><div id="gut-app-trend"></div></div>
+      </div>
 
-        <div class="extra-head">Work log <span class="muted tiny">· time &amp; tasks today</span></div>
-        <div id="biz-list"></div>
-
-        <div class="extra-head">My daily habits <span class="muted tiny">· not part of 75 Hard</span></div>
+      <!-- HABITS (mini-app) -->
+      <div id="view-habits" class="view hidden">
+        <h2 class="view-title">Habits</h2>
+        <p class="muted tiny" style="margin:0 2px 12px">Daily habits you want to keep — not part of 75 Hard.</p>
         <div id="extra-tasks" class="tasklist"></div>
         <div class="add-habit">
           <input id="new-habit" placeholder="Add a habit (e.g. Meditate 10 min)" maxlength="40" />
           <button id="add-habit-btn" class="btn">Add</button>
         </div>
+      </div>
 
-        <label class="notes-field card">
-          <span class="muted tiny">Notes for today</span>
-          <textarea id="day-notes" rows="2" placeholder="How did it go?"></textarea>
+      <!-- WORK (mini-app) -->
+      <div id="view-work" class="view hidden">
+        <h2 class="view-title">Work log</h2>
+        <p class="muted tiny" style="margin:0 2px 12px">Time &amp; tasks per business, today.</p>
+        <div id="biz-list"></div>
+      </div>
+
+      <!-- JOURNAL (mini-app, Mind) -->
+      <div id="view-journal" class="view hidden">
+        <h2 class="view-title">Journal</h2>
+        <p class="muted tiny" style="margin:0 2px 10px">A quick end-of-day check-in.</p>
+        <div class="eyebrow" style="margin:6px 2px">Today's mood</div>
+        <div id="journal-mood" class="mood-buttons"></div>
+        <label class="notes-field card" style="margin-top:12px">
+          <span class="muted tiny">Journal entry</span>
+          <textarea id="day-notes" rows="4" placeholder="How was today? What happened, how did it feel?"></textarea>
         </label>
+      </div>
 
-        <button id="save-day" class="btn primary block save-day">Save today</button>
-        <p class="muted tiny center">Your progress saves automatically as you tap. The button just forces a sync.</p>
+      <!-- READING (mini-app, Mind) -->
+      <div id="view-reading" class="view hidden">
+        <h2 class="view-title">Reading</h2>
+        <div id="reading-app"></div>
       </div>
 
       <!-- DIET -->
       <div id="view-diet" class="view hidden">
         <h2 class="view-title">Diet &amp; Calories</h2>
-
-        <div id="fasting"></div>
 
         <div class="date-bar">
           <button id="diet-prev" class="icon-btn">‹</button>

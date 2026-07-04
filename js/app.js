@@ -576,6 +576,7 @@
     // ATLAS home + library
     $('#view-home').addEventListener('click', function (e) {
       var qa = e.target.closest('[data-qa]'); var pil = e.target.closest('[data-pillar]');
+      if (e.target.closest('#home-journey-open')) { switchView('calendar'); return; }
       if (qa) homeQuickAction(qa.getAttribute('data-qa'));
       else if (pil) switchView('library');
     });
@@ -602,10 +603,18 @@
     document.querySelectorAll('.nav-btn').forEach(function (b) {
       b.classList.toggle('active', b.dataset.view === name);
     });
-    if (name !== 'diet') stopFastTimer();
+    if (name !== 'diet' && name !== 'fast') stopFastTimer();
     if (name === 'home') renderHome();
     if (name === 'library') renderLibrary();
     if (name === 'today') renderToday();
+    if (name === 'water') renderWaterApp();
+    if (name === 'fast') renderFasting();
+    if (name === 'mood') { renderMood(state.today, '#mood-buttons'); renderMoodTrend('#mood-app-trend'); }
+    if (name === 'gut') { renderGut(state.today, '#gut-buttons'); renderGutTrend('#gut-app-trend'); }
+    if (name === 'habits') renderExtraTasks(state.today);
+    if (name === 'work') renderBusinesses(state.today);
+    if (name === 'journal') renderJournal();
+    if (name === 'reading') renderReading();
     if (name === 'diet') renderDiet();
     if (name === 'calendar') renderCalendar();
     if (name === 'stats') renderStats();
@@ -637,7 +646,6 @@
   function renderToday() {
     var d = state.today;
     $('#today-date').textContent = prettyDate(d.date);
-    $('#day-notes').value = d.notes || '';
 
     // tasks
     var list = $('#tasklist');
@@ -672,11 +680,12 @@
     else { st.textContent = count + ' / ' + TOTAL_ITEMS + ' done' + (soft ? ' · need ' + softNeeded() : ''); st.className = 'status-chip pending'; }
 
     $('#streak-line').textContent = '🔥 ' + streakOf(state.logs) + ' day streak';
+  }
 
-    renderMood(d);
-    renderGut(d);
-    renderBusinesses(d);
-    renderExtraTasks(d);
+  /* ----- Journal (mood check-in + note) ----- */
+  function renderJournal() {
+    renderMood(state.today, '#journal-mood');
+    $('#day-notes').value = state.today.notes || '';
   }
 
   /* ----- Mood meter (does NOT affect 75 Hard completion) ----- */
@@ -688,17 +697,18 @@
     { v: 1, label: 'Bad',   emoji: '😣', color: '#ff5470' }
   ];
   function moodColor(v) { for (var i = 0; i < MOODS.length; i++) if (MOODS[i].v === v) return MOODS[i].color; return null; }
-  function renderMood(d) {
-    var box = $('#mood-buttons'); if (!box) return;
+  function renderMood(d, sel) {
+    var box = $(sel || '#mood-buttons'); if (!box) return;
     box.innerHTML = '';
     MOODS.forEach(function (m) {
-      var sel = d.mood === m.v;
-      var b = el('button', 'mood-btn' + (sel ? ' sel' : ''));
+      var on = d.mood === m.v;
+      var b = el('button', 'mood-btn' + (on ? ' sel' : ''));
       b.style.setProperty('--mc', m.color);
       b.innerHTML = '<span class="mood-emoji">' + m.emoji + '</span><span class="mood-label">' + m.label + '</span>';
       b.addEventListener('click', function () {
         d.mood = (d.mood === m.v) ? 0 : m.v;
-        renderMood(d);
+        // Reflect on whichever mood widgets exist (Mood app + Journal).
+        renderMood(d, '#mood-buttons'); renderMood(d, '#journal-mood');
         queueSave();
       });
       box.appendChild(b);
@@ -715,17 +725,17 @@
   ];
   function gutColor(v) { for (var i = 0; i < GUT.length; i++) if (GUT[i].v === v) return GUT[i].color; return null; }
   function gutLabel(v) { for (var i = 0; i < GUT.length; i++) if (GUT[i].v === v) return GUT[i].label; return null; }
-  function renderGut(d) {
-    var box = $('#gut-buttons'); if (!box) return;
+  function renderGut(d, sel) {
+    var box = $(sel || '#gut-buttons'); if (!box) return;
     box.innerHTML = '';
     GUT.forEach(function (g) {
-      var sel = d.gut === g.v;
-      var b = el('button', 'mood-btn' + (sel ? ' sel' : ''));
+      var on = d.gut === g.v;
+      var b = el('button', 'mood-btn' + (on ? ' sel' : ''));
       b.style.setProperty('--mc', g.color);
       b.innerHTML = '<span class="mood-emoji">' + g.emoji + '</span><span class="mood-label">' + g.label + '</span>';
       b.addEventListener('click', function () {
         d.gut = (d.gut === g.v) ? 0 : g.v;
-        renderGut(d);
+        renderGut(d, '#gut-buttons');
         queueSave();
       });
       box.appendChild(b);
@@ -921,7 +931,7 @@
           // tapping a glass sets the level to that glass (toggle last one off)
           var newFilled = (idx + 1 === filled) ? idx : idx + 1;
           state.today.waterMl = newFilled * GLASS;
-          renderToday(); queueSave();
+          afterWaterChange();
         });
       })(i);
       glasses.appendChild(g);
@@ -968,7 +978,10 @@
 
   function renderCalendar() {
     renderJourneySummary();
-    var grid = $('#calendar-grid');
+    buildCalendar('#calendar-grid');
+  }
+  function buildCalendar(gridSel) {
+    var grid = $(gridSel); if (!grid) return;
     grid.innerHTML = '';
     var today = todayStr();
     for (var n = 1; n <= LEN; n++) {
@@ -1183,8 +1196,8 @@
     }).join('');
   }
 
-  function renderMoodTrend() {
-    var box = $('#mood-trend'); if (!box) return;
+  function renderMoodTrend(sel) {
+    var box = $(sel || '#mood-trend'); if (!box) return;
     var today = todayStr(), dots = '', sum = 0, n = 0;
     for (var i = 13; i >= 0; i--) {
       var date = addDays(today, -i);
@@ -1201,8 +1214,8 @@
       (n ? ('Average: ' + avgM.emoji + ' ' + avgM.label + ' (' + avg.toFixed(1) + '/5) over ' + n + ' logged day' + (n > 1 ? 's' : '')) : 'No mood logged yet — set it on the Today screen.') +
       '</div>';
   }
-  function renderGutTrend() {
-    var box = $('#gut-trend'); if (!box) return;
+  function renderGutTrend(sel) {
+    var box = $(sel || '#gut-trend'); if (!box) return;
     var today = todayStr(), dots = '', counts = {}, n = 0;
     for (var i = 13; i >= 0; i--) {
       var date = addDays(today, -i);
@@ -1682,7 +1695,6 @@
     } else {
       renderDietBody();
     }
-    renderFasting();
   }
   function setDietDate(date) {
     if (date > todayStr()) return;
@@ -2734,23 +2746,25 @@
   var APPS = [
     { id: 'challenge', name: 'Challenge', icon: '🔥', pillar: 'body', open: function () { switchView('today'); } },
     { id: 'diet',      name: 'Diet',      icon: '🥗', pillar: 'body', open: function () { switchView('diet'); } },
-    { id: 'fast',      name: 'Fast',      icon: '⏳', pillar: 'body', open: function () { switchView('diet'); } },
-    { id: 'water',     name: 'Water',     icon: '💧', pillar: 'body', open: function () { switchView('today'); } },
+    { id: 'fast',      name: 'Fast',      icon: '⏳', pillar: 'body', open: function () { switchView('fast'); } },
+    { id: 'water',     name: 'Water',     icon: '💧', pillar: 'body', open: function () { switchView('water'); } },
+    { id: 'mood',      name: 'Mood',      icon: '🙂', pillar: 'body', open: function () { switchView('mood'); } },
+    { id: 'gut',       name: 'Gut',       icon: '🌿', pillar: 'body', open: function () { switchView('gut'); } },
     { id: 'steps',     name: 'Steps',     icon: '👟', pillar: 'body' },
     { id: 'sleep',     name: 'Sleep',     icon: '😴', pillar: 'body' },
     { id: 'body',      name: 'Body',      icon: '⚖️', pillar: 'body' },
     { id: 'gym',       name: 'Gym Log',   icon: '🏋️', pillar: 'body' },
     { id: 'calc',      name: 'Calc',      icon: '🧮', pillar: 'body', open: function () { switchView('calc'); } },
-    { id: 'journal',   name: 'Journal',   icon: '📓', pillar: 'mind', open: function () { switchView('today'); } },
-    { id: 'reading',   name: 'Reading',   icon: '📖', pillar: 'mind', open: function () { switchView('today'); } },
+    { id: 'journal',   name: 'Journal',   icon: '📓', pillar: 'mind', open: function () { switchView('journal'); } },
+    { id: 'reading',   name: 'Reading',   icon: '📖', pillar: 'mind', open: function () { switchView('reading'); } },
     { id: 'breathe',   name: 'Breathe',   icon: '🫁', pillar: 'mind' },
     { id: 'detox',     name: 'Detox',     icon: '📵', pillar: 'mind' },
     { id: 'money',     name: 'Money',     icon: '💸', pillar: 'money' },
     { id: 'budgets',   name: 'Budgets',   icon: '📊', pillar: 'money' },
     { id: 'subs',      name: 'Subs',      icon: '🔁', pillar: 'money' },
     { id: 'savings',   name: 'Savings',   icon: '🐷', pillar: 'money' },
-    { id: 'habits',    name: 'Habits',    icon: '🔗', pillar: 'life', open: function () { switchView('today'); } },
-    { id: 'work',      name: 'Work',      icon: '💼', pillar: 'life', open: function () { switchView('today'); } },
+    { id: 'habits',    name: 'Habits',    icon: '🔗', pillar: 'life', open: function () { switchView('habits'); } },
+    { id: 'work',      name: 'Work',      icon: '💼', pillar: 'life', open: function () { switchView('work'); } },
     { id: 'tasks',     name: 'Tasks',     icon: '✅', pillar: 'life' },
     { id: 'goals',     name: 'Goals',     icon: '🎯', pillar: 'life' },
     { id: 'friends',   name: 'Friends',   icon: '👥', pillar: 'life', open: function () { switchView('board'); } },
@@ -2850,6 +2864,59 @@
         return '<div class="htile"><div class="htile-lbl eyebrow">' + x[0] + '</div><div class="htile-val">' + x[1] + '</div></div>';
       }).join('');
     }
+    buildCalendar('#home-calendar');
+  }
+
+  // Re-render every visible view that shows water, so a change reflects everywhere.
+  function afterWaterChange() {
+    queueSave();
+    if (!$('#view-today').classList.contains('hidden')) renderToday();
+    if (!$('#view-water').classList.contains('hidden')) renderWaterApp();
+    if (!$('#view-home').classList.contains('hidden')) renderHome();
+  }
+  function renderWaterApp() {
+    var box = $('#water-app'); if (!box) return;
+    var ml = Number(state.today.waterMl) || 0, pct = pctOf(ml, WATER_GOAL);
+    box.innerHTML = '';
+    var card = el('div', 'card');
+    card.innerHTML =
+      '<div class="water-big"><b>' + litres(ml) + '</b> <span class="muted">/ ' + litres(WATER_GOAL) + ' L</span></div>' +
+      '<div class="fc-bar" style="margin:12px 0 14px"><span style="width:' + pct + '%"></span></div>' +
+      '<div class="water-quick">' +
+        '<button class="btn" data-w="250">+250 ml</button>' +
+        '<button class="btn" data-w="500">+500 ml</button>' +
+        '<button class="btn" data-w="1000">+1 L</button>' +
+        '<button class="btn danger" data-w="reset">Reset</button>' +
+      '</div>';
+    box.appendChild(card);
+    box.appendChild(renderWater(state.today));
+    card.querySelectorAll('[data-w]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var v = b.getAttribute('data-w');
+        if (v === 'reset') state.today.waterMl = 0;
+        else state.today.waterMl = Math.min(WATER_GOAL * 3, (Number(state.today.waterMl) || 0) + Number(v));
+        afterWaterChange();
+      });
+    });
+  }
+  function renderReading() {
+    var box = $('#reading-app'); if (!box) return;
+    var d = state.today, r = (state.profile && state.profile.reading) || {};
+    box.innerHTML =
+      '<div class="card"><div class="eyebrow">Today · 75 Hard</div>' +
+        '<label class="fx-toggle" style="margin-top:8px"><input type="checkbox" id="reading-done"' + (d.reading ? ' checked' : '') + ' /> Read 10 pages today</label></div>' +
+      '<div class="card"><div class="eyebrow">Current book</div>' +
+        '<label style="margin-top:8px">Title<input id="rd-book" value="' + esc(r.book || '') + '" placeholder="e.g. Atomic Habits" /></label>' +
+        '<div class="manual-grid"><label>Current page<input id="rd-page" type="number" inputmode="numeric" value="' + (r.page || '') + '" /></label>' +
+        '<label>Total pages<input id="rd-total" type="number" inputmode="numeric" value="' + (r.total || '') + '" /></label></div>' +
+        (r.total ? '<div class="fc-bar" style="margin:6px 0 12px"><span style="width:' + pctOf(r.page || 0, r.total) + '%"></span></div><div class="muted tiny">Page ' + (r.page || 0) + ' / ' + r.total + ' · ' + pctOf(r.page || 0, r.total) + '%</div>' : '') +
+        '<button id="rd-save" class="btn primary block" style="margin-top:10px">Save book</button></div>';
+    $('#reading-done').addEventListener('change', function () { d.reading = this.checked; queueSave(); });
+    $('#rd-save').addEventListener('click', function () {
+      var prof = Object.assign({}, state.profile, { reading: { book: $('#rd-book').value.trim(), page: Number($('#rd-page').value) || 0, total: Number($('#rd-total').value) || 0 } });
+      state.profile = prof;
+      api('saveGoals', { profile: prof }).then(function (dd) { if (dd && dd.profile) state.profile = dd.profile; toast('Saved ✓'); renderReading(); }).catch(function (e) { toast(e.message); });
+    });
   }
 
   function renderLibrary() {
@@ -2876,7 +2943,7 @@
   function homeQuickAction(qa) {
     if (qa === 'water') {
       state.today.waterMl = (Number(state.today.waterMl) || 0) + 250;
-      queueSave(); renderHome();
+      afterWaterChange();
       toast('+250 ml 💧');
     } else if (qa === 'scan') {
       openFoodModal('Snacks');

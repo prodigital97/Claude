@@ -654,3 +654,10 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 @media (max-width: 340px) {
   .pillar-rings, .app-grid { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* Water mini-app */
+.water-big { font-size: 30px; font-weight: 700; }
+.water-big b { font-size: 40px; }
+.water-quick { display: flex; gap: 8px; flex-wrap: wrap; }
+.water-quick .btn { flex: 1; min-width: 70px; }
+.home-journey .calendar-grid { margin-top: 4px; }
