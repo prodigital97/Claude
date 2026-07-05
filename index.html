@@ -240,8 +240,24 @@
 
       <!-- MONEY (mini-app) -->
       <div id="view-money" class="view hidden">
-        <h2 class="view-title">Money</h2>
-        <div id="money-app"></div>
+        <div class="lib-head" style="margin-bottom:12px">
+          <div><span class="eyebrow">Money</span><h2 class="view-title" style="margin:2px 0 0">Money Manager</h2></div>
+          <button id="money-ask-penny" class="btn" type="button">💰 Ask Penny</button>
+        </div>
+        <div class="seg money-tabs" id="money-tabs">
+          <button data-mtab="overview" class="active">Overview</button>
+          <button data-mtab="add">Add</button>
+          <button data-mtab="history">History</button>
+          <button data-mtab="accounts">Accounts</button>
+          <button data-mtab="categories">Categories</button>
+          <button data-mtab="budget">Budget</button>
+        </div>
+        <div id="money-pane-overview" class="money-pane"><div id="money-overview"></div></div>
+        <div id="money-pane-add" class="money-pane hidden"><div id="money-add"></div></div>
+        <div id="money-pane-history" class="money-pane hidden"><div id="money-history"></div></div>
+        <div id="money-pane-accounts" class="money-pane hidden"><div id="money-accounts"></div></div>
+        <div id="money-pane-categories" class="money-pane hidden"><div id="money-categories"></div></div>
+        <div id="money-pane-budget" class="money-pane hidden"><div id="money-budget"></div></div>
       </div>
       <!-- SUBS (mini-app) -->
       <div id="view-subs" class="view hidden">
@@ -732,7 +748,7 @@
   <div id="coach-modal" class="modal hidden">
     <div class="modal-card coach-card">
       <div class="modal-head">
-        <b>✨ AI Coach</b>
+        <b id="coach-title">✨ AI Coach</b>
         <span class="coach-head-actions">
           <button id="coach-clear" class="icon-btn" title="Clear chat">🗑</button>
           <button id="coach-close" class="icon-btn" title="Close">✕</button>

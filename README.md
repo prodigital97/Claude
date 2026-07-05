@@ -51,6 +51,7 @@ The Journey calendar shows three colours: 🟢 goal met · 🟡 **partial** (you
   to use your own wallpaper, replace `assets/bg-academia.svg` / `assets/bg-arsenal.svg` with your image
   (keep the same filename, or point the CSS `body::before` rule at your file).
 - **Businesses — work log** — track multiple businesses/projects: add them in **Settings → My businesses**, then log **time spent** and **tasks completed** for each one every day on the Today screen. **Stats** shows per-business totals, days worked and this week's time/tasks so you can see if you're being productive.
+- **Money Manager** (ATLAS → Money) — a full personal expense tracker: bank/card **Accounts**, a 50/30/20 **Categories** taxonomy (needs/wants/savings), manual or **AI-scanned** transactions (screenshots of banking/UPI apps, or pasted SMS — parsed by Gemini with a fast regex fallback for common Indian bank SMS), a monthly **Budget** with a guard-rail ladder (on-track → slow down → critical → over budget, with a safe-to-spend-per-day figure), and **Penny**, an AI financial-coach chat grounded in your real spending (shares the same Coach modal as the 75 Hard coach, with its own conversation history).
 - **Delete account** — Settings lets a user permanently remove their account and all their data (password-confirmed)
 - **Accounts** — sign-up with a username + password (email **optional**, never verified or emailed). In
   **Settings → Account** you can change your **username** (it migrates all your data), save an **email**,
@@ -241,6 +242,13 @@ columns drive the app; the rest build a fuller nutrition dataset from scanned la
 `status` is `pending` until the addressee accepts, then `accepted`. The Friends feed shows a user only
 the people they have an `accepted` row with. Admins still see **every** user in the admin dashboard's
 **Users** tab (newest signups first, with a 🆕 badge for those who joined in the last week).
+
+**`MoneyAccounts`**, **`MoneyCategories`**, **`MoneyTxns`** (Money Manager — auto-created on first use)
+
+Bank/card accounts, the 50/30/20 category taxonomy (seeded automatically per user), and every logged
+transaction (`type`: expense/income/transfer, `source`: manual/screenshot/sms). Budget limits live in the
+user's `Profiles` row under a `money` key (overall limit, per-category caps, income, savings goal) —
+no separate budget sheet needed.
 
 You can open the sheet any time to view, chart, or export your data — the app writes to it live.
 

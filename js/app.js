@@ -39,6 +39,7 @@
     customFoods: [],
     friends: null,
     bizSelected: null,
+    money: null,
     coachHistory: null,
     coachBusy: false,
     scanData: null,
@@ -168,6 +169,15 @@
   /* ---------------- Offline backend (localStorage) ---------------- */
   function db() { return JSON.parse(localStorage.getItem('hard_demo') || '{"users":{},"logs":{}}'); }
   function saveDb(d) { localStorage.setItem('hard_demo', JSON.stringify(d)); }
+  var MONEY_DEFAULT_CATS = [
+    ['Food & Dining', 'Groceries', 'need', '🛒', '#16a34a'], ['Food & Dining', 'Restaurants', 'want', '🍽️', '#f59e0b'],
+    ['Food & Dining', 'Online Delivery', 'want', '🛵', '#ef4444'], ['Transport', 'Fuel', 'need', '⛽', '#0ea5e9'],
+    ['Transport', 'Cabs / Ride-share', 'want', '🚕', '#38bdf8'], ['Entertainment', 'OTT / Subscriptions', 'want', '📺', '#a855f7'],
+    ['Shopping', 'General Shopping', 'want', '🛍️', '#be185d'], ['Health', 'Pharmacy', 'need', '💊', '#14b8a6'],
+    ['Bills & Utilities', 'Rent / EMI', 'need', '🏠', '#64748b'], ['Bills & Utilities', 'Internet / Mobile', 'need', '📶', '#334155'],
+    ['Money', 'Savings & Investments', 'saving', '📈', '#10b981'], ['Income', 'Income', 'income', '💰', '#22c55e'],
+    ['Other', 'Miscellaneous', 'want', '📦', '#6b7280']
+  ];
 
   function offlineApi(action, p) {
     var d = db();
@@ -207,6 +217,64 @@
       if (d.users[nn]) throw new Error('That username is already taken.');
       delete d.users[me.username]; me.username = nn; d.users[nn] = me; saveDb(d);
       return { token: me.token, user: pub(me) };
+    }
+
+    // ---- Money Manager (offline demo mode) ----
+    if (action.indexOf('money') === 0) {
+      d.money = d.money || {};
+      var mm = d.money[me.username] || (d.money[me.username] = { accounts: [], categories: [], txns: [], budget: {} });
+      var moneyStatus = function () {
+        var limit = Number(mm.budget.limit) || 0;
+        var from = todayStr().slice(0, 7) + '-01', today2 = todayStr();
+        var spent = mm.txns.filter(function (t) { return t.type === 'expense' && t.date >= from && t.date <= today2; }).reduce(function (s, t) { return s + (Number(t.amount) || 0); }, 0);
+        var now = new Date(), daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(), dayOfMonth = now.getDate();
+        var daysLeft = Math.max(1, daysInMonth - dayOfMonth + 1);
+        var pct = limit > 0 ? spent / limit : 0;
+        var level = limit <= 0 ? 'none' : (pct >= 1 ? 'stop' : pct >= 0.85 ? 'critical' : pct >= 0.70 ? 'warn' : 'ok');
+        var remaining = limit > 0 ? Math.max(0, limit - spent) : 0;
+        return { limit: limit, spent: spent, remaining: remaining, pct: pct, level: level, daysLeft: daysLeft, daysInMonth: daysInMonth, dayOfMonth: dayOfMonth, safePerDay: limit > 0 ? remaining / daysLeft : 0, projection: dayOfMonth > 0 ? (spent / dayOfMonth) * daysInMonth : 0, categoryFlags: [] };
+      };
+      if (action === 'moneyGetState') {
+        if (!mm.categories.length) {
+          mm.categories = MONEY_DEFAULT_CATS.map(function (c) { return { id: 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: c[1], group: c[0], kind: c[2], icon: c[3], color: c[4] }; });
+        }
+        saveDb(d);
+        return { accounts: mm.accounts, categories: mm.categories, budget: mm.budget, status: moneyStatus() };
+      }
+      if (action === 'moneyAddAccount') { var acc = Object.assign({ id: 'a_' + Date.now().toString(36) }, p.account); mm.accounts.push(acc); saveDb(d); return { account: acc }; }
+      if (action === 'moneyDeleteAccount') { mm.accounts = mm.accounts.filter(function (a) { return a.id !== p.id; }); saveDb(d); return { deleted: p.id }; }
+      if (action === 'moneyAddCategory') { var mc = Object.assign({ id: 'c_' + Date.now().toString(36) }, p.category); mm.categories.push(mc); saveDb(d); return { category: mc }; }
+      if (action === 'moneyDeleteCategory') { mm.categories = mm.categories.filter(function (c) { return c.id !== p.id; }); saveDb(d); return { deleted: p.id }; }
+      if (action === 'moneyGetTxns') { var lim = Number(p.limit) || 0; var list = mm.txns.slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; }); return { transactions: lim ? list.slice(0, lim) : list }; }
+      if (action === 'moneyAddTxn') { var tx = Object.assign({ id: 't_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: todayStr() }, p.transaction); mm.txns.push(tx); saveDb(d); return { transaction: tx, status: moneyStatus() }; }
+      if (action === 'moneyAddTxns') {
+        var added = (p.transactions || []).map(function (t) { return Object.assign({ id: 't_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) }, t); });
+        added.forEach(function (t) { mm.txns.push(t); }); saveDb(d);
+        return { added: added.length, transactions: added, status: moneyStatus() };
+      }
+      if (action === 'moneyDeleteTxn') { mm.txns = mm.txns.filter(function (t) { return t.id !== p.id; }); saveDb(d); return { deleted: p.id, status: moneyStatus() }; }
+      if (action === 'moneyDashboard') {
+        var from2 = todayStr().slice(0, 7) + '-01';
+        var catMap = {}; mm.categories.forEach(function (c) { catMap[c.id] = c; });
+        var byCategory = {}, byKind = { need: 0, want: 0, saving: 0 }, byMerchant = {}, totalSpend = 0;
+        mm.txns.filter(function (t) { return t.date >= from2 && t.type === 'expense'; }).forEach(function (t) {
+          var c = catMap[t.categoryId] || { name: 'Uncategorised', kind: 'want', icon: '❓', color: '#6b7280' };
+          totalSpend += Number(t.amount) || 0;
+          byCategory[t.categoryId] = (byCategory[t.categoryId] || 0) + (Number(t.amount) || 0);
+          byKind[c.kind] = (byKind[c.kind] || 0) + (Number(t.amount) || 0);
+          var m = t.merchant || '(unknown)'; byMerchant[m] = (byMerchant[m] || 0) + (Number(t.amount) || 0);
+        });
+        var catList = Object.keys(byCategory).map(function (id) { var c = catMap[id] || {}; return { id: id, name: c.name || 'Uncategorised', icon: c.icon || '❓', color: c.color || '#6b7280', total: byCategory[id] }; }).sort(function (a, b) { return b.total - a.total; });
+        var merchList = Object.keys(byMerchant).map(function (m) { return { merchant: m, total: byMerchant[m] }; }).sort(function (a, b) { return b.total - a.total; }).slice(0, 8);
+        return { totalSpend: totalSpend, byCategory: catList, byKind: byKind, topMerchants: merchList, status: moneyStatus() };
+      }
+      if (action === 'moneySaveBudget') {
+        mm.budget = { limit: Number(p.overall) || 0, perCategory: p.perCategory || {}, monthlyIncome: Number(p.monthlyIncome) || 0, savingsGoal: Number(p.savingsGoal) || 0 };
+        saveDb(d); return { budget: mm.budget, status: moneyStatus() };
+      }
+      if (action === 'moneyParseScreenshot' || action === 'moneyParseMessage' || action === 'moneyCoachChat') {
+        throw new Error('This needs the online backend (Gemini) — not available in demo mode.');
+      }
     }
 
     function myFasts() { return (d.fasts && d.fasts[me.username]) || []; }
@@ -600,7 +668,7 @@
       if (t) openApp(t.getAttribute('data-app'));
     });
     // AI Coach
-    $('#coach-fab').addEventListener('click', openCoach);
+    $('#coach-fab').addEventListener('click', function () { openCoach('hard'); });
     $('#coach-close').addEventListener('click', function () { hide('#coach-modal'); });
     $('#coach-clear').addEventListener('click', clearCoach);
     $('#coach-send').addEventListener('click', sendCoach);
@@ -3029,38 +3097,313 @@
   }
   function truthy(v) { return v === true || v === 1 || String(v).toLowerCase() === 'true'; }
 
+  /* ================= Money Manager (full) ================= */
+  var GUARD_LABEL = { ok: 'On track', warn: 'Slow down', critical: 'Critical', stop: 'Over budget', none: 'No budget set' };
+  var GUARD_CLASS = { ok: 'g-ok', warn: 'g-warn', critical: 'g-critical', stop: 'g-stop', none: 'g-none' };
+  function moneyCatById(id) { return (state.money.categories || []).filter(function (c) { return c.id === id; })[0]; }
+  function moneyAcctById(id) { return (state.money.accounts || []).filter(function (a) { return a.id === id; })[0]; }
+  function moneyCatOptions(selectedId) {
+    var groups = {};
+    (state.money.categories || []).forEach(function (c) { (groups[c.group] = groups[c.group] || []).push(c); });
+    return Object.keys(groups).sort().map(function (g) {
+      return '<optgroup label="' + esc(g) + '">' + groups[g].map(function (c) {
+        return '<option value="' + c.id + '"' + (c.id === selectedId ? ' selected' : '') + '>' + c.icon + ' ' + esc(c.name) + '</option>';
+      }).join('') + '</optgroup>';
+    }).join('');
+  }
+  function moneyAcctOptions(selectedId) {
+    var accts = state.money.accounts || [];
+    if (!accts.length) return '<option value="">No accounts yet</option>';
+    return '<option value="">—</option>' + accts.map(function (a) {
+      return '<option value="' + a.id + '"' + (a.id === selectedId ? ' selected' : '') + '>' + esc(a.name) + '</option>';
+    }).join('');
+  }
+
+  function moneyInit() {
+    if (!state.money) state.money = { accounts: [], categories: [], budget: {}, status: {}, loaded: false, tab: 'overview' };
+    return api('moneyGetState', {}).then(function (d) {
+      state.money.accounts = d.accounts || []; state.money.categories = d.categories || [];
+      state.money.budget = d.budget || {}; state.money.status = d.status || {}; state.money.loaded = true;
+    });
+  }
   function renderMoney() {
-    var box = $('#money-app'); if (!box) return;
-    box.innerHTML = '<p class="muted tiny">Loading…</p>';
-    var budget = Number(state.profile && state.profile.moneyBudget) || 0;
-    api('listGet', { kind: 'expense' }).then(function (dd) {
-      var items = (dd.items || []).map(function (x) { return { id: x.id, amount: Number(x.amount) || 0, category: String(x.category || ''), note: String(x.note || ''), date: String(x.date || '').slice(0, 10) }; });
-      var today = todayStr(), mp = today.slice(0, 7), month = 0;
-      items.forEach(function (x) { if (x.date.slice(0, 7) === mp) month += x.amount; });
-      var left = budget - month;
-      var monthItems = items.filter(function (x) { return x.date.slice(0, 7) === mp; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
-      box.innerHTML =
-        '<div class="card"><div class="eyebrow">This month</div>' +
-          '<div class="metric-big"><b>' + rupee(left > 0 ? left : 0) + '</b> <span class="muted">left of ' + rupee(budget) + '</span></div>' +
-          '<div class="fc-bar' + (left < 0 ? ' over' : '') + '" style="margin:10px 0"><span style="width:' + (budget ? Math.min(100, Math.round(month / budget * 100)) : 0) + '%"></span></div>' +
-          '<div class="muted tiny">Spent ' + rupee(month) + ' this month</div>' +
-          '<label style="margin-top:10px">Monthly budget (₹)<input id="mn-budget" type="number" inputmode="numeric" value="' + (budget || '') + '" /></label>' +
-          '<button id="mn-budget-save" class="btn block">Save budget</button></div>' +
-        '<div class="card"><div class="eyebrow">Add expense</div>' +
-          '<div class="manual-grid"><label>Amount (₹)<input id="mn-amt" type="number" inputmode="numeric" /></label>' +
-          '<label>Category<select id="mn-cat"><option>Food</option><option>Groceries</option><option>Transport</option><option>Shopping</option><option>Bills</option><option>Health</option><option>Fun</option><option>Other</option></select></label></div>' +
-          '<label>Note<input id="mn-note" placeholder="optional" /></label>' +
-          '<button id="mn-add" class="btn primary block">Add expense</button></div>' +
-        '<div class="card"><div class="eyebrow">This month · ' + monthItems.length + '</div><div id="mn-list">' +
-          (monthItems.length ? monthItems.map(function (x) { return '<div class="list-row"><div><b>' + rupee(x.amount) + '</b> <span class="muted tiny">' + esc(x.category) + (x.note ? ' · ' + esc(x.note) : '') + '</span><br><span class="muted tiny">' + esc(x.date) + '</span></div><button class="list-del" data-del="' + x.id + '">✕</button></div>'; }).join('') : '<p class="muted tiny">No expenses yet.</p>') +
-          '</div></div>';
-      $('#mn-budget-save').addEventListener('click', function () { saveProfileKey('moneyBudget', Number($('#mn-budget').value) || 0, renderMoney); });
-      $('#mn-add').addEventListener('click', function () {
-        var amt = Number($('#mn-amt').value) || 0; if (amt <= 0) { toast('Enter an amount'); return; }
-        api('listAdd', { kind: 'expense', item: { date: today, amount: amt, category: $('#mn-cat').value, note: $('#mn-note').value.trim() } }).then(function () { toast('Added ✓'); renderMoney(); }).catch(function (e) { toast(e.message); });
+    if (!state.money) state.money = { accounts: [], categories: [], budget: {}, status: {}, loaded: false, tab: 'overview' };
+    if (!renderMoney.bound) {
+      renderMoney.bound = true;
+      document.querySelectorAll('#money-tabs [data-mtab]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          document.querySelectorAll('#money-tabs [data-mtab]').forEach(function (x) { x.classList.toggle('active', x === b); });
+          var t = b.getAttribute('data-mtab'); state.money.tab = t;
+          document.querySelectorAll('.money-pane').forEach(function (p) { p.classList.add('hidden'); });
+          $('#money-pane-' + t).classList.remove('hidden');
+          moneyRenderTab(t);
+        });
       });
-      $('#mn-list').addEventListener('click', function (e) { var t = e.target.closest('[data-del]'); if (t) api('listDelete', { kind: 'expense', id: t.getAttribute('data-del') }).then(renderMoney); });
+      $('#money-ask-penny').addEventListener('click', function () { openCoach('money'); });
+    }
+    if (!state.money.loaded) {
+      $('#money-overview').innerHTML = '<p class="muted tiny">Loading…</p>';
+      moneyInit().then(function () { moneyRenderTab(state.money.tab || 'overview'); });
+    } else {
+      moneyRenderTab(state.money.tab || 'overview');
+    }
+  }
+  function moneyRenderTab(t) {
+    if (t === 'overview') moneyRenderOverview();
+    else if (t === 'add') moneyRenderAdd();
+    else if (t === 'history') moneyRenderHistory();
+    else if (t === 'accounts') moneyRenderAccounts();
+    else if (t === 'categories') moneyRenderCategories();
+    else if (t === 'budget') moneyRenderBudget();
+  }
+
+  function moneyRenderOverview() {
+    var box = $('#money-overview'); if (!box) return;
+    box.innerHTML = '<p class="muted tiny">Loading…</p>';
+    api('moneyDashboard', {}).then(function (d) {
+      state.money.status = d.status || {};
+      var s = d.status || {};
+      var level = s.level || 'none';
+      var groups = { need: 0, want: 0, saving: 0 };
+      (d.byKind || {}); groups.need = d.byKind ? d.byKind.need : 0; groups.want = d.byKind ? d.byKind.want : 0; groups.saving = d.byKind ? d.byKind.saving : 0;
+      var totalKind = (groups.need + groups.want + groups.saving) || 1;
+      box.innerHTML =
+        '<div class="card guard-card ' + GUARD_CLASS[level] + '">' +
+          '<div class="guard-top"><span class="eyebrow">This month</span><span class="guard-chip">' + esc(GUARD_LABEL[level]) + '</span></div>' +
+          '<div class="metric-big"><b>' + rupee(s.spent) + '</b> <span class="muted">' + (s.limit ? ('/ ' + rupee(s.limit)) : 'spent · no budget set') + '</span></div>' +
+          (s.limit ? '<div class="fc-bar' + (s.pct >= 1 ? ' over' : '') + '" style="margin:10px 0"><span style="width:' + Math.min(100, Math.round(s.pct * 100)) + '%"></span></div>' +
+            '<div class="guard-grid">' +
+              '<div><span class="muted tiny">Remaining</span><b>' + rupee(s.remaining) + '</b></div>' +
+              '<div><span class="muted tiny">Safe / day</span><b>' + rupee(s.safePerDay) + '</b></div>' +
+              '<div><span class="muted tiny">Days left</span><b>' + s.daysLeft + '</b></div>' +
+              '<div><span class="muted tiny">Projected</span><b>' + rupee(s.projection) + '</b></div>' +
+            '</div>' : '<p class="muted tiny" style="margin-top:8px">Set a monthly budget in the <b>Budget</b> tab to see your guard-rail.</p>') +
+        '</div>' +
+        '<div class="card"><div class="eyebrow">Needs / Wants / Savings</div>' +
+          '<div class="nws-bar"><span class="nws-need" style="width:' + Math.round(groups.need / totalKind * 100) + '%"></span>' +
+          '<span class="nws-want" style="width:' + Math.round(groups.want / totalKind * 100) + '%"></span>' +
+          '<span class="nws-save" style="width:' + Math.round(groups.saving / totalKind * 100) + '%"></span></div>' +
+          '<div class="nws-legend"><span><i class="nws-dot nws-need"></i>Needs ' + rupee(groups.need) + '</span><span><i class="nws-dot nws-want"></i>Wants ' + rupee(groups.want) + '</span><span><i class="nws-dot nws-save"></i>Savings ' + rupee(groups.saving) + '</span></div>' +
+          '<p class="muted tiny" style="margin-top:8px">Target roughly 50 / 30 / 20.</p></div>' +
+        '<div class="card"><div class="eyebrow">Top categories</div>' + (
+          (d.byCategory || []).length ? d.byCategory.slice(0, 6).map(function (c) {
+            var pct = d.totalSpend ? Math.round(c.total / d.totalSpend * 100) : 0;
+            return '<div class="bar-row"><div class="bl"><span>' + c.icon + ' ' + esc(c.name) + '</span><span>' + rupee(c.total) + '</span></div><div class="bar"><span style="width:' + pct + '%;background:' + c.color + '"></span></div></div>';
+          }).join('') : '<p class="muted tiny">No spending logged yet this month.</p>'
+        ) + '</div>' +
+        '<div class="card"><div class="eyebrow">Top merchants</div>' + (
+          (d.topMerchants || []).length ? d.topMerchants.map(function (m) {
+            return '<div class="list-row"><span>' + esc(m.merchant) + '</span><b>' + rupee(m.total) + '</b></div>';
+          }).join('') : '<p class="muted tiny">—</p>'
+        ) + '</div>';
     }).catch(function (e) { box.innerHTML = '<p class="muted tiny">' + esc(e.message) + '</p>'; });
+  }
+
+  function moneyRenderAdd() {
+    var box = $('#money-add'); if (!box) return;
+    var today = todayStr();
+    box.innerHTML =
+      '<div class="card"><div class="eyebrow">Add manually</div>' +
+        '<div class="manual-grid">' +
+          '<label>Amount (₹)<input id="mo-amt" type="number" inputmode="decimal" /></label>' +
+          '<label>Type<select id="mo-type"><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer</option></select></label>' +
+          '<label>Category<select id="mo-cat">' + moneyCatOptions() + '</select></label>' +
+          '<label>Account<select id="mo-acct">' + moneyAcctOptions() + '</select></label>' +
+          '<label>Date<input id="mo-date" type="date" value="' + today + '" max="' + today + '" /></label>' +
+          '<label>Merchant<input id="mo-merch" placeholder="e.g. Swiggy" /></label>' +
+        '</div><label>Note<input id="mo-note" placeholder="optional" /></label>' +
+        '<button id="mo-add-btn" class="btn primary block">Add transaction</button></div>' +
+      '<div class="card"><div class="eyebrow">📷 Scan a screenshot</div>' +
+        '<p class="muted tiny">Banking app, UPI (GPay/PhonePe/Paytm), card statement, or order history.</p>' +
+        '<div class="scan-row"><button id="mo-scan-btn" class="btn" type="button">🖼️ Upload image</button></div>' +
+        '<input type="file" id="mo-scan-file" accept="image/*" class="hidden" />' +
+        '<div id="mo-scan-status" class="muted tiny scan-status"></div></div>' +
+      '<div class="card"><div class="eyebrow">📋 Paste a bank / UPI message</div>' +
+        '<textarea id="mo-sms" rows="3" placeholder="Paste the SMS or notification text…"></textarea>' +
+        '<button id="mo-sms-btn" class="btn block" style="margin-top:8px">Parse message</button></div>' +
+      '<div id="mo-review"></div>';
+    $('#mo-add-btn').addEventListener('click', function () {
+      var amt = Number($('#mo-amt').value) || 0;
+      if (amt <= 0) { toast('Enter an amount'); return; }
+      var t = { date: $('#mo-date').value || today, amount: amt, type: $('#mo-type').value, categoryId: $('#mo-cat').value, accountId: $('#mo-acct').value, merchant: $('#mo-merch').value.trim(), note: $('#mo-note').value.trim(), source: 'manual' };
+      api('moneyAddTxn', { transaction: t }).then(function (d) {
+        state.money.status = d.status || state.money.status;
+        toast('Added ✓'); $('#mo-amt').value = ''; $('#mo-merch').value = ''; $('#mo-note').value = '';
+      }).catch(function (e) { toast(e.message); });
+    });
+    $('#mo-scan-btn').addEventListener('click', function () { $('#mo-scan-file').click(); });
+    $('#mo-scan-file').addEventListener('change', function () {
+      var f = this.files && this.files[0]; this.value = ''; if (!f) return;
+      $('#mo-scan-status').textContent = 'Reading screenshot…';
+      compressImage(f).then(function (b64) { return api('moneyParseScreenshot', { image: b64, mime: 'image/jpeg' }); })
+        .then(function (d) {
+          $('#mo-scan-status').textContent = (d.transactions || []).length ? '' : 'No transactions found in that image.';
+          moneyRenderReview(d.transactions || []);
+        }).catch(function (e) { $('#mo-scan-status').textContent = e.message || 'Scan failed.'; });
+    });
+    $('#mo-sms-btn').addEventListener('click', function () {
+      var text = $('#mo-sms').value.trim(); if (!text) { toast('Paste a message first'); return; }
+      var btn = $('#mo-sms-btn'); btn.disabled = true; btn.textContent = 'Parsing…';
+      api('moneyParseMessage', { text: text }).then(function (d) {
+        moneyRenderReview(d.transactions || []);
+        if ((d.transactions || []).length) $('#mo-sms').value = '';
+      }).catch(function (e) { toast(e.message); }).then(function () { btn.disabled = false; btn.textContent = 'Parse message'; });
+    });
+  }
+  function moneyRenderReview(list) {
+    var box = $('#mo-review'); if (!box) return;
+    if (!list.length) { box.innerHTML = ''; return; }
+    box.innerHTML = '<div class="card"><div class="eyebrow">Review · ' + list.length + ' found</div>' +
+      list.map(function (t, i) {
+        var cat = moneyCatById(t.categoryId);
+        return '<div class="review-row" data-i="' + i + '">' +
+          '<div class="manual-grid">' +
+            '<label>Amount<input class="rv-amt" type="number" value="' + t.amount + '" /></label>' +
+            '<label>Category<select class="rv-cat">' + moneyCatOptions(t.categoryId) + '</select></label>' +
+            '<label>Date<input class="rv-date" type="date" value="' + t.date + '" /></label>' +
+            '<label>Type<select class="rv-type"><option value="expense"' + (t.type === 'expense' ? ' selected' : '') + '>Expense</option><option value="income"' + (t.type === 'income' ? ' selected' : '') + '>Income</option><option value="transfer"' + (t.type === 'transfer' ? ' selected' : '') + '>Transfer</option></select></label>' +
+          '</div><label>Merchant<input class="rv-merch" value="' + esc(t.merchant || '') + '" /></label>' +
+          '<button class="list-del" data-rv-remove="' + i + '">✕ Skip this one</button></div>';
+      }).join('') +
+      '<button id="mo-review-save" class="btn primary block">Add all to Money</button></div>';
+    box.querySelectorAll('[data-rv-remove]').forEach(function (b) {
+      b.addEventListener('click', function () { b.closest('.review-row').remove(); });
+    });
+    $('#mo-review-save').addEventListener('click', function () {
+      var rows = box.querySelectorAll('.review-row');
+      var txns = [];
+      rows.forEach(function (r) {
+        txns.push({
+          amount: Number(r.querySelector('.rv-amt').value) || 0, categoryId: r.querySelector('.rv-cat').value,
+          date: r.querySelector('.rv-date').value, type: r.querySelector('.rv-type').value,
+          merchant: r.querySelector('.rv-merch').value.trim(), source: 'screenshot', clientId: 'rv_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)
+        });
+      });
+      txns = txns.filter(function (t) { return t.amount > 0; });
+      if (!txns.length) { toast('Nothing to add'); return; }
+      api('moneyAddTxns', { transactions: txns }).then(function (d) {
+        state.money.status = d.status || state.money.status;
+        toast('Added ' + d.added + ' transaction' + (d.added === 1 ? '' : 's') + ' ✓');
+        box.innerHTML = '';
+      }).catch(function (e) { toast(e.message); });
+    });
+  }
+
+  function moneyRenderHistory() {
+    var box = $('#money-history'); if (!box) return;
+    box.innerHTML = '<p class="muted tiny">Loading…</p>';
+    api('moneyGetTxns', { limit: 100 }).then(function (d) {
+      var items = d.transactions || [];
+      if (!items.length) { box.innerHTML = '<p class="muted tiny">No transactions yet — add one in the Add tab.</p>'; return; }
+      box.innerHTML = items.map(function (t) {
+        var cat = moneyCatById(t.categoryId);
+        var acct = moneyAcctById(t.accountId);
+        var sign = t.type === 'income' ? '+' : (t.type === 'transfer' ? '' : '−');
+        var cls = t.type === 'income' ? 'amt-income' : (t.type === 'transfer' ? 'amt-transfer' : 'amt-expense');
+        return '<div class="list-row txn-row">' +
+          '<div><b>' + (cat ? cat.icon + ' ' : '') + esc(t.merchant || (cat ? cat.name : 'Uncategorised')) + '</b>' +
+          '<div class="muted tiny">' + esc(t.date) + (acct ? ' · ' + esc(acct.name) : '') + (t.note ? ' · ' + esc(t.note) : '') + '</div></div>' +
+          '<span class="fr-acts"><b class="' + cls + '">' + sign + rupee(t.amount) + '</b><button class="list-del" data-del="' + t.id + '">✕</button></span></div>';
+      }).join('');
+      box.querySelectorAll('[data-del]').forEach(function (b) {
+        b.addEventListener('click', function () { api('moneyDeleteTxn', { id: b.getAttribute('data-del') }).then(function (d) { state.money.status = d.status || state.money.status; moneyRenderHistory(); }); });
+      });
+    }).catch(function (e) { box.innerHTML = '<p class="muted tiny">' + esc(e.message) + '</p>'; });
+  }
+
+  function moneyRenderAccounts() {
+    var box = $('#money-accounts'); if (!box) return;
+    var accts = state.money.accounts || [];
+    box.innerHTML =
+      '<div class="card"><div class="eyebrow">Add account / card</div>' +
+        '<div class="manual-grid">' +
+          '<label>Name<input id="ac-name" placeholder="e.g. HDFC Bank" /></label>' +
+          '<label>Type<select id="ac-type"><option value="bank">Bank</option><option value="credit_card">Credit card</option><option value="cash">Cash</option><option value="wallet">Wallet</option></select></label>' +
+          '<label>Issuer<input id="ac-issuer" placeholder="optional" /></label>' +
+          '<label>Last 4 digits<input id="ac-last4" inputmode="numeric" maxlength="4" /></label>' +
+        '</div><button id="ac-add-btn" class="btn primary block">Add account</button></div>' +
+      (accts.length ? accts.map(function (a) {
+        return '<div class="card"><div class="list-row"><div><b>' + esc(a.name) + '</b><div class="muted tiny">' + esc(a.type.replace('_', ' ')) + (a.last4 ? ' · •••• ' + esc(a.last4) : '') + '</div></div><button class="list-del" data-ac-del="' + a.id + '">✕</button></div></div>';
+      }).join('') : '<p class="muted tiny">No accounts yet.</p>');
+    $('#ac-add-btn').addEventListener('click', function () {
+      var name = $('#ac-name').value.trim(); if (!name) { toast('Enter a name'); return; }
+      api('moneyAddAccount', { account: { name: name, type: $('#ac-type').value, issuer: $('#ac-issuer').value.trim(), last4: $('#ac-last4').value.trim() } })
+        .then(function (d) { state.money.accounts.push(d.account); toast('Added ✓'); moneyRenderAccounts(); }).catch(function (e) { toast(e.message); });
+    });
+    box.querySelectorAll('[data-ac-del]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var id = b.getAttribute('data-ac-del');
+        api('moneyDeleteAccount', { id: id }).then(function () { state.money.accounts = state.money.accounts.filter(function (a) { return a.id !== id; }); moneyRenderAccounts(); });
+      });
+    });
+  }
+
+  function moneyRenderCategories() {
+    var box = $('#money-categories'); if (!box) return;
+    var cats = state.money.categories || [];
+    var groups = {}; cats.forEach(function (c) { (groups[c.group] = groups[c.group] || []).push(c); });
+    box.innerHTML =
+      '<div class="card"><div class="eyebrow">Add custom category</div>' +
+        '<div class="manual-grid">' +
+          '<label>Name<input id="ct-name" placeholder="e.g. Side project" /></label>' +
+          '<label>Group<input id="ct-group" placeholder="e.g. Other" /></label>' +
+          '<label>Kind<select id="ct-kind"><option value="need">Need</option><option value="want" selected>Want</option><option value="saving">Saving</option></select></label>' +
+          '<label>Icon (emoji)<input id="ct-icon" placeholder="📦" maxlength="4" /></label>' +
+        '</div><button id="ct-add-btn" class="btn primary block">Add category</button></div>' +
+      Object.keys(groups).sort().map(function (g) {
+        return '<div class="card"><div class="eyebrow">' + esc(g) + '</div>' + groups[g].map(function (c) {
+          return '<div class="list-row"><span>' + c.icon + ' ' + esc(c.name) + ' <span class="cat-kind">' + c.kind + '</span></span><button class="list-del" data-ct-del="' + c.id + '">✕</button></div>';
+        }).join('') + '</div>';
+      }).join('');
+    $('#ct-add-btn').addEventListener('click', function () {
+      var name = $('#ct-name').value.trim(); if (!name) { toast('Enter a name'); return; }
+      api('moneyAddCategory', { category: { name: name, group: $('#ct-group').value.trim() || 'Other', kind: $('#ct-kind').value, icon: $('#ct-icon').value.trim() || '📦' } })
+        .then(function (d) { state.money.categories.push(d.category); toast('Added ✓'); moneyRenderCategories(); }).catch(function (e) { toast(e.message); });
+    });
+    box.querySelectorAll('[data-ct-del]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var id = b.getAttribute('data-ct-del');
+        api('moneyDeleteCategory', { id: id }).then(function () { state.money.categories = state.money.categories.filter(function (c) { return c.id !== id; }); moneyRenderCategories(); });
+      });
+    });
+  }
+
+  function moneyRenderBudget() {
+    var box = $('#money-budget'); if (!box) return;
+    var b = state.money.budget || {};
+    var caps = b.perCategory || {};
+    box.innerHTML =
+      '<div class="card"><div class="eyebrow">Monthly budget</div>' +
+        '<label>Overall limit (₹)<input id="bg-limit" type="number" inputmode="numeric" value="' + (b.limit || '') + '" /></label>' +
+        '<div class="manual-grid"><label>Monthly income (₹)<input id="bg-income" type="number" inputmode="numeric" value="' + (b.monthlyIncome || '') + '" /></label>' +
+        '<label>Savings goal (₹/mo)<input id="bg-savings" type="number" inputmode="numeric" value="' + (b.savingsGoal || '') + '" /></label></div>' +
+        '<button id="bg-save-btn" class="btn primary block">Save budget</button></div>' +
+      '<div class="card"><div class="eyebrow">Per-category caps</div>' +
+        '<div class="manual-grid"><label>Category<select id="bg-cat">' + moneyCatOptions() + '</select></label>' +
+        '<label>Cap (₹/mo)<input id="bg-cap-amt" type="number" inputmode="numeric" /></label></div>' +
+        '<button id="bg-cap-add" class="btn block">Set cap</button>' +
+        '<div id="bg-cap-list" style="margin-top:8px">' + Object.keys(caps).map(function (cid) {
+          var c = moneyCatById(cid); if (!c) return '';
+          return '<div class="list-row"><span>' + c.icon + ' ' + esc(c.name) + '</span><span>' + rupee(caps[cid]) + ' <button class="list-del" data-cap-del="' + cid + '">✕</button></span></div>';
+        }).join('') + '</div></div>';
+    $('#bg-save-btn').addEventListener('click', function () {
+      var payload = { overall: Number($('#bg-limit').value) || 0, perCategory: caps, monthlyIncome: Number($('#bg-income').value) || 0, savingsGoal: Number($('#bg-savings').value) || 0 };
+      api('moneySaveBudget', payload).then(function (d) { state.money.budget = d.budget; state.money.status = d.status; toast('Saved ✓'); moneyRenderBudget(); }).catch(function (e) { toast(e.message); });
+    });
+    $('#bg-cap-add').addEventListener('click', function () {
+      var cid = $('#bg-cat').value, amt = Number($('#bg-cap-amt').value) || 0;
+      if (!cid || amt <= 0) { toast('Pick a category and amount'); return; }
+      caps[cid] = amt;
+      api('moneySaveBudget', { overall: Number(b.limit) || 0, perCategory: caps, monthlyIncome: b.monthlyIncome || 0, savingsGoal: b.savingsGoal || 0 })
+        .then(function (d) { state.money.budget = d.budget; state.money.status = d.status; toast('Cap set ✓'); moneyRenderBudget(); }).catch(function (e) { toast(e.message); });
+    });
+    box.querySelectorAll('[data-cap-del]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var cid = btn.getAttribute('data-cap-del'); delete caps[cid];
+        api('moneySaveBudget', { overall: Number(b.limit) || 0, perCategory: caps, monthlyIncome: b.monthlyIncome || 0, savingsGoal: b.savingsGoal || 0 })
+          .then(function (d) { state.money.budget = d.budget; state.money.status = d.status; toast('Removed'); moneyRenderBudget(); });
+      });
+    });
   }
 
   function renderSubs() {
@@ -3193,15 +3536,17 @@
   }
 
   /* ---------------- AI Coach chat ---------------- */
-  function coachKey() { return 'hard_coach_' + (state.username || ''); }
+  function coachKey() { return 'hard_coach_' + (state.coachDomain || 'hard') + '_' + (state.username || ''); }
   function loadCoachHistory() {
     try { return JSON.parse(localStorage.getItem(coachKey()) || '[]'); } catch (e) { return []; }
   }
   function saveCoachHistory() {
     try { localStorage.setItem(coachKey(), JSON.stringify((state.coachHistory || []).slice(-20))); } catch (e) {}
   }
-  function openCoach() {
-    if (state.coachHistory == null) state.coachHistory = loadCoachHistory();
+  function openCoach(domain) {
+    state.coachDomain = domain || 'hard';
+    state.coachHistory = loadCoachHistory();
+    $('#coach-title').textContent = state.coachDomain === 'money' ? '💰 Penny' : '✨ AI Coach';
     show('#coach-modal');
     renderCoachMsgs();
     setTimeout(function () { $('#coach-text').focus(); }, 120);
@@ -3217,9 +3562,12 @@
     var hist = state.coachHistory || [];
     var html = '';
     if (!hist.length) {
-      html += '<div class="cm cm-model">Hey ' + esc(firstName(state.user.displayName)) +
-        '! I’m your AI coach and I can see your 75 Hard progress, diet, fasting and mood. ' +
-        'Ask me anything — how you’re tracking, diet tweaks, workout ideas, or a motivation boost. 💪</div>';
+      html += state.coachDomain === 'money'
+        ? '<div class="cm cm-model">Hi ' + esc(firstName(state.user.displayName)) + '! I’m Penny, your money coach — I can see your spending, budget and categories. ' +
+          'Ask me about your budget pace, where you’re overspending, or how to hit a savings goal. 💰</div>'
+        : '<div class="cm cm-model">Hey ' + esc(firstName(state.user.displayName)) +
+          '! I’m your AI coach and I can see your 75 Hard progress, diet, fasting and mood. ' +
+          'Ask me anything — how you’re tracking, diet tweaks, workout ideas, or a motivation boost. 💪</div>';
     }
     hist.forEach(function (m) {
       html += '<div class="cm cm-' + (m.role === 'model' ? 'model' : 'user') + '">' + coachFormat(m.text) + '</div>';
@@ -3239,7 +3587,8 @@
     state.coachHistory.push({ role: 'user', text: msg });
     state.coachBusy = true; $('#coach-send').disabled = true;
     renderCoachMsgs(true);
-    api('coachChat', { message: msg, history: priorHistory }).then(function (d) {
+    var action = state.coachDomain === 'money' ? 'moneyCoachChat' : 'coachChat';
+    api(action, { message: msg, history: priorHistory }).then(function (d) {
       state.coachHistory.push({ role: 'model', text: d.reply || '(no reply)' });
       saveCoachHistory();
     }).catch(function (e) {

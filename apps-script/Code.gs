@@ -76,6 +76,23 @@ function doPost(e) {
       case 'listAdd':          data = handleListAdd(body);          break;
       case 'listUpdate':       data = handleListUpdate(body);       break;
       case 'listDelete':       data = handleListDelete(body);       break;
+
+      case 'moneyGetState':      data = handleMoneyGetState(body);      break;
+      case 'moneyAddAccount':    data = handleMoneyAddAccount(body);    break;
+      case 'moneyUpdateAccount': data = handleMoneyUpdateAccount(body); break;
+      case 'moneyDeleteAccount': data = handleMoneyDeleteAccount(body); break;
+      case 'moneyAddCategory':   data = handleMoneyAddCategory(body);   break;
+      case 'moneyDeleteCategory':data = handleMoneyDeleteCategory(body);break;
+      case 'moneyGetTxns':       data = handleMoneyGetTxns(body);       break;
+      case 'moneyAddTxn':        data = handleMoneyAddTxn(body);        break;
+      case 'moneyAddTxns':       data = handleMoneyAddTxns(body);       break;
+      case 'moneyUpdateTxn':     data = handleMoneyUpdateTxn(body);     break;
+      case 'moneyDeleteTxn':     data = handleMoneyDeleteTxn(body);     break;
+      case 'moneyDashboard':     data = handleMoneyDashboard(body);     break;
+      case 'moneySaveBudget':    data = handleMoneySaveBudget(body);    break;
+      case 'moneyParseScreenshot': data = handleMoneyParseScreenshot(body); break;
+      case 'moneyParseMessage':  data = handleMoneyParseMessage(body);  break;
+      case 'moneyCoachChat':     data = handleMoneyCoachChat(body);     break;
       case 'updateEmail':      data = handleUpdateEmail(body);      break;
       case 'changePassword':   data = handleChangePassword(body);   break;
       case 'changeUsername':   data = handleChangeUsername(body);   break;
@@ -1616,6 +1633,622 @@ function handleListDelete(body) {
   }
   return { ok: true, id: id };
 }
+
+/* ============================================================================
+ *  MONEY MANAGER — full expense tracker (accounts, categories, transactions,
+ *  budget guard-ladder, AI screenshot/SMS parsing, "Penny" coach chat).
+ *  Reuses this app's existing auth, getProfile/saveGoals, geminiGenerate and
+ *  logScan — only the money-specific data model is new.
+ * ========================================================================== */
+
+var MONEY_ACCOUNTS_SHEET = 'MoneyAccounts';
+var MONEY_CAT_SHEET = 'MoneyCategories';
+var MONEY_TXN_SHEET = 'MoneyTxns';
+var MONEY_ACCOUNT_HEADERS = ['id', 'username', 'name', 'type', 'issuer', 'last4', 'creditLimit',
+                             'billingCycleDay', 'openingBalance', 'color', 'archived', 'createdAt'];
+var MONEY_CAT_HEADERS = ['id', 'username', 'name', 'group', 'kind', 'icon', 'color', 'archived', 'createdAt'];
+var MONEY_TXN_HEADERS = ['id', 'username', 'date', 'amount', 'type', 'accountId', 'categoryId',
+                         'merchant', 'note', 'source', 'tags', 'createdAt', 'updatedAt', 'clientId'];
+
+// group, name, kind (need|want|saving|income|transfer), icon, color
+var MONEY_DEFAULT_CATEGORIES = [
+  ['Food & Dining',    'Groceries',             'need',  '🛒', '#16a34a'],
+  ['Food & Dining',    'Restaurants',           'want',  '🍽️', '#f59e0b'],
+  ['Food & Dining',    'Online Delivery',       'want',  '🛵', '#ef4444'],
+  ['Food & Dining',    'Cafe & Coffee',         'want',  '☕', '#a16207'],
+  ['Transport',        'Fuel',                  'need',  '⛽', '#0ea5e9'],
+  ['Transport',        'Cabs / Ride-share',     'want',  '🚕', '#38bdf8'],
+  ['Transport',        'Public Transport',      'need',  '🚌', '#0284c7'],
+  ['Transport',        'Vehicle / Parking',     'need',  '🅿️', '#075985'],
+  ['Entertainment',    'Movies',                'want',  '🎬', '#8b5cf6'],
+  ['Entertainment',    'OTT / Subscriptions',   'want',  '📺', '#a855f7'],
+  ['Entertainment',    'Events & Outings',      'want',  '🎟️', '#c084fc'],
+  ['Shopping',         'Clothing',              'want',  '👕', '#ec4899'],
+  ['Shopping',         'Electronics',           'want',  '🎧', '#db2777'],
+  ['Shopping',         'General Shopping',      'want',  '🛍️', '#be185d'],
+  ['Health',           'Pharmacy',              'need',  '💊', '#14b8a6'],
+  ['Health',           'Doctor / Medical',      'need',  '🩺', '#0d9488'],
+  ['Health',           'Gym / Fitness',         'want',  '🏋️', '#0f766e'],
+  ['Bills & Utilities','Rent / EMI',            'need',  '🏠', '#64748b'],
+  ['Bills & Utilities','Electricity / Water',   'need',  '💡', '#475569'],
+  ['Bills & Utilities','Internet / Mobile',     'need',  '📶', '#334155'],
+  ['Personal',         'Personal Care',         'want',  '💇', '#eab308'],
+  ['Personal',         'Education',             'need',  '📚', '#3b82f6'],
+  ['Travel',           'Travel & Hotels',       'want',  '✈️', '#06b6d4'],
+  ['Pets',             'Pet Food & Supplies',   'want',  '🐾', '#f97316'],
+  ['Pets',             'Vet & Pet Care',        'need',  '🐶', '#fb923c'],
+  ['Money',            'Savings & Investments', 'saving','📈', '#10b981'],
+  ['Money',            'Insurance',             'need',  '🛡️', '#059669'],
+  ['Income',           'Income',                'income','💰', '#22c55e'],
+  ['Transfers',        'Transfer / Card Payment','transfer','🔁','#94a3b8'],
+  ['Other',            'Miscellaneous',         'want',  '📦', '#6b7280']
+];
+
+function moneySeedDefaults(username) {
+  var sheet = getSheet(MONEY_CAT_SHEET, MONEY_CAT_HEADERS);
+  var rows = MONEY_DEFAULT_CATEGORIES.map(function (c) {
+    return [Utilities.getUuid(), username, c[1], c[0], c[2], c[3], c[4], false, new Date().toISOString()];
+  });
+  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, MONEY_CAT_HEADERS.length).setValues(rows);
+}
+function moneyEnsureDefaults(username) {
+  var sheet = getSheet(MONEY_CAT_SHEET, MONEY_CAT_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(MONEY_CAT_HEADERS);
+  var have = {};
+  for (var i = 1; i < values.length; i++) {
+    if (normalizeUsername(values[i][idx.username]) === username) have[String(values[i][idx.name]).toLowerCase()] = true;
+  }
+  var add = [];
+  MONEY_DEFAULT_CATEGORIES.forEach(function (c) {
+    if (!have[c[1].toLowerCase()]) add.push([Utilities.getUuid(), username, c[1], c[0], c[2], c[3], c[4], false, new Date().toISOString()]);
+  });
+  if (add.length) sheet.getRange(sheet.getLastRow() + 1, 1, add.length, MONEY_CAT_HEADERS.length).setValues(add);
+}
+
+function moneyGetAccounts(username) {
+  var sheet = getSheet(MONEY_ACCOUNTS_SHEET, MONEY_ACCOUNT_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(MONEY_ACCOUNT_HEADERS);
+  var out = [];
+  for (var i = 1; i < values.length; i++) {
+    if (normalizeUsername(values[i][idx.username]) !== username) continue;
+    if (toBool(values[i][idx.archived])) continue;
+    out.push(moneyAccountFromRow(values[i], idx));
+  }
+  return out;
+}
+function moneyAccountFromRow(r, idx) {
+  return {
+    id: String(r[idx.id]), name: String(r[idx.name]), type: String(r[idx.type] || 'bank'),
+    issuer: String(r[idx.issuer] || ''), last4: String(r[idx.last4] || ''),
+    creditLimit: Number(r[idx.creditLimit]) || 0, billingCycleDay: Number(r[idx.billingCycleDay]) || 0,
+    openingBalance: Number(r[idx.openingBalance]) || 0, color: String(r[idx.color] || '#3b82f6')
+  };
+}
+function moneyGetCategories(username) {
+  var sheet = getSheet(MONEY_CAT_SHEET, MONEY_CAT_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(MONEY_CAT_HEADERS);
+  var out = [];
+  for (var i = 1; i < values.length; i++) {
+    if (normalizeUsername(values[i][idx.username]) !== username) continue;
+    if (toBool(values[i][idx.archived])) continue;
+    out.push(moneyCatFromRow(values[i], idx));
+  }
+  return out;
+}
+function moneyCatFromRow(r, idx) {
+  return {
+    id: String(r[idx.id]), name: String(r[idx.name]), group: String(r[idx.group] || 'Other'),
+    kind: String(r[idx.kind] || 'want'), icon: String(r[idx.icon] || '📦'), color: String(r[idx.color] || '#6b7280')
+  };
+}
+
+function moneyGetBudget(username) {
+  var m = getProfile(username).money || {};
+  return { limit: Number(m.limit) || 0, perCategory: m.perCategory || {}, monthlyIncome: Number(m.monthlyIncome) || 0, savingsGoal: Number(m.savingsGoal) || 0 };
+}
+function moneySaveMoneyProfile(username, patch) {
+  var prof = getProfile(username);
+  prof.money = Object.assign({}, prof.money || {}, patch);
+  var sheet = getSheet(PROFILE_SHEET, PROFILE_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var json = JSON.stringify(prof);
+  for (var i = 1; i < values.length; i++) {
+    if (normalizeUsername(values[i][0]) === username) { sheet.getRange(i + 1, 1, 1, 3).setValues([[username, json, new Date().toISOString()]]); return prof.money; }
+  }
+  sheet.appendRow([username, json, new Date().toISOString()]);
+  return prof.money;
+}
+
+function handleMoneyGetState(body) {
+  var user = authUser(body);
+  if (moneyGetCategories(user.username).length === 0) moneySeedDefaults(user.username);
+  else moneyEnsureDefaults(user.username);
+  return {
+    accounts: moneyGetAccounts(user.username),
+    categories: moneyGetCategories(user.username),
+    budget: moneyGetBudget(user.username),
+    status: moneyComputeBudgetStatus(user.username)
+  };
+}
+
+function handleMoneyAddAccount(body) {
+  var user = authUser(body);
+  var a = body.account || {};
+  if (!String(a.name || '').trim()) throw new Error('Account name required.');
+  var rec = {
+    id: Utilities.getUuid(), username: user.username, name: String(a.name).trim().slice(0, 60),
+    type: String(a.type || 'bank'), issuer: String(a.issuer || ''), last4: String(a.last4 || '').replace(/\D/g, '').slice(-4),
+    creditLimit: Number(a.creditLimit) || 0, billingCycleDay: Number(a.billingCycleDay) || 0,
+    openingBalance: Number(a.openingBalance) || 0, color: String(a.color || '#3b82f6'),
+    archived: false, createdAt: new Date().toISOString()
+  };
+  getSheet(MONEY_ACCOUNTS_SHEET, MONEY_ACCOUNT_HEADERS).appendRow(MONEY_ACCOUNT_HEADERS.map(function (h) { return rec[h]; }));
+  return { account: moneyAccountFromRow(MONEY_ACCOUNT_HEADERS.map(function (h) { return rec[h]; }), colIndex(MONEY_ACCOUNT_HEADERS)) };
+}
+function handleMoneyUpdateAccount(body) {
+  var user = authUser(body);
+  var a = body.account || {}; var id = String(a.id || '');
+  var sheet = getSheet(MONEY_ACCOUNTS_SHEET, MONEY_ACCOUNT_HEADERS);
+  var values = sheet.getDataRange().getValues(); var idx = colIndex(MONEY_ACCOUNT_HEADERS);
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idx.id]) === id && normalizeUsername(values[i][idx.username]) === user.username) {
+      ['name', 'type', 'issuer', 'last4', 'creditLimit', 'billingCycleDay', 'openingBalance', 'color'].forEach(function (f) {
+        if (a[f] !== undefined) sheet.getRange(i + 1, idx[f] + 1).setValue(a[f]);
+      });
+      return { account: moneyAccountFromRow(sheet.getRange(i + 1, 1, 1, MONEY_ACCOUNT_HEADERS.length).getValues()[0], idx) };
+    }
+  }
+  throw new Error('Account not found.');
+}
+function handleMoneyDeleteAccount(body) {
+  var user = authUser(body); var id = String(body.id || '');
+  var sheet = getSheet(MONEY_ACCOUNTS_SHEET, MONEY_ACCOUNT_HEADERS);
+  var values = sheet.getDataRange().getValues(); var idx = colIndex(MONEY_ACCOUNT_HEADERS);
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idx.id]) === id && normalizeUsername(values[i][idx.username]) === user.username) {
+      sheet.getRange(i + 1, idx.archived + 1).setValue(true); return { deleted: id };
+    }
+  }
+  return { deleted: null };
+}
+
+function handleMoneyAddCategory(body) {
+  var user = authUser(body);
+  var c = body.category || {};
+  if (!String(c.name || '').trim()) throw new Error('Category name required.');
+  var rec = {
+    id: Utilities.getUuid(), username: user.username, name: String(c.name).trim().slice(0, 40),
+    group: String(c.group || 'Other'), kind: String(c.kind || 'want'),
+    icon: String(c.icon || '📦'), color: String(c.color || '#6b7280'), archived: false, createdAt: new Date().toISOString()
+  };
+  getSheet(MONEY_CAT_SHEET, MONEY_CAT_HEADERS).appendRow(MONEY_CAT_HEADERS.map(function (h) { return rec[h]; }));
+  return { category: moneyCatFromRow(MONEY_CAT_HEADERS.map(function (h) { return rec[h]; }), colIndex(MONEY_CAT_HEADERS)) };
+}
+function handleMoneyDeleteCategory(body) {
+  var user = authUser(body); var id = String(body.id || '');
+  var sheet = getSheet(MONEY_CAT_SHEET, MONEY_CAT_HEADERS);
+  var values = sheet.getDataRange().getValues(); var idx = colIndex(MONEY_CAT_HEADERS);
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idx.id]) === id && normalizeUsername(values[i][idx.username]) === user.username) {
+      sheet.getRange(i + 1, idx.archived + 1).setValue(true); return { deleted: id };
+    }
+  }
+  return { deleted: null };
+}
+
+function moneyTxnFromRow(r, idx) {
+  return {
+    id: String(r[idx.id]), date: formatDate(r[idx.date]), amount: Number(r[idx.amount]) || 0,
+    type: String(r[idx.type] || 'expense'), accountId: String(r[idx.accountId] || ''),
+    categoryId: String(r[idx.categoryId] || ''), merchant: String(r[idx.merchant] || ''),
+    note: String(r[idx.note] || ''), source: String(r[idx.source] || 'manual'),
+    tags: String(r[idx.tags] || ''), createdAt: String(r[idx.createdAt] || '')
+  };
+}
+function moneyBuildTxn(username, t) {
+  var now = new Date().toISOString();
+  return {
+    id: Utilities.getUuid(), username: username, date: t.date ? formatDate(t.date) : todayStr(),
+    amount: Math.abs(Number(t.amount) || 0),
+    type: ['expense', 'income', 'transfer'].indexOf(t.type) >= 0 ? t.type : 'expense',
+    accountId: String(t.accountId || ''), categoryId: String(t.categoryId || ''),
+    merchant: String(t.merchant || '').slice(0, 120), note: String(t.note || '').slice(0, 300),
+    source: String(t.source || 'manual'), tags: String(t.tags || ''),
+    createdAt: now, updatedAt: now, clientId: String(t.clientId || '')
+  };
+}
+function moneyFindByClientId(values, idx, username, clientId) {
+  if (!clientId) return null;
+  for (var i = 1; i < values.length; i++) {
+    if (normalizeUsername(values[i][idx.username]) === username && String(values[i][idx.clientId]) === clientId) return moneyTxnFromRow(values[i], idx);
+  }
+  return null;
+}
+
+function handleMoneyGetTxns(body) {
+  var user = authUser(body);
+  var from = body.from ? formatDate(body.from) : '0000-00-00';
+  var to = body.to ? formatDate(body.to) : '9999-99-99';
+  var limit = Number(body.limit) || 0;
+  var sheet = getSheet(MONEY_TXN_SHEET, MONEY_TXN_HEADERS);
+  var values = sheet.getDataRange().getValues(); var idx = colIndex(MONEY_TXN_HEADERS);
+  var out = [];
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    if (normalizeUsername(r[idx.username]) !== user.username) continue;
+    var d = formatDate(r[idx.date]); if (d < from || d > to) continue;
+    out.push(moneyTxnFromRow(r, idx));
+  }
+  out.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : (a.createdAt < b.createdAt ? 1 : -1); });
+  if (limit > 0) out = out.slice(0, limit);
+  return { transactions: out };
+}
+function handleMoneyAddTxn(body) {
+  var user = authUser(body);
+  var t = body.transaction || {};
+  var sheet = getSheet(MONEY_TXN_SHEET, MONEY_TXN_HEADERS); var idx = colIndex(MONEY_TXN_HEADERS);
+  if (t.clientId) {
+    var dup = moneyFindByClientId(sheet.getDataRange().getValues(), idx, user.username, String(t.clientId));
+    if (dup) return { transaction: dup, status: moneyComputeBudgetStatus(user.username), duplicate: true };
+  }
+  var rec = moneyBuildTxn(user.username, t);
+  sheet.appendRow(MONEY_TXN_HEADERS.map(function (h) { return rec[h]; }));
+  return { transaction: moneyTxnFromRow(MONEY_TXN_HEADERS.map(function (h) { return rec[h]; }), idx), status: moneyComputeBudgetStatus(user.username) };
+}
+function handleMoneyAddTxns(body) {
+  var user = authUser(body);
+  var list = body.transactions || [];
+  if (!list.length) return { added: 0, transactions: [] };
+  var sheet = getSheet(MONEY_TXN_SHEET, MONEY_TXN_HEADERS); var idx = colIndex(MONEY_TXN_HEADERS);
+  var existing = sheet.getDataRange().getValues();
+  var rows = [], objs = [];
+  list.forEach(function (t) {
+    if (t.clientId && moneyFindByClientId(existing, idx, user.username, String(t.clientId))) return;
+    var rec = moneyBuildTxn(user.username, t);
+    rows.push(MONEY_TXN_HEADERS.map(function (h) { return rec[h]; }));
+    objs.push(moneyTxnFromRow(MONEY_TXN_HEADERS.map(function (h) { return rec[h]; }), idx));
+  });
+  if (rows.length) sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, MONEY_TXN_HEADERS.length).setValues(rows);
+  return { added: rows.length, transactions: objs, status: moneyComputeBudgetStatus(user.username) };
+}
+function handleMoneyUpdateTxn(body) {
+  var user = authUser(body);
+  var t = body.transaction || {}; var id = String(t.id || '');
+  var sheet = getSheet(MONEY_TXN_SHEET, MONEY_TXN_HEADERS);
+  var values = sheet.getDataRange().getValues(); var idx = colIndex(MONEY_TXN_HEADERS);
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idx.id]) === id && normalizeUsername(values[i][idx.username]) === user.username) {
+      ['date', 'amount', 'type', 'accountId', 'categoryId', 'merchant', 'note', 'tags'].forEach(function (f) {
+        if (t[f] === undefined) return;
+        var v = t[f]; if (f === 'date') v = formatDate(v); if (f === 'amount') v = Math.abs(Number(v) || 0);
+        sheet.getRange(i + 1, idx[f] + 1).setValue(v);
+      });
+      sheet.getRange(i + 1, idx.updatedAt + 1).setValue(new Date().toISOString());
+      return { transaction: moneyTxnFromRow(sheet.getRange(i + 1, 1, 1, MONEY_TXN_HEADERS.length).getValues()[0], idx), status: moneyComputeBudgetStatus(user.username) };
+    }
+  }
+  throw new Error('Transaction not found.');
+}
+function handleMoneyDeleteTxn(body) {
+  var user = authUser(body); var id = String(body.id || '');
+  var sheet = getSheet(MONEY_TXN_SHEET, MONEY_TXN_HEADERS);
+  var values = sheet.getDataRange().getValues(); var idx = colIndex(MONEY_TXN_HEADERS);
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idx.id]) === id && normalizeUsername(values[i][idx.username]) === user.username) {
+      sheet.deleteRow(i + 1); return { deleted: id, status: moneyComputeBudgetStatus(user.username) };
+    }
+  }
+  return { deleted: null };
+}
+
+function handleMoneyDashboard(body) {
+  var user = authUser(body);
+  var from = body.from ? formatDate(body.from) : moneyMonthStart();
+  var to = body.to ? formatDate(body.to) : todayStr();
+
+  var cats = {}; moneyGetCategories(user.username).forEach(function (c) { cats[c.id] = c; });
+  var accts = {}; moneyGetAccounts(user.username).forEach(function (a) { accts[a.id] = a; });
+
+  var sheet = getSheet(MONEY_TXN_SHEET, MONEY_TXN_HEADERS);
+  var values = sheet.getDataRange().getValues(); var idx = colIndex(MONEY_TXN_HEADERS);
+
+  var totalSpend = 0, totalIncome = 0;
+  var byCategory = {}, byGroup = {}, byAccount = {}, byKind = { need: 0, want: 0, saving: 0 }, byMerchant = {};
+  var count = 0;
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    if (normalizeUsername(r[idx.username]) !== user.username) continue;
+    var d = formatDate(r[idx.date]); if (d < from || d > to) continue;
+    var type = String(r[idx.type] || 'expense'); var amt = Number(r[idx.amount]) || 0;
+    if (type === 'transfer') continue;
+    if (type === 'income') { totalIncome += amt; continue; }
+    count++; totalSpend += amt;
+    var cid = String(r[idx.categoryId] || '');
+    var cat = cats[cid] || { name: 'Uncategorised', group: 'Other', kind: 'want', color: '#6b7280', icon: '❓' };
+    byCategory[cid] = (byCategory[cid] || 0) + amt;
+    byGroup[cat.group] = (byGroup[cat.group] || 0) + amt;
+    byKind[cat.kind] = (byKind[cat.kind] || 0) + amt;
+    var aid = String(r[idx.accountId] || ''); byAccount[aid] = (byAccount[aid] || 0) + amt;
+    var m = String(r[idx.merchant] || '').trim() || '(unknown)'; byMerchant[m] = (byMerchant[m] || 0) + amt;
+  }
+  function catList() {
+    return Object.keys(byCategory).map(function (id) {
+      var c = cats[id] || { name: 'Uncategorised', group: 'Other', kind: 'want', color: '#6b7280', icon: '❓' };
+      return { id: id, name: c.name, group: c.group, kind: c.kind, icon: c.icon, color: c.color, total: money2(byCategory[id]) };
+    }).sort(function (a, b) { return b.total - a.total; });
+  }
+  function groupList() {
+    return Object.keys(byGroup).map(function (g) { return { group: g, total: money2(byGroup[g]) }; }).sort(function (a, b) { return b.total - a.total; });
+  }
+  function acctList() {
+    return Object.keys(byAccount).map(function (id) {
+      var a = accts[id] || { name: 'Unassigned', type: 'bank', color: '#94a3b8' };
+      return { id: id, name: a.name, type: a.type, color: a.color, total: money2(byAccount[id]) };
+    }).sort(function (a, b) { return b.total - a.total; });
+  }
+  function merchList() {
+    return Object.keys(byMerchant).map(function (m) { return { merchant: m, total: money2(byMerchant[m]) }; })
+      .sort(function (a, b) { return b.total - a.total; }).slice(0, 8);
+  }
+  return {
+    range: { from: from, to: to }, totalSpend: money2(totalSpend), totalIncome: money2(totalIncome), txnCount: count,
+    byCategory: catList(), byGroup: groupList(), byAccount: acctList(),
+    byKind: { need: money2(byKind.need), want: money2(byKind.want), saving: money2(byKind.saving) },
+    topMerchants: merchList(), status: moneyComputeBudgetStatus(user.username)
+  };
+}
+
+function handleMoneySaveBudget(body) {
+  var user = authUser(body);
+  var patch = {
+    limit: Number(body.overall) || 0, perCategory: body.perCategory || {},
+    monthlyIncome: body.monthlyIncome !== undefined ? Number(body.monthlyIncome) || 0 : undefined,
+    savingsGoal: body.savingsGoal !== undefined ? Number(body.savingsGoal) || 0 : undefined
+  };
+  Object.keys(patch).forEach(function (k) { if (patch[k] === undefined) delete patch[k]; });
+  moneySaveMoneyProfile(user.username, patch);
+  return { budget: moneyGetBudget(user.username), status: moneyComputeBudgetStatus(user.username) };
+}
+
+/* Budget guard-ladder: month-to-date spend vs limit, pace, safe-to-spend/day. */
+function moneyComputeBudgetStatus(username) {
+  var budget = moneyGetBudget(username);
+  var limit = budget.limit;
+  var from = moneyMonthStart(), to = todayStr();
+  var sheet = getSheet(MONEY_TXN_SHEET, MONEY_TXN_HEADERS);
+  var values = sheet.getDataRange().getValues(); var idx = colIndex(MONEY_TXN_HEADERS);
+  var spent = 0, todaySpent = 0, perCat = {};
+  var today = todayStr();
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    if (normalizeUsername(r[idx.username]) !== username) continue;
+    if (String(r[idx.type]) !== 'expense') continue;
+    var d = formatDate(r[idx.date]); if (d < from || d > to) continue;
+    var amt = Number(r[idx.amount]) || 0; spent += amt;
+    if (d === today) todaySpent += amt;
+    var cid = String(r[idx.categoryId] || ''); perCat[cid] = (perCat[cid] || 0) + amt;
+  }
+  var now = new Date();
+  var daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  var dayOfMonth = now.getDate();
+  var daysLeft = Math.max(1, daysInMonth - dayOfMonth + 1);
+  var pct = limit > 0 ? spent / limit : 0;
+  var level = 'none';
+  if (limit > 0) { if (pct >= 1) level = 'stop'; else if (pct >= 0.85) level = 'critical'; else if (pct >= 0.70) level = 'warn'; else level = 'ok'; }
+  var remaining = limit > 0 ? Math.max(0, limit - spent) : 0;
+  var safePerDay = limit > 0 ? remaining / daysLeft : 0;
+  var pacedTarget = limit > 0 ? limit * (dayOfMonth / daysInMonth) : 0;
+  var projection = dayOfMonth > 0 ? (spent / dayOfMonth) * daysInMonth : 0;
+  var catFlags = [];
+  Object.keys(budget.perCategory || {}).forEach(function (cid) {
+    var cap = Number(budget.perCategory[cid]) || 0; if (cap <= 0) return;
+    var used = perCat[cid] || 0;
+    if (used >= cap * 0.85) catFlags.push({ categoryId: cid, used: money2(used), cap: cap, pct: money2(used / cap) });
+  });
+  return {
+    limit: money2(limit), spent: money2(spent), remaining: money2(remaining), pct: money2(pct), level: level,
+    todaySpent: money2(todaySpent), daysLeft: daysLeft, daysInMonth: daysInMonth, dayOfMonth: dayOfMonth,
+    safePerDay: money2(safePerDay), pacedTarget: money2(pacedTarget), overPace: money2(spent - pacedTarget),
+    projection: money2(projection), onTrack: limit > 0 ? projection <= limit : true, categoryFlags: catFlags
+  };
+}
+
+/* ---------------- Money AI: screenshot OCR, SMS parsing, Penny coach ---------------- */
+
+function moneyExtractionPrompt(username) {
+  var cats = moneyGetCategories(username);
+  var catList = cats.map(function (c) { return c.name + ' [' + c.group + ']'; }).join(', ');
+  var today = todayStr();
+  return 'You extract expense transactions for a personal money tracker (India-first, currency ₹ INR by default).\n' +
+    'TODAY\'S DATE IS ' + today + '. You do NOT otherwise know the current date — always use this value as "today".\n' +
+    'Categorise each transaction into the SINGLE best-fitting category NAME from this list (use the exact name):\n' + catList + '.\n' +
+    'Rules:\n' +
+    '- "type" is "expense" for money going out (debit/paid/spent), "income" for money received (credit/refund/salary), "transfer" for card bill payments or moving money between own accounts.\n' +
+    '- Food ordered on Swiggy/Zomato/EatSure = "Online Delivery". Petrol/diesel/HP/IOC/Shell = "Fuel". Netflix/Prime/Hotstar/Spotify = "OTT / Subscriptions". BookMyShow/PVR/INOX = "Movies". Blinkit/Zepto/BigBasket groceries = "Groceries". Uber/Ola/Rapido = "Cabs / Ride-share".\n' +
+    '- Pet food/treats/litter/toys (Supertails, Heads Up For Tails, Drools, Whiskas, Pedigree) = "Pet Food & Supplies". Vet visits/grooming/vaccinations = "Vet & Pet Care".\n' +
+    '- "amount" is a positive number, no currency symbol or commas.\n' +
+    '- "date" in YYYY-MM-DD. Only use a date ACTUALLY PRINTED in the image. If only day+month printed, use ' + today.slice(0, 4) + ' as year. If no date is printed, return "' + today + '". NEVER invent a date, never a year before ' + today.slice(0, 4) + ' unless explicitly printed.\n' +
+    '- "merchant" = payee/shop/app name, cleaned up. "note" = anything useful (UPI ref, last 4 digits).\n' +
+    'Return ONLY JSON, no markdown: {"transactions":[{"date":"YYYY-MM-DD","amount":number,"type":"expense|income|transfer","category":string,"merchant":string,"note":string}]}. ' +
+    'If nothing is a transaction, return {"transactions":[]}.';
+}
+function moneySanitizeDate(s) {
+  var today = todayStr();
+  if (!s) return today;
+  var d = formatDate(s);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return today;
+  if (d > today) return today;
+  if (Number(d.slice(0, 4)) < Number(today.slice(0, 4)) - 1) return today;
+  return d;
+}
+function moneyMapExtracted(username, list) {
+  var cats = moneyGetCategories(username);
+  var byName = {}; cats.forEach(function (c) { byName[c.name.toLowerCase()] = c.id; });
+  var miscId = (cats.filter(function (c) { return c.name === 'Miscellaneous'; })[0] || cats[0] || {}).id || '';
+  return (list || []).map(function (t) {
+    var cid = byName[String(t.category || '').toLowerCase()] || miscId;
+    return {
+      date: moneySanitizeDate(t.date), amount: Math.abs(Number(t.amount) || 0),
+      type: ['expense', 'income', 'transfer'].indexOf(t.type) >= 0 ? t.type : 'expense',
+      categoryId: cid, category: t.category || '', merchant: String(t.merchant || '').slice(0, 120), note: String(t.note || '').slice(0, 300)
+    };
+  }).filter(function (t) { return t.amount > 0; });
+}
+function handleMoneyParseScreenshot(body) {
+  var user = authUser(body);
+  var key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!key) throw new Error('AI scanner not set up (missing GEMINI_API_KEY).');
+  var mime = String(body.mime || 'image/jpeg');
+  var imgs = [];
+  if (body.images && body.images.length) { for (var k = 0; k < body.images.length; k++) { if (body.images[k]) imgs.push(String(body.images[k])); } }
+  else if (body.image) imgs.push(String(body.image));
+  if (!imgs.length) throw new Error('No image received.');
+  var prompt = moneyExtractionPrompt(user.username) +
+    '\n\nThese are screenshots from a banking app, UPI app (GPay/PhonePe/Paytm), credit-card statement, or order history. Read EVERY transaction visible.';
+  var parts = [{ text: prompt }];
+  for (var j = 0; j < imgs.length; j++) parts.push({ inline_data: { mime_type: mime, data: imgs[j] } });
+  var payload = { contents: [{ parts: parts }], generationConfig: { temperature: 0, responseMimeType: 'application/json', maxOutputTokens: 2000, thinkingConfig: { thinkingBudget: 0 } } };
+  var res = geminiGenerate(key, payload, ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest']);
+  var parsed = moneySafeJson(res.text);
+  var out = moneyMapExtracted(user.username, parsed.transactions || []);
+  try { logScan(body, res.model, imgs.length, res.usage, '💰 Money scan (' + out.length + ')'); } catch (e) {}
+  return { transactions: out };
+}
+function handleMoneyParseMessage(body) {
+  var user = authUser(body);
+  var text = String(body.text || '').trim();
+  if (!text) throw new Error('Paste a transaction message.');
+  var quick = moneyQuickParseSms(text);
+  var key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!key) {
+    if (quick) return { transactions: moneyMapExtracted(user.username, [quick]), source: 'regex' };
+    throw new Error('Could not read that automatically. Add the transaction manually.');
+  }
+  if (quick) return { transactions: moneyMapExtracted(user.username, [quick]), source: 'regex' };
+  var prompt = moneyExtractionPrompt(user.username) +
+    '\n\nParse the following bank / UPI / credit-card SMS or notification text. It may contain one or more transactions:\n"""\n' + text.slice(0, 4000) + '\n"""';
+  var payload = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0, responseMimeType: 'application/json', maxOutputTokens: 800, thinkingConfig: { thinkingBudget: 0 } } };
+  var res = geminiGenerate(key, payload, ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest']);
+  var parsed = moneySafeJson(res.text);
+  var out = moneyMapExtracted(user.username, parsed.transactions || []);
+  try { logScan(body, res.model, 0, res.usage, '💰 Money SMS (' + out.length + ')'); } catch (e) {}
+  return { transactions: out, source: 'ai' };
+}
+function moneyQuickParseSms(text) {
+  var t = text.replace(/\s+/g, ' ').trim();
+  var amtM = t.match(/(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i);
+  if (!amtM) return null;
+  var amount = Number(amtM[1].replace(/,/g, ''));
+  if (!amount) return null;
+  var isCredit = /credited|received|refund|deposit/i.test(t);
+  var isDebit = /debited|spent|paid|withdrawn|purchase|deducted|sent/i.test(t);
+  var type = isCredit && !isDebit ? 'income' : 'expense';
+  var merch = '';
+  var mM = t.match(/\b(?:to|at|towards|vpa|info:?)\s+([A-Za-z0-9 ._@&-]{2,40})/i);
+  if (mM) merch = mM[1].replace(/\b(on|ref|upi|avl|bal|info).*$/i, '').trim();
+  var date = todayStr();
+  var dM = t.match(/\bon\s+(\d{4}-\d{2}-\d{2})/i) || t.match(/\bon\s+(\d{1,2}[\/\-][A-Za-z]{3}[\/\-]?\d{0,4})/i) || t.match(/\bon\s+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i);
+  if (dM) { var nd = formatDate(dM[1]); if (/^\d{4}-\d{2}-\d{2}$/.test(nd)) date = nd; }
+  return { amount: amount, type: type, merchant: merch, category: moneyGuessCategory(t + ' ' + merch), note: t.slice(0, 200), date: date };
+}
+function moneyGuessCategory(s) {
+  s = String(s).toLowerCase();
+  var rules = [
+    [/swiggy|zomato|eatsure|eat sure|box8|faasos/, 'Online Delivery'],
+    [/blinkit|zepto|bigbasket|big basket|instamart|dmart|d-mart|grofers|jiomart/, 'Groceries'],
+    [/uber|ola |olacabs|rapido|namma yatri/, 'Cabs / Ride-share'],
+    [/petrol|diesel|fuel|hpcl|iocl|bpcl|indian oil|bharat petroleum|hp |shell|essar/, 'Fuel'],
+    [/service cent|car service|garage|workshop|puncture|tyre|automobile/, 'Vehicle / Parking'],
+    [/netflix|prime video|hotstar|disney|spotify|youtube|sony liv|zee5|jiocinema|jio cinema|subscription/, 'OTT / Subscriptions'],
+    [/bookmyshow|pvr|inox|cinema|cinepolis|movie/, 'Movies'],
+    [/amazon|flipkart|myntra|ajio|meesho|nykaa|tatacliq/, 'General Shopping'],
+    [/pharmacy|pharmeasy|apollo|1mg|netmeds|medplus|chemist|medical store/, 'Pharmacy'],
+    [/hospital|clinic|diagnostic|lab |pathology|doctor/, 'Doctor / Medical'],
+    [/dominos|pizza|mcdonald|kfc|burger|starbucks|cafe|coffee|restaurant|hotel |dhaba|biryani/, 'Restaurants'],
+    [/electricity|power|mseb|bescom|adani electric|tata power|water bill/, 'Electricity / Water'],
+    [/airtel|jio|vodafone|vi |bsnl|broadband|wifi|recharge/, 'Internet / Mobile'],
+    [/rent|landlord|emi|loan/, 'Rent / EMI'],
+    [/gym|cult|fitness|gold gym/, 'Gym / Fitness'],
+    [/supertails|headsupfortails|heads up for tails|petsutra|drools|pedigree|whiskas|cat food|dog food|pet food|petshop|pet shop|pet supplies/, 'Pet Food & Supplies'],
+    [/\bvet\b|veterinary|pet clinic|pet grooming/, 'Vet & Pet Care'],
+    [/irctc|makemytrip|goibibo|ixigo|indigo|vistara|air india|oyo|airbnb|flight|hotel booking/, 'Travel & Hotels'],
+    [/salary|credited by|neft cr|imps cr|interest/, 'Income']
+  ];
+  for (var i = 0; i < rules.length; i++) if (rules[i][0].test(s)) return rules[i][1];
+  return '';
+}
+function moneySafeJson(txt) {
+  try { return JSON.parse(txt); } catch (e) { var m = String(txt || '').match(/\{[\s\S]*\}/); return m ? JSON.parse(m[0]) : {}; }
+}
+
+function handleMoneyCoachChat(body) {
+  var user = authUser(body);
+  var key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!key) throw new Error('AI coach not set up (missing GEMINI_API_KEY).');
+  var message = String(body.message || '').trim();
+  if (!message) throw new Error('Type a message.');
+  var history = body.history || [];
+  var context = moneyBuildCoachContext(user.username, user.displayName);
+  var system = 'You are "Penny", a sharp, friendly Certified Financial Planner built into a personal expense-tracking app for an Indian user (currency ₹ INR). ' +
+    'You are talking to ' + (user.displayName || user.username) + '. ' +
+    'Use the DATA below (their real tracked spending) plus solid personal-finance principles (50/30/20 budgeting, needs vs wants, pay-yourself-first, cutting recurring leaks, emergency fund). ' +
+    'Reference their actual numbers and categories when relevant. Be concrete: name the category, the amount, and a specific action. ' +
+    'Keep replies concise and practical — short paragraphs or bullets, not an essay. Be encouraging but honest about overspending. ' +
+    'When they are close to or over their monthly limit, help them slow down with specific cuts. Do NOT give regulated investment/tax advice; for those, suggest a licensed advisor. ' +
+    'Never invent numbers you were not given; if it is not in the data, say so.\n\n' +
+    '=== THIS USER\'S MONEY DATA ===\n' + context;
+  var contents = [];
+  contents.push({ role: 'user', parts: [{ text: system }] });
+  contents.push({ role: 'model', parts: [{ text: 'Got it — I have ' + (user.displayName || 'your') + ' latest spending in front of me. Ready.' }] });
+  (history || []).slice(-8).forEach(function (m) {
+    contents.push({ role: (m.role === 'model' ? 'model' : 'user'), parts: [{ text: String(m.text || '').slice(0, 2000) }] });
+  });
+  contents.push({ role: 'user', parts: [{ text: message.slice(0, 2000) }] });
+  var payload = { contents: contents, generationConfig: { temperature: 0.6, maxOutputTokens: 700, thinkingConfig: { thinkingBudget: 0 } } };
+  var res = geminiGenerate(key, payload, ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest']);
+  try { logScan(body, res.model, 0, res.usage, '💬 Penny (money coach)'); } catch (e) {}
+  return { reply: String(res.text || '').trim() };
+}
+function moneyBuildCoachContext(username, displayName) {
+  var status = moneyComputeBudgetStatus(username);
+  var from = moneyMonthStart(), to = todayStr();
+  var cats = {}; moneyGetCategories(username).forEach(function (c) { cats[c.id] = c; });
+  var accts = {}; moneyGetAccounts(username).forEach(function (a) { accts[a.id] = a; });
+  var sheet = getSheet(MONEY_TXN_SHEET, MONEY_TXN_HEADERS);
+  var values = sheet.getDataRange().getValues(); var idx = colIndex(MONEY_TXN_HEADERS);
+  var byCat = {}, byKind = { need: 0, want: 0, saving: 0 }, byAcct = {}, income = 0, spend = 0;
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    if (normalizeUsername(r[idx.username]) !== username) continue;
+    var d = formatDate(r[idx.date]); if (d < from || d > to) continue;
+    var type = String(r[idx.type]); var amt = Number(r[idx.amount]) || 0;
+    if (type === 'income') { income += amt; continue; }
+    if (type === 'transfer') continue;
+    spend += amt;
+    var c = cats[String(r[idx.categoryId])] || { name: 'Uncategorised', kind: 'want' };
+    byCat[c.name] = (byCat[c.name] || 0) + amt; byKind[c.kind] = (byKind[c.kind] || 0) + amt;
+    var a = accts[String(r[idx.accountId])] || { name: 'Unassigned' };
+    byAcct[a.name] = (byAcct[a.name] || 0) + amt;
+  }
+  function top(o, n) {
+    return Object.keys(o).map(function (k) { return [k, o[k]]; }).sort(function (a, b) { return b[1] - a[1]; })
+      .slice(0, n || 8).map(function (p) { return p[0] + ' ₹' + Math.round(p[1]); }).join(', ');
+  }
+  var budget = moneyGetBudget(username);
+  var lines = [];
+  lines.push('Name: ' + (displayName || username) + '. Monthly income (if set): ₹' + (budget.monthlyIncome || '?') + '. Savings goal: ₹' + (budget.savingsGoal || '?') + '/month.');
+  lines.push('This month so far (' + from + ' to ' + to + '): spent ₹' + Math.round(spend) + ', income ₹' + Math.round(income) + '.');
+  lines.push('Monthly limit: ₹' + status.limit + '. Spent ₹' + status.spent + ' (' + Math.round(status.pct * 100) + '%). Remaining ₹' + status.remaining + ' over ' + status.daysLeft + ' days = ₹' + status.safePerDay + '/day safe to spend. Projected month-end: ₹' + status.projection + '. Guard level: ' + status.level + '.');
+  lines.push('Needs ₹' + Math.round(byKind.need) + ' / Wants ₹' + Math.round(byKind.want) + ' / Savings ₹' + Math.round(byKind.saving) + ' (target roughly 50/30/20).');
+  lines.push('Top spend categories: ' + (top(byCat, 8) || 'none yet') + '.');
+  lines.push('By account/card: ' + (top(byAcct, 6) || 'none') + '.');
+  return lines.join('\n');
+}
+function moneyMonthStart() { return todayStr().slice(0, 7) + '-01'; }
+function money2(v) { var n = Number(v) || 0; return Math.round(n * 100) / 100; }
 
 /* ----------------------------------------------------------------------- *
  *  Helpers — auth & users
