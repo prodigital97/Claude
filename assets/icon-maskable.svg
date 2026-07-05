@@ -1,29 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#ff8a1e"/>
-      <stop offset=".55" stop-color="#ff3d5a"/>
-      <stop offset="1" stop-color="#b5179e"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#17121b"/>
+      <stop offset="1" stop-color="#0a0b0e"/>
     </linearGradient>
-    <linearGradient id="flame" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fff2c2"/>
-      <stop offset="1" stop-color="#ffd24a"/>
+    <linearGradient id="mark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff8a4c"/>
+      <stop offset="1" stop-color="#ff6a3d"/>
     </linearGradient>
   </defs>
 
-  <rect width="512" height="512" fill="url(#tile)"/>
+  <rect width="512" height="512" fill="url(#bg)"/>
 
   <!-- elements kept within the maskable safe zone (~70% center) -->
   <g transform="translate(256 256) scale(0.72) translate(-256 -256)">
-    <circle cx="256" cy="256" r="196" fill="none" stroke="#ffffff" stroke-opacity=".16"
-            stroke-width="20" stroke-linecap="round"
-            stroke-dasharray="170 1231" transform="rotate(-90 256 256)"/>
-    <path d="M256 96 C300 150 318 188 296 226 C330 214 332 168 322 142
-             C352 178 372 226 372 272 C372 338 320 384 256 384
-             C192 384 140 338 140 272 C140 214 178 160 232 132
-             C220 168 226 196 248 210 C232 176 232 134 256 96 Z"
-          fill="url(#flame)" opacity=".95"/>
-    <text x="256" y="312" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
-          font-size="150" font-weight="900" fill="#3a0a18">75</text>
+    <g fill="none" stroke-width="22" stroke-linecap="round">
+      <circle cx="256" cy="256" r="196" stroke="#ff6a3d" stroke-dasharray="88 480" stroke-dashoffset="0" transform="rotate(-90 256 256)"/>
+      <circle cx="256" cy="256" r="196" stroke="#a78bfa" stroke-dasharray="88 480" stroke-dashoffset="-127" transform="rotate(-90 256 256)"/>
+      <circle cx="256" cy="256" r="196" stroke="#34d399" stroke-dasharray="88 480" stroke-dashoffset="-254" transform="rotate(-90 256 256)"/>
+      <circle cx="256" cy="256" r="196" stroke="#38bdf8" stroke-dasharray="88 480" stroke-dashoffset="-381" transform="rotate(-90 256 256)"/>
+    </g>
+    <text x="256" y="322" text-anchor="middle" font-family="'Space Grotesk', Arial, Helvetica, sans-serif"
+          font-size="220" font-weight="700" fill="url(#mark)">A</text>
   </g>
 </svg>
