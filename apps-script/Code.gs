@@ -691,7 +691,7 @@ function handleScanLabel(body) {
     'CRITICAL — when READING a printed panel, follow these rules exactly:\n' +
     '1. Pick ONE data column and report every value EXACTLY AS PRINTED in that column — do NOT do any math or conversion yourself. ' +
     'Prefer a "per 100 g" / "per 100 ml" column if one exists. If the only amounts are per serving (e.g. the header says "Per 40 g serve", "per 30 g", "per serving (25 g)"), use that column.\n' +
-    '2. Set "basisGrams" to the grams that your chosen column represents: 100 for a per-100g/ml column; the serving grams (e.g. 40, 30, 25) if you used a per-serving column. If unsure, use 100.\n' +
+    '2. Set "basisGrams" to the grams that your chosen column represents: 100 for a per-100g/ml column; the serving grams (e.g. 40, 30, 25, 60) if you used a per-serving column. The serving grams may be in the column header ("Per 40 g serve") OR stated separately as a "Serving size: 60 g" row while the amount column just says "Amount per serving" — in that case basisGrams = 60. If unsure, use 100.\n' +
     '3. NEVER read the "%DV", "%RDA" or "%" column as a value.\n' +
     '4. The panel may split nutrients across TWO side-by-side sub-columns under the same basis (e.g. Energy/Protein/Carb on the left, Total Fat/Sodium/Calcium on the right) — read rows from BOTH.\n' +
     '5. Map each row to the RIGHT field — do NOT mix them up:\n' +
