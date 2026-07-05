@@ -268,6 +268,11 @@
         return { added: added.length, transactions: added, status: moneyStatus() };
       }
       if (action === 'moneyDeleteTxn') { mm.txns = mm.txns.filter(function (t) { return t.id !== p.id; }); saveDb(d); return { deleted: p.id, status: moneyStatus() }; }
+      if (action === 'moneyUpdateTxn') {
+        var etx = mm.txns.filter(function (t) { return t.id === (p.transaction && p.transaction.id); })[0];
+        if (etx) Object.assign(etx, p.transaction);
+        saveDb(d); return { transaction: etx || null, status: moneyStatus() };
+      }
       if (action === 'moneyDashboard') return moneyDashboardCalc();
       if (action === 'moneySaveBudget') {
         mm.budget = { limit: Number(p.overall) || 0, perCategory: p.perCategory || {}, monthlyIncome: Number(p.monthlyIncome) || 0, savingsGoal: Number(p.savingsGoal) || 0 };
@@ -3399,22 +3404,86 @@
     var box = $('#money-history'); if (!box) return;
     box.innerHTML = '<p class="muted tiny">Loading…</p>';
     api('moneyGetTxns', { limit: 100 }).then(function (d) {
-      var items = d.transactions || [];
-      if (!items.length) { box.innerHTML = '<p class="muted tiny">No transactions yet — add one in the Add tab.</p>'; return; }
-      box.innerHTML = items.map(function (t) {
-        var cat = moneyCatById(t.categoryId);
-        var acct = moneyAcctById(t.accountId);
-        var sign = t.type === 'income' ? '+' : (t.type === 'transfer' ? '' : '−');
-        var cls = t.type === 'income' ? 'amt-income' : (t.type === 'transfer' ? 'amt-transfer' : 'amt-expense');
-        return '<div class="list-row txn-row">' +
-          '<div><b>' + (cat ? cat.icon + ' ' : '') + esc(t.merchant || (cat ? cat.name : 'Uncategorised')) + '</b>' +
-          '<div class="muted tiny">' + esc(t.date) + (acct ? ' · ' + esc(acct.name) : '') + (t.note ? ' · ' + esc(t.note) : '') + '</div></div>' +
-          '<span class="fr-acts"><b class="' + cls + '">' + sign + rupee(t.amount) + '</b><button class="list-del" data-del="' + t.id + '">✕</button></span></div>';
-      }).join('');
-      box.querySelectorAll('[data-del]').forEach(function (b) {
-        b.addEventListener('click', function () { api('moneyDeleteTxn', { id: b.getAttribute('data-del') }).then(function (d) { state.money.status = d.status || state.money.status; moneyRenderHistory(); moneyRefreshSilently(); }); });
-      });
+      state.money.editingTxnId = null;
+      moneyRenderHistoryList(d.transactions || []);
     }).catch(function (e) { box.innerHTML = '<p class="muted tiny">' + esc(e.message) + '</p>'; });
+  }
+  function moneyRenderHistoryList(items) {
+    var box = $('#money-history'); if (!box) return;
+    if (!items.length) { box.innerHTML = '<p class="muted tiny">No transactions yet — add one in the Add tab.</p>'; return; }
+    var editingId = state.money.editingTxnId;
+    var today = todayStr();
+    box.innerHTML = items.map(function (t) {
+      if (t.id === editingId) {
+        return '<div class="txn-edit-card" data-editcard="' + t.id + '">' +
+          '<div class="manual-grid">' +
+            '<label>Amount (₹)<input class="te-amt" type="number" inputmode="decimal" value="' + t.amount + '" /></label>' +
+            '<label>Type<select class="te-type">' +
+              '<option value="expense"' + (t.type === 'expense' ? ' selected' : '') + '>Expense</option>' +
+              '<option value="income"' + (t.type === 'income' ? ' selected' : '') + '>Income</option>' +
+              '<option value="transfer"' + (t.type === 'transfer' ? ' selected' : '') + '>Transfer</option>' +
+            '</select></label>' +
+            '<label>Category<select class="te-cat">' + moneyCatOptions(t.categoryId) + '</select></label>' +
+            '<label>Account<select class="te-acct">' + moneyAcctOptions(t.accountId) + '</select></label>' +
+            '<label>Date<input class="te-date" type="date" value="' + esc(t.date) + '" max="' + today + '" /></label>' +
+            '<label>Merchant<input class="te-merch" value="' + esc(t.merchant || '') + '" /></label>' +
+          '</div><label>Note<input class="te-note" value="' + esc(t.note || '') + '" /></label>' +
+          '<div class="fr-acts" style="margin-top:10px">' +
+            '<button class="btn primary" data-save="' + t.id + '">Save</button>' +
+            '<button class="btn" data-cancel="1">Cancel</button>' +
+          '</div></div>';
+      }
+      var cat = moneyCatById(t.categoryId);
+      var acct = moneyAcctById(t.accountId);
+      var sign = t.type === 'income' ? '+' : (t.type === 'transfer' ? '' : '−');
+      var cls = t.type === 'income' ? 'amt-income' : (t.type === 'transfer' ? 'amt-transfer' : 'amt-expense');
+      return '<div class="list-row txn-row" data-edit="' + t.id + '">' +
+        '<div><b>' + (cat ? cat.icon + ' ' : '') + esc(t.merchant || (cat ? cat.name : 'Uncategorised')) + '</b>' +
+        '<div class="muted tiny">' + esc(t.date) + (acct ? ' · ' + esc(acct.name) : '') + (t.note ? ' · ' + esc(t.note) : '') + '</div></div>' +
+        '<span class="fr-acts"><b class="' + cls + '">' + sign + rupee(t.amount) + '</b><button class="list-del" data-del="' + t.id + '">✕</button></span></div>';
+    }).join('');
+    box.querySelectorAll('[data-edit]').forEach(function (row) {
+      row.addEventListener('click', function (e) {
+        if (e.target.closest('[data-del]')) return;
+        state.money.editingTxnId = row.getAttribute('data-edit');
+        moneyRenderHistoryList(items);
+      });
+    });
+    box.querySelectorAll('[data-del]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        api('moneyDeleteTxn', { id: b.getAttribute('data-del') }).then(function (d) {
+          state.money.status = d.status || state.money.status; moneyRenderHistory(); moneyRefreshSilently();
+        });
+      });
+    });
+    box.querySelectorAll('[data-cancel]').forEach(function (b) {
+      b.addEventListener('click', function () { state.money.editingTxnId = null; moneyRenderHistoryList(items); });
+    });
+    box.querySelectorAll('[data-save]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var id = b.getAttribute('data-save');
+        var card = b.closest('.txn-edit-card');
+        var amt = Number(card.querySelector('.te-amt').value) || 0;
+        if (amt <= 0) { toast('Enter a valid amount'); return; }
+        var payload = {
+          transaction: {
+            id: id, amount: amt, type: card.querySelector('.te-type').value,
+            categoryId: card.querySelector('.te-cat').value, accountId: card.querySelector('.te-acct').value,
+            date: card.querySelector('.te-date').value, merchant: card.querySelector('.te-merch').value.trim(),
+            note: card.querySelector('.te-note').value.trim()
+          }
+        };
+        b.disabled = true; b.textContent = 'Saving…';
+        api('moneyUpdateTxn', payload).then(function (d) {
+          state.money.status = d.status || state.money.status;
+          state.money.editingTxnId = null;
+          toast('Updated ✓');
+          moneyRenderHistory();
+          moneyRefreshSilently();
+        }).catch(function (e) { toast(e.message); b.disabled = false; b.textContent = 'Save'; });
+      });
+    });
   }
 
   function moneyRenderAccounts() {
