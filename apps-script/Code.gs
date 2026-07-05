@@ -1764,13 +1764,16 @@ function moneySaveMoneyProfile(username, patch) {
 
 function handleMoneyGetState(body) {
   var user = authUser(body);
-  if (moneyGetCategories(user.username).length === 0) moneySeedDefaults(user.username);
+  var cats = moneyGetCategories(user.username);
+  if (cats.length === 0) { moneySeedDefaults(user.username); cats = moneyGetCategories(user.username); }
   else moneyEnsureDefaults(user.username);
+  var accounts = moneyGetAccounts(user.username);
+  // One combined call: everything the Overview tab needs, computed from a single
+  // Txns-sheet read (avoids the old getState -> dashboard double round-trip).
+  var dash = moneyComputeDashboardAndStatus(user.username, moneyMonthStart(), todayStr(), cats, accounts);
   return {
-    accounts: moneyGetAccounts(user.username),
-    categories: moneyGetCategories(user.username),
-    budget: moneyGetBudget(user.username),
-    status: moneyComputeBudgetStatus(user.username)
+    accounts: accounts, categories: cats, budget: moneyGetBudget(user.username),
+    status: dash.status, dashboard: dash
   };
 }
 
@@ -1948,25 +1951,43 @@ function handleMoneyDashboard(body) {
   var user = authUser(body);
   var from = body.from ? formatDate(body.from) : moneyMonthStart();
   var to = body.to ? formatDate(body.to) : todayStr();
+  return moneyComputeDashboardAndStatus(user.username, from, to, moneyGetCategories(user.username), moneyGetAccounts(user.username));
+}
 
-  var cats = {}; moneyGetCategories(user.username).forEach(function (c) { cats[c.id] = c; });
-  var accts = {}; moneyGetAccounts(user.username).forEach(function (a) { accts[a.id] = a; });
+/* Single Txns-sheet read that produces BOTH the dashboard breakdown and the
+ * budget guard-ladder status, so a full Money load only needs one round-trip
+ * instead of two sequential ones (getState + dashboard). */
+function moneyComputeDashboardAndStatus(username, from, to, catList0, acctList0) {
+  var cats = {}; (catList0 || moneyGetCategories(username)).forEach(function (c) { cats[c.id] = c; });
+  var accts = {}; (acctList0 || moneyGetAccounts(username)).forEach(function (a) { accts[a.id] = a; });
+  var budget = moneyGetBudget(username);
+  var limit = budget.limit;
 
   var sheet = getSheet(MONEY_TXN_SHEET, MONEY_TXN_HEADERS);
   var values = sheet.getDataRange().getValues(); var idx = colIndex(MONEY_TXN_HEADERS);
 
-  var totalSpend = 0, totalIncome = 0;
+  var monthFrom = moneyMonthStart(), today = todayStr();
+  var totalSpend = 0, totalIncome = 0, count = 0;
   var byCategory = {}, byGroup = {}, byAccount = {}, byKind = { need: 0, want: 0, saving: 0 }, byMerchant = {};
-  var count = 0;
+  var monthSpent = 0, todaySpent = 0, monthPerCat = {};
+
   for (var i = 1; i < values.length; i++) {
     var r = values[i];
-    if (normalizeUsername(r[idx.username]) !== user.username) continue;
-    var d = formatDate(r[idx.date]); if (d < from || d > to) continue;
+    if (normalizeUsername(r[idx.username]) !== username) continue;
+    var d = formatDate(r[idx.date]);
     var type = String(r[idx.type] || 'expense'); var amt = Number(r[idx.amount]) || 0;
+    var cid = String(r[idx.categoryId] || '');
+
+    // Budget guard-ladder always looks at THIS calendar month, regardless of the requested range.
+    if (type === 'expense' && d >= monthFrom && d <= today) {
+      monthSpent += amt; if (d === today) todaySpent += amt;
+      monthPerCat[cid] = (monthPerCat[cid] || 0) + amt;
+    }
+
+    if (d < from || d > to) continue;
     if (type === 'transfer') continue;
     if (type === 'income') { totalIncome += amt; continue; }
     count++; totalSpend += amt;
-    var cid = String(r[idx.categoryId] || '');
     var cat = cats[cid] || { name: 'Uncategorised', group: 'Other', kind: 'want', color: '#6b7280', icon: '❓' };
     byCategory[cid] = (byCategory[cid] || 0) + amt;
     byGroup[cat.group] = (byGroup[cat.group] || 0) + amt;
@@ -1974,6 +1995,7 @@ function handleMoneyDashboard(body) {
     var aid = String(r[idx.accountId] || ''); byAccount[aid] = (byAccount[aid] || 0) + amt;
     var m = String(r[idx.merchant] || '').trim() || '(unknown)'; byMerchant[m] = (byMerchant[m] || 0) + amt;
   }
+
   function catList() {
     return Object.keys(byCategory).map(function (id) {
       var c = cats[id] || { name: 'Uncategorised', group: 'Other', kind: 'want', color: '#6b7280', icon: '❓' };
@@ -1993,11 +2015,36 @@ function handleMoneyDashboard(body) {
     return Object.keys(byMerchant).map(function (m) { return { merchant: m, total: money2(byMerchant[m]) }; })
       .sort(function (a, b) { return b.total - a.total; }).slice(0, 8);
   }
+
+  var now = new Date();
+  var daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  var dayOfMonth = now.getDate();
+  var daysLeft = Math.max(1, daysInMonth - dayOfMonth + 1);
+  var pct = limit > 0 ? monthSpent / limit : 0;
+  var level = 'none';
+  if (limit > 0) { if (pct >= 1) level = 'stop'; else if (pct >= 0.85) level = 'critical'; else if (pct >= 0.70) level = 'warn'; else level = 'ok'; }
+  var remaining = limit > 0 ? Math.max(0, limit - monthSpent) : 0;
+  var safePerDay = limit > 0 ? remaining / daysLeft : 0;
+  var pacedTarget = limit > 0 ? limit * (dayOfMonth / daysInMonth) : 0;
+  var projection = dayOfMonth > 0 ? (monthSpent / dayOfMonth) * daysInMonth : 0;
+  var catFlags = [];
+  Object.keys(budget.perCategory || {}).forEach(function (cid) {
+    var cap = Number(budget.perCategory[cid]) || 0; if (cap <= 0) return;
+    var used = monthPerCat[cid] || 0;
+    if (used >= cap * 0.85) catFlags.push({ categoryId: cid, used: money2(used), cap: cap, pct: money2(used / cap) });
+  });
+  var status = {
+    limit: money2(limit), spent: money2(monthSpent), remaining: money2(remaining), pct: money2(pct), level: level,
+    todaySpent: money2(todaySpent), daysLeft: daysLeft, daysInMonth: daysInMonth, dayOfMonth: dayOfMonth,
+    safePerDay: money2(safePerDay), pacedTarget: money2(pacedTarget), overPace: money2(monthSpent - pacedTarget),
+    projection: money2(projection), onTrack: limit > 0 ? projection <= limit : true, categoryFlags: catFlags
+  };
+
   return {
     range: { from: from, to: to }, totalSpend: money2(totalSpend), totalIncome: money2(totalIncome), txnCount: count,
     byCategory: catList(), byGroup: groupList(), byAccount: acctList(),
     byKind: { need: money2(byKind.need), want: money2(byKind.want), saving: money2(byKind.saving) },
-    topMerchants: merchList(), status: moneyComputeBudgetStatus(user.username)
+    topMerchants: merchList(), status: status
   };
 }
 
