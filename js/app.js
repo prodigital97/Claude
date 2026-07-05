@@ -609,6 +609,7 @@
     $('#day-close').addEventListener('click', function () { hide('#day-modal'); });
     $('#day-modal').addEventListener('click', function (e) { if (e.target.id === 'day-modal') hide('#day-modal'); });
     $('#day-save').addEventListener('click', saveDayEditor);
+    $('#de-notes').addEventListener('input', function () { if (state.editDay) state.editDay.notes = this.value; });
     document.querySelectorAll('[data-calc]').forEach(function (b) {
       b.addEventListener('click', function () { calcDispatch(b.dataset.calc); });
     });
@@ -1122,7 +1123,88 @@
     state.editDay.date = date;
     $('#day-modal-title').textContent = 'Day ' + dayNumber(state.user.startDate, date) + ' · ' + prettyDate(date);
     renderDayEditorBody();
+    dayEditorRenderMood(); dayEditorRenderGut(); dayEditorRenderHabits(); dayEditorRenderWork(); dayEditorRenderMetrics();
+    $('#de-notes').value = state.editDay.notes || '';
     show('#day-modal');
+  }
+  // ----- Day editor: mood / gut / habits / work log / metrics for ANY past day -----
+  // Each mutates state.editDay directly; nothing auto-saves — "Save this day" persists it all.
+  function dayEditorRenderMood() {
+    var box = $('#de-mood'); if (!box) return;
+    var d = state.editDay;
+    box.innerHTML = '';
+    MOODS.forEach(function (m) {
+      var on = d.mood === m.v;
+      var b = el('button', 'mood-btn' + (on ? ' sel' : ''));
+      b.style.setProperty('--mc', m.color);
+      b.innerHTML = '<span class="mood-emoji">' + m.emoji + '</span><span class="mood-label">' + m.label + '</span>';
+      b.addEventListener('click', function () { d.mood = (d.mood === m.v) ? 0 : m.v; dayEditorRenderMood(); });
+      box.appendChild(b);
+    });
+  }
+  function dayEditorRenderGut() {
+    var box = $('#de-gut'); if (!box) return;
+    var d = state.editDay;
+    box.innerHTML = '';
+    GUT.forEach(function (g) {
+      var on = d.gut === g.v;
+      var b = el('button', 'mood-btn' + (on ? ' sel' : ''));
+      b.style.setProperty('--mc', g.color);
+      b.innerHTML = '<span class="mood-emoji">' + g.emoji + '</span><span class="mood-label">' + g.label + '</span>';
+      b.addEventListener('click', function () { d.gut = (d.gut === g.v) ? 0 : g.v; dayEditorRenderGut(); });
+      box.appendChild(b);
+    });
+  }
+  function dayEditorRenderHabits() {
+    var box = $('#de-habits'); if (!box) return;
+    var d = state.editDay; if (!d.extra) d.extra = {};
+    var habits = (state.profile && state.profile.customTasks) || [];
+    box.innerHTML = '';
+    if (!habits.length) { box.innerHTML = '<p class="muted tiny">No habits set up yet — add them in the Habits app.</p>'; return; }
+    habits.forEach(function (h) {
+      var done = !!d.extra[h.id];
+      var row = el('div', 'task habit' + (done ? ' done' : ''));
+      row.innerHTML = '<div class="check">✓</div><div class="t-emoji">📌</div><div class="t-body"><div class="t-title">' + esc(h.name) + '</div></div>';
+      row.addEventListener('click', function () { d.extra[h.id] = !d.extra[h.id]; dayEditorRenderHabits(); });
+      box.appendChild(row);
+    });
+  }
+  function dayEditorRenderWork() {
+    var box = $('#de-work'); if (!box) return;
+    var d = state.editDay; if (!d.biz) d.biz = {};
+    var list = businesses();
+    box.innerHTML = '';
+    if (!list.length) { box.innerHTML = '<p class="muted tiny">No businesses set up yet — add them in Settings.</p>'; return; }
+    list.forEach(function (b) {
+      var e = d.biz[b.id] || { m: 0, t: 0 };
+      var card = el('div', 'biz-card');
+      card.innerHTML = '<div class="biz-top"><span class="biz-name">' + esc(b.name) + '</span></div>' +
+        '<div class="biz-row"><span class="biz-lbl">Time</span><input class="de-biz-min" type="number" inputmode="numeric" value="' + (Number(e.m) || 0) + '" /> <span class="muted tiny">min</span></div>' +
+        '<div class="biz-row"><span class="biz-lbl">Tasks</span><input class="de-biz-task" type="number" inputmode="numeric" value="' + (Number(e.t) || 0) + '" /></div>';
+      card.querySelector('.de-biz-min').addEventListener('input', function () {
+        d.biz[b.id] = Object.assign({ m: 0, t: 0 }, d.biz[b.id] || {}, { m: Number(this.value) || 0 });
+      });
+      card.querySelector('.de-biz-task').addEventListener('input', function () {
+        d.biz[b.id] = Object.assign({ m: 0, t: 0 }, d.biz[b.id] || {}, { t: Number(this.value) || 0 });
+      });
+      box.appendChild(card);
+    });
+  }
+  function dayEditorRenderMetrics() {
+    var box = $('#de-metrics'); if (!box) return;
+    var m = metricsOf(state.editDay);
+    box.innerHTML =
+      '<div class="manual-grid">' +
+      '<label>Steps<input id="de-steps" type="number" inputmode="numeric" value="' + (m.steps || '') + '" /></label>' +
+      '<label>Weight (kg)<input id="de-weight" type="number" inputmode="decimal" value="' + (m.weight || '') + '" /></label>' +
+      '<label>Sleep (h)<input id="de-sleep-h" type="number" inputmode="numeric" value="' + (m.sleepMin ? Math.floor(m.sleepMin / 60) : '') + '" /></label>' +
+      '<label>Sleep (m)<input id="de-sleep-m" type="number" inputmode="numeric" value="' + (m.sleepMin ? m.sleepMin % 60 : '') + '" /></label>' +
+      '</div>';
+    $('#de-steps').addEventListener('input', function () { m.steps = Number(this.value) || 0; });
+    $('#de-weight').addEventListener('input', function () { m.weight = Number(this.value) || 0; });
+    function updateSleep() { m.sleepMin = (Number($('#de-sleep-h').value) || 0) * 60 + (Number($('#de-sleep-m').value) || 0); }
+    $('#de-sleep-h').addEventListener('input', updateSleep);
+    $('#de-sleep-m').addEventListener('input', updateSleep);
   }
   function renderDayEditorBody() {
     var d = state.editDay;
