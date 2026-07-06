@@ -282,6 +282,10 @@
         throw new Error('This needs the online backend (Gemini) — not available in demo mode.');
       }
     }
+    if (action === 'googleAuthStatus') return { connected: false, email: '' };
+    if (action === 'googleAuthUrl' || action === 'googleAuthDisconnect' || action === 'googleSyncTasks' || action === 'googleSyncGoals' || action === 'googleSyncJourney') {
+      throw new Error('Google Calendar needs the online backend — not available in demo mode.');
+    }
 
     function myFasts() { return (d.fasts && d.fasts[me.username]) || []; }
     function activeFast() { return myFasts().filter(function (f) { return !f.endAt; })[0] || null; }
@@ -1005,6 +1009,52 @@
     });
   }
 
+  /* ----- Google Calendar (Settings card) ----- */
+  function renderGoogleCard() {
+    var box = $('#gcal-body'); if (!box) return;
+    box.innerHTML = '<p class="muted tiny">Checking connection…</p>';
+    api('googleAuthStatus', {}).then(function (d) {
+      state.gcal = d;
+      if (d.connected) {
+        box.innerHTML =
+          '<p class="muted tiny">Connected as <b>' + esc(d.email || 'your Google account') + '</b>. Tasks, Goals and your 75 Hard journey sync into a dedicated <b>ATLAS</b> calendar.</p>' +
+          '<div class="gcal-sync-row"><button class="btn" data-gsync="googleSyncTasks">Sync Tasks</button>' +
+          '<button class="btn" data-gsync="googleSyncGoals">Sync Goals</button>' +
+          '<button class="btn" data-gsync="googleSyncJourney">Sync Journey</button></div>' +
+          '<div id="gcal-result" class="muted tiny" style="margin-top:8px"></div>' +
+          '<button id="gcal-disconnect" class="btn danger block" style="margin-top:10px">Disconnect</button>';
+        box.querySelectorAll('[data-gsync]').forEach(function (b) {
+          b.addEventListener('click', function () { syncGoogle(b.getAttribute('data-gsync'), b); });
+        });
+        $('#gcal-disconnect').addEventListener('click', disconnectGoogle);
+      } else {
+        box.innerHTML =
+          '<p class="muted tiny">Connect your own Google account to sync Tasks, Goals and your 75 Hard journey into a dedicated ATLAS calendar on your phone.</p>' +
+          '<button id="gcal-connect" class="btn primary block">Connect Google Calendar</button>' +
+          '<button id="gcal-check" class="btn block" style="margin-top:8px">I\'ve connected — check status</button>';
+        $('#gcal-connect').addEventListener('click', connectGoogle);
+        $('#gcal-check').addEventListener('click', renderGoogleCard);
+      }
+    }).catch(function (e) { box.innerHTML = '<p class="muted tiny">' + esc(e.message) + '</p>'; });
+  }
+  function connectGoogle() {
+    api('googleAuthUrl', {}).then(function (d) {
+      window.open(d.url, '_blank');
+      toast('Approve access in the new tab, then come back and tap "check status"');
+    }).catch(function (e) { toast(e.message); });
+  }
+  function disconnectGoogle() {
+    if (!confirm('Disconnect Google Calendar? Existing calendar events are left as-is.')) return;
+    api('googleAuthDisconnect', {}).then(function () { toast('Disconnected'); renderGoogleCard(); }).catch(function (e) { toast(e.message); });
+  }
+  function syncGoogle(action, btn) {
+    var was = btn.textContent; btn.disabled = true; btn.textContent = 'Syncing…';
+    api(action, {}).then(function (d) {
+      $('#gcal-result').textContent = d.created + ' added, ' + d.updated + ' updated, ' + d.deleted + ' removed (' + d.total + ' total).';
+      toast('Synced ✓');
+    }).catch(function (e) { toast(e.message); }).then(function () { btn.disabled = false; btn.textContent = was; });
+  }
+
   function litres(ml) {
     return (ml / 1000).toFixed(1).replace(/\.0$/, '');
   }
@@ -1543,6 +1593,7 @@
     renderAccount();
     renderModeCard();
     renderBizSettings();
+    renderGoogleCard();
     var sd = fmt(parse(state.user.startDate));
     // Guard against a corrupted/ancient stored date (e.g. year 2000) — show today instead.
     if (sd < '2025-01-01' || sd > todayStr()) sd = todayStr();
@@ -3670,10 +3721,11 @@
         '<div class="card"><div class="eyebrow">New yearly goal</div>' +
           '<label>Goal<input id="gl-title" placeholder="e.g. Read 12 books" /></label>' +
           '<div class="manual-grid"><label>Status<select id="gl-status"><option value="on-track">On track</option><option value="behind">Behind</option><option value="done">Done</option></select></label>' +
-          '<label>Note<input id="gl-note" placeholder="optional" /></label></div>' +
+          '<label>Due date <span class="muted tiny">(optional)</span><input id="gl-due" type="date" /></label></div>' +
+          '<label>Note<input id="gl-note" placeholder="optional" /></label>' +
           '<button id="gl-add" class="btn primary block">Add goal</button></div>' +
-        (items.length ? items.map(function (x) { var st = String(x.status || 'on-track'); return '<div class="card"><div class="list-row"><b>' + esc(x.title) + '</b><button class="list-del" data-del="' + x.id + '">✕</button></div><span class="fc-badge ' + (st === 'behind' ? 'pend' : 'done') + '">' + esc(st.replace('-', ' ')) + '</span>' + (x.note ? '<div class="muted tiny" style="margin-top:6px">' + esc(x.note) + '</div>' : '') + '</div>'; }).join('') : '<p class="muted tiny" style="margin:10px 2px">No goals yet.</p>');
-      $('#gl-add').addEventListener('click', function () { var t = $('#gl-title').value.trim(); if (!t) { toast('Enter a goal'); return; } api('listAdd', { kind: 'goal', item: { title: t, status: $('#gl-status').value, note: $('#gl-note').value.trim() } }).then(function () { toast('Added ✓'); renderGoals(); }).catch(function (e) { toast(e.message); }); });
+        (items.length ? items.map(function (x) { var st = String(x.status || 'on-track'); return '<div class="card"><div class="list-row"><b>' + esc(x.title) + '</b><button class="list-del" data-del="' + x.id + '">✕</button></div><span class="fc-badge ' + (st === 'behind' ? 'pend' : 'done') + '">' + esc(st.replace('-', ' ')) + '</span>' + (x.due ? ' <span class="muted tiny">due ' + esc(x.due) + '</span>' : '') + (x.note ? '<div class="muted tiny" style="margin-top:6px">' + esc(x.note) + '</div>' : '') + '</div>'; }).join('') : '<p class="muted tiny" style="margin:10px 2px">No goals yet.</p>');
+      $('#gl-add').addEventListener('click', function () { var t = $('#gl-title').value.trim(); if (!t) { toast('Enter a goal'); return; } api('listAdd', { kind: 'goal', item: { title: t, status: $('#gl-status').value, note: $('#gl-note').value.trim(), due: $('#gl-due').value } }).then(function () { toast('Added ✓'); renderGoals(); }).catch(function (e) { toast(e.message); }); });
       box.querySelectorAll('[data-del]').forEach(function (b) { b.addEventListener('click', function () { api('listDelete', { kind: 'goal', id: b.getAttribute('data-del') }).then(renderGoals); }); });
     }).catch(function (e) { box.innerHTML = '<p class="muted tiny">' + esc(e.message) + '</p>'; });
   }
