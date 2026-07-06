@@ -133,50 +133,6 @@ Apps Script backend proxies it.
 Now searches hit FatSecret first and fall back to Open Food Facts automatically. If the properties aren't set,
 the app just uses Open Food Facts as before.
 
-## Optional: Google Calendar sync (Tasks, Goals, 75 Hard journey)
-
-**Settings → 📅 Google Calendar** lets each user connect **their own** Google account and sync:
-- **Tasks** with a due date
-- **Goals** with a due date
-- Your **75 Hard journey** — all 75 days as all-day events, ✅/❌ marked once the day has passed
-
-Every synced item lives in a dedicated **ATLAS** calendar created automatically on the user's Google
-account (so it never clutters their main calendar) and re-syncing only touches what actually changed.
-
-**Why this needs real Google sign-in (not just an API key):** Apps Script's own Calendar access only
-reaches the *one* Google account that deployed the script — it can't touch a friend's calendar. So each
-user goes through a genuine Google OAuth consent screen once, and the app stores *their* access token
-(refreshed automatically) to act on *their* calendar only.
-
-### One-time setup (~15 minutes, in Google Cloud Console)
-
-1. Go to <https://console.cloud.google.com>, create a project (or reuse one).
-2. **APIs & Services → Library** → search **Google Calendar API** → **Enable**.
-3. **APIs & Services → OAuth consent screen**:
-   - User type: **External**.
-   - Fill in the app name (e.g. "ATLAS"), your email, etc.
-   - Scopes: add `.../auth/calendar` and `.../auth/userinfo.email`.
-   - **Test users**: add your Google account email + every friend's Gmail who'll use this. (Keeping the
-     app in **Testing** status is fine for a personal/friends app — no Google review needed — but only
-     the emails you list here can connect, up to 100.)
-4. **APIs & Services → Credentials → Create Credentials → OAuth client ID**:
-   - Application type: **Web application**.
-   - **Authorized redirect URIs**: add your Apps Script **/exec** URL (the same one in `js/config.js`,
-     e.g. `https://script.google.com/macros/s/AKfy...../exec`).
-   - Copy the **Client ID** and **Client secret**.
-5. Back in your sheet's Apps Script editor → **Project Settings (⚙) → Script properties**, add:
-   - `GOOGLE_CLIENT_ID` = your client ID
-   - `GOOGLE_CLIENT_SECRET` = your client secret
-6. Paste the latest `Code.gs`, **Deploy → Manage deployments → ✏️ → New version → Deploy.**
-
-> If you ever create a brand-new deployment (not just a new version of the same one), its `/exec` URL
-> changes — update the redirect URI in Cloud Console and `js/config.js` to match.
-
-Now **Settings → Google Calendar → Connect** works: it opens Google's consent screen in a new tab: after
-approving, the tab shows a "connected" confirmation — go back to the app and tap **"I've connected — check
-status"**, then use the **Sync Tasks / Sync Goals / Sync Journey** buttons any time you want to push the
-latest data to Calendar.
-
 ## Optional: AI nutrition-label scanner (Gemini)
 
 The custom-food form has a **📷 Scan a nutrition label** option. By default it uses free on-device OCR
@@ -293,16 +249,6 @@ Bank/card accounts, the 50/30/20 category taxonomy (seeded automatically per use
 transaction (`type`: expense/income/transfer, `source`: manual/screenshot/sms). Budget limits live in the
 user's `Profiles` row under a `money` key (overall limit, per-category caps, income, savings goal) —
 no separate budget sheet needed.
-
-**`GoogleAuth`** (Google Calendar — auto-created on first connect)
-
-| username | accessToken | refreshToken | expiresAt | calendarId | email | connectedAt | updatedAt |
-|----------|-------------|--------------|-----------|------------|-------|--------------|-----------|
-
-One row per user who has connected Google Calendar. `accessToken` is refreshed automatically from
-`refreshToken` as needed; `calendarId` is that user's dedicated **ATLAS** calendar. Disconnecting deletes
-this row (and best-effort revokes the token with Google) but leaves any already-created calendar events
-alone.
 
 You can open the sheet any time to view, chart, or export your data — the app writes to it live.
 
