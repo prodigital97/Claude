@@ -3366,13 +3366,16 @@
     box.innerHTML = '<div class="card"><div class="eyebrow">Review · ' + list.length + ' found</div>' +
       list.map(function (t, i) {
         var cat = moneyCatById(t.categoryId);
+        var acctNote = t.accountId ? '<span class="muted tiny">✓ matched from label</span>' : (!state.money.accounts || !state.money.accounts.length ? '<span class="muted tiny">Add a bank/card in the Accounts tab to tag transactions</span>' : '');
         return '<div class="review-row" data-i="' + i + '">' +
           '<div class="manual-grid">' +
             '<label>Amount<input class="rv-amt" type="number" value="' + t.amount + '" /></label>' +
             '<label>Category<select class="rv-cat">' + moneyCatOptions(t.categoryId) + '</select></label>' +
             '<label>Date<input class="rv-date" type="date" value="' + t.date + '" /></label>' +
             '<label>Type<select class="rv-type"><option value="expense"' + (t.type === 'expense' ? ' selected' : '') + '>Expense</option><option value="income"' + (t.type === 'income' ? ' selected' : '') + '>Income</option><option value="transfer"' + (t.type === 'transfer' ? ' selected' : '') + '>Transfer</option></select></label>' +
-          '</div><label>Merchant<input class="rv-merch" value="' + esc(t.merchant || '') + '" /></label>' +
+            '<label>Account<select class="rv-acct">' + moneyAcctOptions(t.accountId) + '</select></label>' +
+          '</div>' + acctNote +
+          '<label>Merchant<input class="rv-merch" value="' + esc(t.merchant || '') + '" /></label>' +
           '<button class="list-del" data-rv-remove="' + i + '">✕ Skip this one</button></div>';
       }).join('') +
       '<button id="mo-review-save" class="btn primary block">Add all to Money</button></div>';
@@ -3386,6 +3389,7 @@
         txns.push({
           amount: Number(r.querySelector('.rv-amt').value) || 0, categoryId: r.querySelector('.rv-cat').value,
           date: r.querySelector('.rv-date').value, type: r.querySelector('.rv-type').value,
+          accountId: r.querySelector('.rv-acct').value,
           merchant: r.querySelector('.rv-merch').value.trim(), source: 'screenshot', clientId: 'rv_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)
         });
       });

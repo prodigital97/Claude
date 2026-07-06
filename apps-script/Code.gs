@@ -2108,6 +2108,8 @@ function moneyComputeBudgetStatus(username) {
 function moneyExtractionPrompt(username) {
   var cats = moneyGetCategories(username);
   var catList = cats.map(function (c) { return c.name + ' [' + c.group + ']'; }).join(', ');
+  var accts = moneyGetAccounts(username);
+  var acctList = accts.length ? accts.map(function (a) { return a.name + (a.last4 ? ' (••' + a.last4 + ')' : '') + (a.issuer ? ' — ' + a.issuer : ''); }).join(', ') : '(none saved yet)';
   var today = todayStr();
   return 'You extract expense transactions for a personal money tracker (India-first, currency ₹ INR by default).\n' +
     'TODAY\'S DATE IS ' + today + '. You do NOT otherwise know the current date — always use this value as "today".\n' +
@@ -2118,8 +2120,11 @@ function moneyExtractionPrompt(username) {
     '- Pet food/treats/litter/toys (Supertails, Heads Up For Tails, Drools, Whiskas, Pedigree) = "Pet Food & Supplies". Vet visits/grooming/vaccinations = "Vet & Pet Care".\n' +
     '- "amount" is a positive number, no currency symbol or commas.\n' +
     '- "date" in YYYY-MM-DD. Only use a date ACTUALLY PRINTED in the image. If only day+month printed, use ' + today.slice(0, 4) + ' as year. If no date is printed, return "' + today + '". NEVER invent a date, never a year before ' + today.slice(0, 4) + ' unless explicitly printed.\n' +
-    '- "merchant" = payee/shop/app name, cleaned up. "note" = anything useful (UPI ref, last 4 digits).\n' +
-    'Return ONLY JSON, no markdown: {"transactions":[{"date":"YYYY-MM-DD","amount":number,"type":"expense|income|transfer","category":string,"merchant":string,"note":string}]}. ' +
+    '- "merchant" = payee/shop/app name, cleaned up. "note" = anything useful (UPI ref).\n' +
+    '- Also look for which bank account or card was used to pay: a bank/wallet name (e.g. HDFC, SBI, ICICI, Paytm, PhonePe, GPay/Google Pay, a specific credit card issuer), and/or the last 3-4 digits of an account/card number (often shown as "XX1234", "••1234", "ending 1234", or after "a/c"/"card"). ' +
+    'Put the bank/issuer/wallet name in "accountHint" and any last-digits you find in "last4" (digits only, empty string if none visible). Leave both empty if genuinely not shown — never guess.\n' +
+    'The user\'s SAVED ACCOUNTS/CARDS are: ' + acctList + '. If "accountHint"/"last4" clearly matches one of these, still just report what you SAW on the label/receipt — matching to a saved account happens separately, you do not need to pick from this list yourself.\n' +
+    'Return ONLY JSON, no markdown: {"transactions":[{"date":"YYYY-MM-DD","amount":number,"type":"expense|income|transfer","category":string,"merchant":string,"note":string,"accountHint":string,"last4":string}]}. ' +
     'If nothing is a transaction, return {"transactions":[]}.';
 }
 function moneySanitizeDate(s) {
@@ -2131,16 +2136,39 @@ function moneySanitizeDate(s) {
   if (Number(d.slice(0, 4)) < Number(today.slice(0, 4)) - 1) return today;
   return d;
 }
+// Best-effort match of an AI-reported bank/card hint + last4 against the user's saved accounts.
+// Prefers an exact last4 match; falls back to a name/issuer substring match. Returns '' if unsure.
+function moneyMatchAccount(accts, hint, last4) {
+  hint = String(hint || '').trim().toLowerCase();
+  last4 = String(last4 || '').replace(/\D/g, '');
+  if (last4 && last4.length >= 3) {
+    var byDigits = accts.filter(function (a) { return a.last4 && a.last4 === last4.slice(-4); });
+    if (byDigits.length === 1) return byDigits[0].id;
+    if (byDigits.length > 1 && hint) {
+      var narrowed = byDigits.filter(function (a) { return (a.name + ' ' + a.issuer).toLowerCase().indexOf(hint) >= 0; });
+      if (narrowed.length) return narrowed[0].id;
+    }
+    if (byDigits.length >= 1) return byDigits[0].id;
+  }
+  if (hint) {
+    var byName = accts.filter(function (a) { return (a.name + ' ' + a.issuer).toLowerCase().indexOf(hint) >= 0 || hint.indexOf(a.name.toLowerCase()) >= 0; });
+    if (byName.length) return byName[0].id;
+  }
+  return '';
+}
 function moneyMapExtracted(username, list) {
   var cats = moneyGetCategories(username);
+  var accts = moneyGetAccounts(username);
   var byName = {}; cats.forEach(function (c) { byName[c.name.toLowerCase()] = c.id; });
   var miscId = (cats.filter(function (c) { return c.name === 'Miscellaneous'; })[0] || cats[0] || {}).id || '';
   return (list || []).map(function (t) {
     var cid = byName[String(t.category || '').toLowerCase()] || miscId;
+    var accountId = moneyMatchAccount(accts, t.accountHint, t.last4);
     return {
       date: moneySanitizeDate(t.date), amount: Math.abs(Number(t.amount) || 0),
       type: ['expense', 'income', 'transfer'].indexOf(t.type) >= 0 ? t.type : 'expense',
-      categoryId: cid, category: t.category || '', merchant: String(t.merchant || '').slice(0, 120), note: String(t.note || '').slice(0, 300)
+      categoryId: cid, category: t.category || '', accountId: accountId,
+      merchant: String(t.merchant || '').slice(0, 120), note: String(t.note || '').slice(0, 300)
     };
   }).filter(function (t) { return t.amount > 0; });
 }
@@ -2199,7 +2227,18 @@ function moneyQuickParseSms(text) {
   var date = todayStr();
   var dM = t.match(/\bon\s+(\d{4}-\d{2}-\d{2})/i) || t.match(/\bon\s+(\d{1,2}[\/\-][A-Za-z]{3}[\/\-]?\d{0,4})/i) || t.match(/\bon\s+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i);
   if (dM) { var nd = formatDate(dM[1]); if (/^\d{4}-\d{2}-\d{2}$/.test(nd)) date = nd; }
-  return { amount: amount, type: type, merchant: merch, category: moneyGuessCategory(t + ' ' + merch), note: t.slice(0, 200), date: date };
+  var last4 = '';
+  var l4M = t.match(/[x*]{2,}\s*(\d{3,4})\b/i) || t.match(/\b(?:a\/c|acc(?:ount)?|card)\D{0,15}(\d{3,4})\b/i) || t.match(/ending\s*(?:in|with)?\s*(\d{3,4})\b/i);
+  if (l4M) last4 = l4M[1];
+  return { amount: amount, type: type, merchant: merch, category: moneyGuessCategory(t + ' ' + merch), note: t.slice(0, 200), date: date, accountHint: moneyGuessBank(t), last4: last4 };
+}
+function moneyGuessBank(s) {
+  s = String(s).toLowerCase();
+  var banks = ['hdfc', 'icici', 'sbi', 'axis', 'kotak', 'yes bank', 'indusind', 'idfc', 'pnb', 'canara',
+    'bank of baroda', 'union bank', 'bank of india', 'federal bank', 'rbl', 'au bank', 'paytm', 'phonepe',
+    'google pay', 'gpay', 'amazon pay', 'bhim'];
+  for (var i = 0; i < banks.length; i++) if (s.indexOf(banks[i]) >= 0) return banks[i];
+  return '';
 }
 function moneyGuessCategory(s) {
   s = String(s).toLowerCase();
