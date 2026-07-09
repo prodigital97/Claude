@@ -723,6 +723,7 @@
     if (name === 'gym') renderGym();
     if (name === 'breathe') renderBreathe();
     if (name === 'detox') renderDetox();
+    if (name === 'meds') renderMeds();
     if (name === 'money') renderMoney();
     if (name === 'subs') renderSubs();
     if (name === 'savings') renderSavings();
@@ -3435,6 +3436,7 @@
     { id: 'sleep',     name: 'Sleep',     icon: '😴', pillar: 'body', open: function () { switchView('sleep'); } },
     { id: 'body',      name: 'Body',      icon: '⚖️', pillar: 'body', open: function () { switchView('body'); } },
     { id: 'gym',       name: 'Gym Log',   icon: '🏋️', pillar: 'body', open: function () { switchView('gym'); } },
+    { id: 'meds',      name: 'Meds',      icon: '💊', pillar: 'body', open: function () { switchView('meds'); } },
     { id: 'calc',      name: 'Calc',      icon: '🧮', pillar: 'body', open: function () { switchView('calc'); } },
     { id: 'journal',   name: 'Journal',   icon: '📓', pillar: 'mind', open: function () { switchView('journal'); } },
     { id: 'reading',   name: 'Reading',   icon: '📖', pillar: 'mind', open: function () { switchView('reading'); } },
@@ -4142,6 +4144,145 @@
       });
     }
     metricTrend('detoxMin', '#detox-trend', 'm');
+  }
+
+  /* ================= Meds — medicines & supplements (Body) ================= */
+  var MED_SLOTS = [
+    { id: 'morning',   label: 'Morning',   emoji: '☀️' },
+    { id: 'afternoon', label: 'Afternoon', emoji: '🌤️' },
+    { id: 'evening',   label: 'Evening',   emoji: '🌇' },
+    { id: 'night',     label: 'Night',     emoji: '🌙' }
+  ];
+  function medsList() { return (state.profile && state.profile.meds) || []; }
+  function medTakenMap(d) { var m = metricsOf(d); if (!m.meds) m.meds = {}; return m.meds; }
+  function medDoseCount(list) {
+    return list.reduce(function (s, md) { return s + ((md.times || []).length || 0); }, 0);
+  }
+  function medTakenCount(d, list) {
+    var taken = (d.metrics && d.metrics.meds) || {};
+    var n = 0;
+    list.forEach(function (md) {
+      (md.times || []).forEach(function (t) { if (taken[md.id + '@' + t]) n++; });
+    });
+    return n;
+  }
+  // Adherence color for a date: green = all doses, amber = some, null = none logged.
+  function medDayColor(date) {
+    var l = logFor(date); if (!l) return null;
+    var list = medsList(); if (!list.length) return null;
+    var taken = medTakenCount(l, list);
+    if (!taken) return null;
+    return taken >= medDoseCount(list) ? 'var(--green)' : 'var(--amber)';
+  }
+  function medStreak() {
+    var list = medsList(); if (!list.length || !medDoseCount(list)) return 0;
+    var d = todayStr();
+    // an unfinished today shouldn't zero the streak
+    var l = logFor(d);
+    if (!l || medTakenCount(l, list) < medDoseCount(list)) d = addDays(d, -1);
+    var s = 0;
+    while (true) {
+      var lg = logFor(d);
+      if (!lg || medTakenCount(lg, list) < medDoseCount(list)) break;
+      s++; d = addDays(d, -1);
+    }
+    return s;
+  }
+  function renderMeds() {
+    var box = $('#meds-app'); if (!box) return;
+    var day = appDay(), taken = medTakenMap(day), list = medsList();
+    var total = medDoseCount(list), done = medTakenCount(day, list);
+    var pct = pctOf(done, total);
+    var html = dayBarHtml();
+
+    if (list.length) {
+      html +=
+        '<div class="card hero-row' + (total && done >= total ? ' goal-hit' : '') + '">' +
+          ringMini(pct, 'var(--body-c)', 92, '<b>' + done + '/' + total + '</b>') +
+          '<div class="hero-meta"><div class="metric-big"><b>' + (total && done >= total ? 'All taken 🎉' : (total - done) + ' dose' + (total - done === 1 ? '' : 's') + ' left') + '</b></div>' +
+          '<div class="muted tiny">💊 ' + list.length + ' med' + (list.length === 1 ? '' : 's') + ' · 🔥 ' + medStreak() + '-day streak</div></div></div>';
+      MED_SLOTS.forEach(function (slot) {
+        var rows = list.filter(function (md) { return (md.times || []).indexOf(slot.id) >= 0; });
+        if (!rows.length) return;
+        html += '<div class="extra-head">' + slot.emoji + ' ' + slot.label + '</div><div class="tasklist">' +
+          rows.map(function (md) {
+            var key = md.id + '@' + slot.id;
+            var on = !!taken[key];
+            return '<div class="task med' + (on ? ' done' : '') + '" data-med="' + key + '">' +
+              '<div class="check">✓</div><div class="t-emoji">💊</div>' +
+              '<div class="t-body"><div class="t-title">' + esc(md.name) + '</div>' +
+              (md.dose ? '<div class="t-sub">' + esc(md.dose) + '</div>' : '') + '</div></div>';
+          }).join('') + '</div>';
+      });
+    } else {
+      html += '<div class="card"><p class="muted tiny" style="margin:0">No meds yet — add your medicines or supplements below, pick when to take them, and tick them off each day.</p></div>';
+    }
+
+    // Adherence calendar (doubles as the date picker)
+    if (list.length) {
+      html += '<div class="card"><h3>Adherence</h3><p class="muted tiny" style="margin:0 0 8px">Tap a day to view or edit it.</p><div id="meds-cal"></div>' +
+        '<div class="gt-legend" style="margin-top:10px">' +
+          '<span class="gt-key"><i style="background:var(--green)"></i>All taken</span>' +
+          '<span class="gt-key"><i style="background:var(--amber)"></i>Partial</span>' +
+        '</div></div>';
+    }
+
+    // Manage meds
+    html += '<div class="card"><div class="eyebrow" style="margin-bottom:6px">My meds</div><div id="meds-manage">' +
+      list.map(function (md) {
+        var slots = (md.times || []).map(function (t) {
+          var s = MED_SLOTS.filter(function (x) { return x.id === t; })[0];
+          return s ? s.emoji : '';
+        }).join(' ');
+        return '<div class="list-row"><div><b>' + esc(md.name) + '</b>' +
+          '<div class="muted tiny">' + (md.dose ? esc(md.dose) + ' · ' : '') + slots + '</div></div>' +
+          '<button class="list-del" data-medrm="' + md.id + '">✕</button></div>';
+      }).join('') + '</div>' +
+      '<div class="manual-grid" style="margin-top:10px">' +
+        '<label>Name<input id="med-name" placeholder="e.g. Vitamin D3" maxlength="40" /></label>' +
+        '<label>Dose <span class="muted tiny">(optional)</span><input id="med-dose" placeholder="e.g. 1 tab · after food" maxlength="40" /></label>' +
+      '</div>' +
+      '<div class="med-slot-picker" id="med-slots">' + MED_SLOTS.map(function (s) {
+        return '<button type="button" class="med-slot' + (s.id === 'morning' ? ' on' : '') + '" data-slot="' + s.id + '">' + s.emoji + ' ' + s.label + '</button>';
+      }).join('') + '</div>' +
+      '<button id="med-add" class="btn primary block">Add med</button></div>';
+
+    box.innerHTML = html;
+    bindDayBar(box, renderMeds);
+
+    // Tick off a dose
+    box.querySelectorAll('[data-med]').forEach(function (row) {
+      row.addEventListener('click', function () {
+        var key = row.getAttribute('data-med');
+        taken[key] = !taken[key];
+        queueSaveDay(day);
+        if (taken[key] && medTakenCount(day, list) >= total && total > 1) toast('All doses done today 💊✨');
+        renderMeds();
+      });
+    });
+    // Adherence calendar
+    var cal = $('#meds-cal');
+    if (cal) buildDayPicker(cal, ymOf(appDate()), renderMeds, medDayColor);
+    // Manage: slot chips toggle
+    box.querySelectorAll('[data-slot]').forEach(function (b) {
+      b.addEventListener('click', function () { b.classList.toggle('on'); });
+    });
+    $('#med-add').addEventListener('click', function () {
+      var name = $('#med-name').value.trim();
+      if (!name) { toast('Give the med a name'); return; }
+      var times = [];
+      box.querySelectorAll('[data-slot].on').forEach(function (b) { times.push(b.getAttribute('data-slot')); });
+      if (!times.length) { toast('Pick at least one time of day'); return; }
+      var next = medsList().slice();
+      next.push({ id: 'md_' + Date.now().toString(36), name: name.slice(0, 40), dose: $('#med-dose').value.trim().slice(0, 40), times: times });
+      saveProfileKey('meds', next, renderMeds);
+    });
+    box.querySelectorAll('[data-medrm]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (!confirm('Remove this med? Past taken-history stays in your logs.')) return;
+        saveProfileKey('meds', medsList().filter(function (md) { return md.id !== b.getAttribute('data-medrm'); }), renderMeds);
+      });
+    });
   }
 
   /* ----- Money / Subs / Savings / Tasks / Goals (generic list apps) ----- */

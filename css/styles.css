@@ -952,3 +952,13 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 /* Gut options can be 7 wide — wrap into a grid */
 .mood-buttons.wrap { display: grid; grid-template-columns: repeat(4, 1fr); }
 .mood-buttons.wrap .mood-btn { padding: 10px 2px; }
+
+/* Meds — dose rows + slot picker */
+.task.med.done { background: linear-gradient(135deg, rgba(255,106,61,.12), var(--card)); border-color: color-mix(in srgb, var(--body-c) 45%, transparent); }
+.task.med.done .check { background: var(--body-c); border-color: var(--body-c); color: #2b1005; }
+.med-slot-picker { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 10px 0; }
+.med-slot {
+  border: 1px solid var(--line); background: var(--bg-soft); color: var(--muted);
+  border-radius: 12px; padding: 10px 6px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.med-slot.on { border-color: var(--body-c); color: var(--text); background: color-mix(in srgb, var(--body-c) 14%, var(--bg-soft)); }
