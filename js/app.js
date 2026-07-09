@@ -47,7 +47,7 @@
     editingFoodId: null,
     activeFast: null,
     fastTimer: null,
-    journeyWindow: 75,
+    calMonth: null,          // 'YYYY-MM' shown in the Journey calendar
     editDay: null,
     saveTimer: null
   };
@@ -603,13 +603,22 @@
     $('#acct-pw-btn').addEventListener('click', acctChangePassword);
     $('#save-startdate').addEventListener('click', saveStartDate);
     $('#delete-account').addEventListener('click', deleteAccount);
-    // Journey window buttons + day editor modal
-    document.querySelectorAll('#journey-windows [data-w]').forEach(function (b) {
-      b.addEventListener('click', function () {
-        state.journeyWindow = +b.dataset.w;
-        document.querySelectorAll('#journey-windows [data-w]').forEach(function (x) { x.classList.toggle('active', x === b); });
-        renderCalendar();
-      });
+    // Journey month navigation + Life Score history chips
+    $('#cal-prev').addEventListener('click', function () {
+      state.calMonth = ymShift(state.calMonth || ymOf(todayStr()), -1);
+      renderCalendar();
+    });
+    $('#cal-next').addEventListener('click', function () {
+      state.calMonth = ymShift(state.calMonth || ymOf(todayStr()), 1);
+      renderCalendar();
+    });
+    $('#month-report').addEventListener('click', function (e) {
+      var chip = e.target.closest('[data-ym]');
+      if (chip) { state.calMonth = chip.getAttribute('data-ym'); renderCalendar(); }
+    });
+    $('#home-score').addEventListener('click', function () {
+      state.calMonth = ymOf(todayStr());
+      switchView('calendar');
     });
     $('#day-close').addEventListener('click', function () { hide('#day-modal'); });
     $('#day-modal').addEventListener('click', function (e) { if (e.target.id === 'day-modal') hide('#day-modal'); });
@@ -728,13 +737,17 @@
     $('#hdr-name').textContent = firstName(state.user.displayName);
     var cd = state.user.currentDay;
     var pill = $('.day-pill');
-    if (cd > LEN + 30 || cd < 0) {
+    if (cd > 2000 || cd < 0) {
       // Start date is clearly wrong (e.g. the year-2000 bug) — nudge to fix it.
       pill.innerHTML = '⚠️ Set start date';
       pill.style.cursor = 'pointer';
       pill.onclick = function () { switchView('settings'); };
-    } else {
+    } else if (cd <= LEN) {
       pill.innerHTML = 'Day <span id="hdr-day">' + Math.max(1, cd) + '</span> <span class="muted">/ ' + LEN + '</span>';
+      pill.onclick = null; pill.style.cursor = '';
+    } else {
+      // Life mode — the 75 are conquered, the counter keeps climbing.
+      pill.innerHTML = 'Day <span id="hdr-day">' + cd + '</span> <span class="muted">🏆</span>';
       pill.onclick = null; pill.style.cursor = '';
     }
     renderToday();
@@ -1069,29 +1082,74 @@
     });
   }
 
-  /* ---------------- Calendar ---------------- */
+  /* ---------------- Calendar (real month grid) ---------------- */
   function shortDate(date) {
     return parse(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
+  function ymOf(dateStr) { return String(dateStr).slice(0, 7); }
+  function ymShift(ym, n) {
+    var p = ym.split('-');
+    var d = new Date(+p[0], +p[1] - 1 + n, 1);
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1);
+  }
+  function ymLabel(ym) {
+    var p = ym.split('-');
+    return new Date(+p[0], +p[1] - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  }
+  function ymShort(ym) {
+    var p = ym.split('-');
+    return new Date(+p[0], +p[1] - 1, 1).toLocaleDateString(undefined, { month: 'short' });
+  }
+  function daysInYm(ym) { var p = ym.split('-'); return new Date(+p[0], +p[1], 0).getDate(); }
+  // Dates of `ym` between the user's start date and today (the scoreable days).
+  function monthElapsedDates(ym) {
+    var start = fmt(parse(state.user.startDate)), today = todayStr();
+    var from = ym + '-01', to = ym + '-' + pad(daysInYm(ym));
+    if (from < start) from = start;
+    if (to > today) to = today;
+    var out = [];
+    for (var d = from; d <= to; d = addDays(d, 1)) out.push(d);
+    return out;
+  }
 
   function renderCalendar() {
-    renderJourneySummary();
-    buildCalendar('#calendar-grid');
+    if (!state.calMonth) state.calMonth = ymOf(todayStr());
+    var ym = state.calMonth;
+    var startYm = ymOf(fmt(parse(state.user.startDate)));
+    $('#cal-month-label').textContent = ymLabel(ym);
+    $('#cal-prev').disabled = ym <= startYm;
+    $('#cal-next').disabled = ym >= ymOf(todayStr());
+    renderJourneySummary(ym);
+    buildMonthCalendar('#calendar-grid', ym);
+    renderMonthReport('#month-report', ym);
   }
-  function buildCalendar(gridSel) {
+
+  function buildMonthCalendar(gridSel, ym) {
     var grid = $(gridSel); if (!grid) return;
     grid.innerHTML = '';
     var today = todayStr();
-    for (var n = 1; n <= LEN; n++) {
-      var date = addDays(state.user.startDate, n - 1);
-      var log = logFor(date);
-      var met = log && goalMet(log);
-      var attempted = log ? completedCount(log) : 0;
+    var start = fmt(parse(state.user.startDate));
+    var p = ym.split('-');
+    var first = new Date(+p[0], +p[1] - 1, 1);
+    var lead = (first.getDay() + 6) % 7; // Monday-first offset
+    ['M', 'T', 'W', 'T', 'F', 'S', 'S'].forEach(function (w) {
+      var h = el('div', 'cal-dow mono'); h.textContent = w; grid.appendChild(h);
+    });
+    for (var b = 0; b < lead; b++) grid.appendChild(el('div', 'cal-blank'));
+    var days = daysInYm(ym);
+    for (var day = 1; day <= days; day++) {
+      var date = ym + '-' + pad(day);
+      var dn = dayNumber(start, date);
       var cell = el('div', 'cal-cell');
-      cell.innerHTML = '<span class="cc-num">' + n + '</span><span class="cc-date">' + shortDate(date) + '</span>';
-      if (met) cell.classList.add('done');
-      else if (date < today && attempted > 0) cell.classList.add('partial');
-      else if (date < today) cell.classList.add('miss');
+      cell.innerHTML = '<span class="cc-num">' + day + '</span>' +
+        '<span class="cc-date">' + (dn >= 1 && date <= today ? 'd' + dn : '') + '</span>';
+      if (date < start) cell.classList.add('pre');
+      else if (date <= today) {
+        var log = logFor(date);
+        if (log && goalMet(log)) cell.classList.add('done');
+        else if (log && completedCount(log) > 0) cell.classList.add('partial');
+        else if (date < today) cell.classList.add('miss');
+      }
       if (date === today) cell.classList.add('today');
       if (date <= today) {
         cell.classList.add('editable');
@@ -1101,25 +1159,177 @@
     }
   }
 
-  function renderJourneySummary() {
+  function renderJourneySummary(ym) {
     var box = $('#journey-summary'); if (!box) return;
-    var win = state.journeyWindow || LEN;
-    var today = todayStr();
-    var curDay = Math.max(1, state.user.currentDay);
-    var n = Math.min(win, curDay); // only count elapsed days
+    var dates = monthElapsedDates(ym);
     var completed = 0, taskHits = 0, taskTotal = 0;
-    for (var i = 0; i < n; i++) {
-      var date = addDays(state.user.startDate, curDay - 1 - i);
-      if (date > today || date < state.user.startDate) continue;
+    dates.forEach(function (date) {
       var log = logFor(date);
       if (log && goalMet(log)) completed++;
       taskTotal += TOTAL_ITEMS;
       if (log) taskHits += completedCount(log);
-    }
+    });
     var rate = taskTotal ? Math.round((taskHits / taskTotal) * 100) : 0;
     box.innerHTML =
-      '<div class="js-stat"><b>' + completed + ' / ' + n + '</b><span>days complete</span></div>' +
+      '<div class="js-stat"><b>' + completed + ' / ' + dates.length + '</b><span>days complete</span></div>' +
       '<div class="js-stat"><b>' + rate + '%</b><span>tasks done</span></div>';
+  }
+
+  /* ---------------- Life Score — monthly pillar grades ---------------- */
+  // Per-day sub-scores (0–100). A day with no log scores 0 — discipline counts.
+  function dayPillarScores(d) {
+    d = d || {};
+    var waterPct = pctOf(Number(d.waterMl) || 0, WATER_GOAL);
+    var moves = ((d.workout1 ? 1 : 0) + (d.outdoor ? 1 : 0) + (d.diet ? 1 : 0)) / 3 * 100;
+    var body = Math.round(moves * 0.7 + waterPct * 0.3);
+    // MIND — reading + mood (journalling adds a bonus)
+    var mind = d.mood
+      ? Math.round((d.reading ? 100 : 0) * 0.6 + (d.mood / 5 * 100) * 0.4)
+      : (d.reading ? 100 : 0);
+    if (d.notes && String(d.notes).trim()) mind = Math.min(100, mind + 10);
+    // LIFE — discipline (photo + no alcohol) blended with habits + work
+    var parts = [((d.photo ? 1 : 0) + (d.noAlcohol ? 1 : 0)) / 2 * 100];
+    var habits = (state.profile && state.profile.customTasks) || [];
+    if (habits.length) parts.push(pctOf(habits.filter(function (h) { return d.extra && d.extra[h.id]; }).length, habits.length));
+    var bizList = businesses();
+    if (bizList.length) {
+      var worked = 0;
+      bizList.forEach(function (b) { var e = (d.biz || {})[b.id] || {}; if ((Number(e.m) || 0) > 0 || (Number(e.t) || 0) > 0) worked++; });
+      parts.push(pctOf(worked, bizList.length));
+    }
+    var life = Math.round(parts.reduce(function (a, b) { return a + b; }, 0) / parts.length);
+    return { body: body, mind: mind, life: life };
+  }
+
+  // Month aggregates from the day logs (money is added separately, async).
+  function monthScores(ym) {
+    var dates = monthElapsedDates(ym);
+    if (!dates.length) return null;
+    var b = 0, m = 0, l = 0;
+    dates.forEach(function (dt) {
+      var s = dayPillarScores(logFor(dt));
+      b += s.body; m += s.mind; l += s.life;
+    });
+    var n = dates.length;
+    return { ym: ym, days: n, body: Math.round(b / n), mind: Math.round(m / n), life: Math.round(l / n) };
+  }
+
+  // Money score per month: spend pace vs budget, fetched once per month & cached.
+  var moneyMonthCache = {};   // ym -> { spent, limit } | 'loading'
+  function ensureMoneyMonth(ym, onReady) {
+    var c = moneyMonthCache[ym];
+    if (c && c !== 'loading') return c;
+    if (c === 'loading' || OFFLINE) return null;
+    moneyMonthCache[ym] = 'loading';
+    api('moneyDashboard', { from: ym + '-01', to: ym + '-' + pad(daysInYm(ym)) }).then(function (res) {
+      moneyMonthCache[ym] = {
+        spent: Number(res && res.totalSpend) || 0,
+        limit: Number(res && res.status && res.status.limit) || 0
+      };
+      if (onReady) onReady();
+    }).catch(function () {
+      moneyMonthCache[ym] = { spent: 0, limit: 0 };
+      if (onReady) onReady();
+    });
+    return null;
+  }
+  // → number (scored), null (no budget set), undefined (still loading)
+  function moneyScoreFor(ym) {
+    var c = moneyMonthCache[ym];
+    if (!c || c === 'loading') return OFFLINE ? null : undefined;
+    if (!c.limit) return null;
+    var frac = ym === ymOf(todayStr()) ? Math.max(1, Number(todayStr().slice(8, 10))) / daysInYm(ym) : 1;
+    var pace = c.limit * frac;
+    if (!pace) return null;
+    // ≤90% of pace = perfect 100; hits 0 at 2× pace.
+    return Math.max(0, Math.min(100, Math.round(100 * (2 - c.spent / pace) / 1.1)));
+  }
+
+  function gradeOf(v) {
+    if (typeof v !== 'number') return { g: '—', cls: 'na' };
+    if (v >= 90) return { g: 'S', cls: 's' };
+    if (v >= 80) return { g: 'A', cls: 'a' };
+    if (v >= 70) return { g: 'B', cls: 'b' };
+    if (v >= 55) return { g: 'C', cls: 'c' };
+    if (v >= 40) return { g: 'D', cls: 'd' };
+    return { g: 'F', cls: 'f' };
+  }
+  function monthOverall(ym) {
+    var sc = monthScores(ym);
+    if (!sc) return null;
+    var vals = [sc.body, sc.mind, sc.life];
+    var mv = moneyScoreFor(ym);
+    if (typeof mv === 'number') vals.push(mv);
+    return Math.round(vals.reduce(function (a, b) { return a + b; }, 0) / vals.length);
+  }
+  function verdictLine(overall, ym) {
+    var now = ym === ymOf(todayStr());
+    if (overall == null) return '';
+    var t = overall >= 90 ? 'Legendary. All pillars firing 👑'
+      : overall >= 80 ? 'Strong month — the machine is running 🔥'
+      : overall >= 70 ? 'Solid. Tighten the weakest pillar to level up.'
+      : overall >= 55 ? 'Coasting. Discipline beats motivation — lock in.'
+      : overall >= 40 ? 'Slipping. Pick ONE pillar and win it this week.'
+      : 'Rock bottom is a foundation. Restart today 💪';
+    return now ? t + ' (scored on days so far)' : t;
+  }
+
+  function renderMonthReport(sel, ym) {
+    var box = $(sel); if (!box) return;
+    var sc = monthScores(ym);
+    if (!sc) { box.innerHTML = ''; box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    ensureMoneyMonth(ym, function () {
+      // Re-render whichever surface is on screen once money data lands.
+      if (!$('#view-calendar').classList.contains('hidden')) renderCalendar();
+      if (!$('#view-home').classList.contains('hidden')) renderHome();
+    });
+    var money = moneyScoreFor(ym);
+    var pillars = [
+      { name: 'Body', v: sc.body, c: 'var(--body-c)' },
+      { name: 'Mind', v: sc.mind, c: 'var(--mind-c)' },
+      { name: 'Money', v: money, c: 'var(--money-c)' },
+      { name: 'Life', v: sc.life, c: 'var(--life-c)' }
+    ];
+    var overall = monthOverall(ym);
+    var og = gradeOf(overall);
+    box.innerHTML =
+      '<div class="mr-head">' +
+        '<div><span class="eyebrow">Life Score · ' + ymLabel(ym) + '</span>' +
+        '<div class="mr-sub muted tiny">' + sc.days + ' day' + (sc.days === 1 ? '' : 's') + ' scored · missed days count as 0</div></div>' +
+        '<div class="grade-badge g-' + og.cls + '">' + og.g + '</div>' +
+      '</div>' +
+      pillars.map(function (p) {
+        var loading = p.v === undefined;
+        var g = gradeOf(p.v);
+        var w = typeof p.v === 'number' ? p.v : 0;
+        return '<div class="mr-row">' +
+          '<span class="mr-name">' + p.name + '</span>' +
+          '<div class="mr-bar"><span style="width:' + w + '%;background:' + p.c + '"></span></div>' +
+          '<span class="mr-val mono">' + (loading ? '…' : (p.v == null ? '—' : p.v)) + '</span>' +
+          '<span class="grade-chip g-' + (loading ? 'na' : g.cls) + '">' + (loading ? '…' : g.g) + '</span>' +
+        '</div>';
+      }).join('') +
+      (pillars[2].v === null && !OFFLINE ? '<div class="muted tiny" style="margin-top:6px">Set a monthly budget in Money to score the 💸 pillar.</div>' : '') +
+      '<div class="mr-note muted tiny">' + verdictLine(overall, ym) + '</div>' +
+      monthHistoryHtml(ym);
+  }
+
+  // Grade chips for every month since the journey started — the "game map".
+  function monthHistoryHtml(activeYm) {
+    var startYm = ymOf(fmt(parse(state.user.startDate)));
+    var cur = ymOf(todayStr());
+    var months = [], ym = startYm, guard = 0;
+    while (ym <= cur && guard++ < 36) { months.push(ym); ym = ymShift(ym, 1); }
+    if (months.length <= 1) return '';
+    return '<div class="mr-hist">' + months.map(function (m) {
+      ensureMoneyMonth(m, function () {
+        if (!$('#view-calendar').classList.contains('hidden')) renderCalendar();
+      });
+      var g = gradeOf(monthOverall(m));
+      return '<button type="button" class="mr-hchip' + (m === activeYm ? ' active' : '') + '" data-ym="' + m + '">' +
+        ymShort(m) + ' <b class="gtext-' + g.cls + '">' + g.g + '</b></button>';
+    }).join('') + '</div>';
   }
 
   /* ----- Day editor (edit any date from Journey) ----- */
@@ -1306,10 +1516,10 @@
     var grid = $('#stats-grid');
     grid.innerHTML = '';
     [
-      ['Current day', Math.min(curDay, LEN) + ' / ' + LEN],
+      ['Current day', curDay <= LEN ? curDay + ' / ' + LEN : curDay],
       ['Streak', streakOf(logs) + '🔥'],
       ['Days completed', done],
-      ['Days left', Math.max(0, LEN - Math.min(curDay, LEN))],
+      [curDay > LEN ? '75 Hard' : 'Days left', curDay > LEN ? 'Done 🏆' : Math.max(0, LEN - curDay)],
       ['Avg fast', vals.avgFast],
       ['Avg calories / day', vals.avgCal],
       ['Avg protein / day', vals.avgProtein || '…'],
@@ -1451,7 +1661,7 @@
             '<div class="fc-rank">' + medal + '</div>' +
             '<div class="fc-name">' + esc(u.displayName) + (mine ? ' <span class="muted">(you)</span>' : '') +
               (u.mode === 'soft' ? ' <span class="soft-tag">SOFT</span>' : '') +
-              '<small>Day ' + Math.min(u.currentDay, LEN) + ' · 🔥 ' + u.streak + ' · ' + u.completedDays + ' days done</small></div>' +
+              '<small>Day ' + u.currentDay + (u.currentDay > LEN ? ' 🏆' : '') + ' · 🔥 ' + u.streak + ' · ' + u.completedDays + ' days done</small></div>' +
             badge +
           '</div>' +
           '<div class="fc-bar"><span style="width:' + pct + '%"></span></div>' +
@@ -2984,7 +3194,7 @@
     var d = state.today || {};
     var cd = Math.max(1, state.user.currentDay);
     var chip = $('#home-daychip');
-    if (chip) chip.innerHTML = 'DAY ' + Math.min(cd, LEN) + ' · ' + streakOf(state.logs) + '🔥';
+    if (chip) chip.innerHTML = 'DAY ' + cd + (cd > LEN ? ' 🏆' : '') + ' · ' + streakOf(state.logs) + '🔥';
 
     var sc = pillarScores();
     var rings = $('#home-rings');
@@ -3018,9 +3228,10 @@
       var left = TOTAL_ITEMS - completedCount(d);
       var html;
       if (!goalMet(d)) {
+        var dayLine = cd <= LEN ? 'Day ' + cd + ' of ' + LEN : 'Day ' + cd + ' · 75 Hard conquered 🏆';
         html = '<span class="eyebrow">Spotlight · Challenge</span>' +
           '<div class="spot-big">' + left + ' task' + (left === 1 ? '' : 's') + ' left today</div>' +
-          '<div class="muted tiny">Day ' + Math.min(cd, LEN) + ' of ' + LEN + ' · ' + streakOf(state.logs) + '-day streak</div>' +
+          '<div class="muted tiny">' + dayLine + ' · ' + streakOf(state.logs) + '-day streak</div>' +
           '<button class="btn primary block spot-cta" data-qa="today">Open Challenge</button>';
       } else {
         html = '<span class="eyebrow">Spotlight · Coach</span>' +
@@ -3031,19 +3242,49 @@
       spot.innerHTML = html;
     }
 
+    // Life Score card — this month's game grade
+    var scoreBox = $('#home-score');
+    if (scoreBox) {
+      var ym = ymOf(todayStr());
+      ensureMoneyMonth(ym, function () {
+        if (!$('#view-home').classList.contains('hidden')) renderHome();
+      });
+      var msc = monthScores(ym);
+      if (!msc) scoreBox.classList.add('hidden');
+      else {
+        scoreBox.classList.remove('hidden');
+        var money = moneyScoreFor(ym);
+        var overall = monthOverall(ym);
+        var og = gradeOf(overall);
+        var minis = [
+          ['Body', msc.body, 'var(--body-c)'], ['Mind', msc.mind, 'var(--mind-c)'],
+          ['Money', money, 'var(--money-c)'], ['Life', msc.life, 'var(--life-c)']
+        ];
+        scoreBox.innerHTML =
+          '<div class="mr-head">' +
+            '<div><span class="eyebrow">Life Score · ' + ymShort(ym) + '</span>' +
+            '<div class="hs-minis">' + minis.map(function (x) {
+              var g = gradeOf(x[1]);
+              return '<span class="hs-mini" style="--pc:' + x[2] + '">' + x[0] + ' <b class="gtext-' + g.cls + '">' + (x[1] === undefined ? '…' : g.g) + '</b></span>';
+            }).join('') + '</div></div>' +
+            '<div class="grade-badge g-' + og.cls + '">' + og.g + '</div>' +
+          '</div>';
+      }
+    }
+
     var tiles = $('#home-tiles');
     if (tiles) {
       var t = [
         ['💧 Water', litres(Number(d.waterMl) || 0) + ' / ' + litres(WATER_GOAL) + ' L'],
         ['✓ Tasks', completedCount(d) + ' / ' + TOTAL_ITEMS],
         ['🔥 Streak', streakOf(state.logs) + ' days'],
-        ['⚖ Mode', challengeMode() === 'soft' ? '75 Soft' : '75 Hard']
+        ['⚖ Mode', (challengeMode() === 'soft' ? '75 Soft' : '75 Hard') + (cd > LEN ? ' ✓' : '')]
       ];
       tiles.innerHTML = t.map(function (x) {
         return '<div class="htile"><div class="htile-lbl eyebrow">' + x[0] + '</div><div class="htile-val">' + x[1] + '</div></div>';
       }).join('');
     }
-    buildCalendar('#home-calendar');
+    buildMonthCalendar('#home-calendar', ymOf(todayStr()));
   }
 
   // Re-render every visible view that shows water, so a change reflects everywhere.

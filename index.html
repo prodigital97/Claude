@@ -95,6 +95,7 @@
         <div id="home-rings" class="pillar-rings"></div>
         <div id="home-brief" class="brief-card"></div>
         <div id="home-spotlight" class="spotlight-card"></div>
+        <button id="home-score" class="card month-report home-score" type="button"></button>
         <div id="home-tiles" class="home-tiles"></div>
         <div class="home-actions">
           <button class="qa" data-qa="water">💧 +250 ml</button>
@@ -104,17 +105,10 @@
 
         <div class="home-journey">
           <div class="lib-head" style="margin:20px 0 12px">
-            <div><span class="eyebrow">Journey</span><h2 class="view-title" style="margin:2px 0 0">Your 75 days</h2></div>
+            <div><span class="eyebrow">Journey</span><h2 class="view-title" style="margin:2px 0 0">This month</h2></div>
             <button id="home-journey-open" class="btn link-btn" type="button">Open ›</button>
           </div>
-          <div class="legend">
-            <span><i class="dot done"></i> Done</span>
-            <span><i class="dot partial"></i> Partial</span>
-            <span><i class="dot miss"></i> Missed</span>
-            <span><i class="dot today"></i> Today</span>
-            <span><i class="dot future"></i> Upcoming</span>
-          </div>
-          <div id="home-calendar" class="calendar-grid"></div>
+          <div id="home-calendar" class="calendar-grid month"></div>
         </div>
       </div>
 
@@ -310,17 +304,17 @@
         <div id="meals"></div>
       </div>
 
-      <!-- CALENDAR -->
+      <!-- CALENDAR / JOURNEY -->
       <div id="view-calendar" class="view hidden">
-        <h2 class="view-title">75-Day Journey</h2>
-        <div class="seg" id="journey-windows">
-          <button data-w="5">5 days</button>
-          <button data-w="10">10 days</button>
-          <button data-w="25">25 days</button>
-          <button data-w="75" class="active">All</button>
+        <h2 class="view-title">Journey</h2>
+        <div class="cal-nav">
+          <button id="cal-prev" class="icon-btn" type="button" aria-label="Previous month">‹</button>
+          <div id="cal-month-label" class="cal-month-label"></div>
+          <button id="cal-next" class="icon-btn" type="button" aria-label="Next month">›</button>
         </div>
         <div id="journey-summary" class="journey-summary"></div>
-        <p class="muted tiny" style="margin:2px 2px 12px">Tap any day up to today to add or fix that day’s tasks.</p>
+        <div id="calendar-grid" class="calendar-grid month"></div>
+        <p class="muted tiny" style="margin:10px 2px 8px">Tap any day up to today to add or fix that day’s entries.</p>
         <div class="legend">
           <span><i class="dot done"></i> Done</span>
           <span><i class="dot partial"></i> Partial</span>
@@ -328,7 +322,7 @@
           <span><i class="dot today"></i> Today</span>
           <span><i class="dot future"></i> Upcoming</span>
         </div>
-        <div id="calendar-grid" class="calendar-grid"></div>
+        <div id="month-report" class="card month-report"></div>
       </div>
 
       <!-- STATS -->
