@@ -918,22 +918,65 @@
     if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderHabitsApp); }
     renderExtraTasks(appDay());
   }
+  // Streak of consecutive days this habit was done (ending today or yesterday).
+  function habitStreak(id) {
+    var d = todayStr();
+    var l = logFor(d);
+    if (!l || !l.extra || !l.extra[id]) d = addDays(d, -1);
+    var s = 0;
+    while (true) {
+      var lg = logFor(d);
+      if (!lg || !lg.extra || !lg.extra[id]) break;
+      s++; d = addDays(d, -1);
+    }
+    return s;
+  }
+  var HABIT_STARTERS = ['🧘 Meditate 10 min', '🚶 Evening walk', '🧴 Skincare', '🙏 Gratitude note', '🧹 Tidy desk', '📵 No phone in bed'];
+  function habitEmoji(name) {
+    // If the user typed an emoji first, use it as the icon.
+    var m = String(name).match(/^(\p{Extended_Pictographic}(?:️)?)\s*/u);
+    return m ? m[1] : null;
+  }
   function renderExtraTasks(d) {
     var list = $('#extra-tasks'); if (!list) return;
     if (!d.extra) d.extra = {};
     var habits = (state.profile && state.profile.customTasks) || [];
     list.innerHTML = '';
-    if (!habits.length) {
-      list.innerHTML = '<p class="muted tiny" style="margin:2px 2px 10px">No habits yet — add one below to track it daily.</p>';
-      return;
+
+    if (habits.length) {
+      // Week header: completion across all habits over the last 7 days.
+      var hits = 0, slots = 0, today = todayStr();
+      for (var i = 0; i < 7; i++) {
+        var lg = logFor(addDays(today, -i));
+        habits.forEach(function (h) { slots++; if (lg && lg.extra && lg.extra[h.id]) hits++; });
+      }
+      var wkPct = slots ? Math.round(hits / slots * 100) : 0;
+      var head = el('div', 'card hero-row' + (wkPct >= 80 ? ' goal-hit' : ''));
+      head.innerHTML = ringMini(wkPct, 'var(--life-c)', 84, '<b>' + wkPct + '%</b>') +
+        '<div class="hero-meta"><div class="metric-big"><b>This week</b></div>' +
+        '<div class="muted tiny">' + hits + ' of ' + slots + ' habit checks done</div></div>';
+      list.appendChild(head);
     }
+
     habits.forEach(function (h) {
       var done = !!d.extra[h.id];
+      var streak = habitStreak(h.id);
+      var em = habitEmoji(h.name) || '📌';
+      var title = habitEmoji(h.name) ? h.name.replace(/^(\p{Extended_Pictographic}(?:️)?)\s*/u, '') : h.name;
+      // Last-7-days dot strip (Loop/Streaks-style).
+      var dots = '';
+      for (var i = 6; i >= 0; i--) {
+        var dte = addDays(todayStr(), -i);
+        var lg2 = dte === d.date ? d : logFor(dte);
+        dots += '<i class="hdot' + (lg2 && lg2.extra && lg2.extra[h.id] ? ' on' : '') + (dte === todayStr() ? ' td' : '') + '"></i>';
+      }
       var row = el('div', 'task habit' + (done ? ' done' : ''));
       row.innerHTML =
         '<div class="check">✓</div>' +
-        '<div class="t-emoji">📌</div>' +
-        '<div class="t-body"><div class="t-title">' + esc(h.name) + '</div></div>' +
+        '<div class="t-emoji">' + em + '</div>' +
+        '<div class="t-body"><div class="t-title">' + esc(title) +
+          (streak > 1 ? ' <span class="hstreak">🔥' + streak + '</span>' : '') + '</div>' +
+        '<div class="hdots">' + dots + '</div></div>' +
         '<button class="habit-del" title="Remove">✕</button>';
       row.addEventListener('click', function (e) {
         if (e.target.classList.contains('habit-del')) return;
@@ -947,6 +990,22 @@
       });
       list.appendChild(row);
     });
+
+    if (!habits.length) {
+      var empty = el('div', 'card');
+      empty.innerHTML = '<p class="muted tiny" style="margin:0 0 10px">No habits yet — start with one of these, or add your own below. Tip: start a habit name with an emoji to make it the icon.</p>' +
+        '<div class="starter-chips">' + HABIT_STARTERS.map(function (s) {
+          return '<button type="button" class="starter-chip" data-starter="' + esc(s) + '">' + s + '</button>';
+        }).join('') + '</div>';
+      empty.querySelectorAll('[data-starter]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var next = (state.profile.customTasks || []).slice();
+          next.push({ id: 'h_' + Date.now().toString(36), name: b.getAttribute('data-starter') });
+          saveHabits(next);
+        });
+      });
+      list.appendChild(empty);
+    }
   }
 
   function addHabit() {
@@ -997,23 +1056,24 @@
     var totM = 0, totT = 0, worked = 0;
     list.forEach(function (b) { var e = d.biz[b.id] || {}; var m = Number(e.m) || 0, t = Number(e.t) || 0; totM += m; totT += t; if (m > 0 || t > 0) worked++; });
     var overall = el('div', 'biz-overall');
-    overall.innerHTML = '<span class="biz-ov-lbl">Today\'s total</span>' +
+    overall.innerHTML = '<span class="biz-ov-lbl">Day total</span>' +
       '<span class="biz-ov-val">⏱ <b>' + hoursMin(totM) + '</b> · ✅ <b>' + totT + '</b> tasks · ' + worked + '/' + list.length + ' worked</span>';
     box.appendChild(overall);
 
-    // Dropdown to pick which business to log/edit (keeps it compact).
+    // Business chips (Toggl-style): all visible, each shows its day total.
     if (!state.bizSelected || !list.some(function (b) { return b.id === state.bizSelected; })) state.bizSelected = list[0].id;
-    var sel = el('select', 'biz-select');
+    var chips = el('div', 'biz-chips');
     list.forEach(function (b) {
       var e = d.biz[b.id] || {};
-      var o = document.createElement('option');
-      o.value = b.id;
-      o.textContent = b.name + '  —  ' + hoursMin(e.m) + ' · ' + (Number(e.t) || 0) + ' tasks';
-      if (b.id === state.bizSelected) o.selected = true;
-      sel.appendChild(o);
+      var m = Number(e.m) || 0, t = Number(e.t) || 0;
+      var c = el('button', 'biz-chip' + (b.id === state.bizSelected ? ' active' : '') + ((m > 0 || t > 0) ? ' worked' : ''));
+      c.type = 'button';
+      c.innerHTML = '<span class="bc-name">' + esc(b.name) + '</span>' +
+        '<span class="bc-sub">' + ((m > 0 || t > 0) ? (hoursMin(m) + (t ? ' · ' + t + '✓' : '')) : '—') + '</span>';
+      c.addEventListener('click', function () { state.bizSelected = b.id; renderBusinesses(d); });
+      chips.appendChild(c);
     });
-    sel.addEventListener('change', function () { state.bizSelected = this.value; renderBusinesses(d); });
-    box.appendChild(sel);
+    box.appendChild(chips);
 
     // Editor for the selected business only.
     var b = list.filter(function (x) { return x.id === state.bizSelected; })[0];
@@ -1051,6 +1111,26 @@
     card.querySelector('.biz-min').addEventListener('change', function () { commit(true); });
     card.querySelector('.biz-task').addEventListener('change', function () { commit(true); });
     box.appendChild(card);
+
+    // This week — total minutes per day across all businesses (Toggl-style bars).
+    var wk = el('div', 'card');
+    var today2 = todayStr(), maxMin = 0, days = [];
+    for (var i = 6; i >= 0; i--) {
+      var dte = addDays(today2, -i);
+      var lg = dte === d.date ? d : logFor(dte);
+      var tot = 0;
+      if (lg && lg.biz) Object.keys(lg.biz).forEach(function (id) { tot += Number(lg.biz[id] && lg.biz[id].m) || 0; });
+      days.push({ date: dte, min: tot });
+      if (tot > maxMin) maxMin = tot;
+    }
+    var wkTotal = days.reduce(function (s, x) { return s + x.min; }, 0);
+    wk.innerHTML = '<div class="eyebrow">This week · ' + hoursMin(wkTotal) + '</div>' +
+      '<div class="wkbars">' + days.map(function (x) {
+        var h = maxMin ? Math.max(4, Math.round(x.min / maxMin * 52)) : 4;
+        return '<div class="wkcol"><div class="wkbar' + (x.min ? '' : ' empty') + '" style="height:' + h + 'px" title="' + hoursMin(x.min) + '"></div>' +
+          '<span class="wklbl">' + parse(x.date).toLocaleDateString(undefined, { weekday: 'narrow' }) + '</span></div>';
+      }).join('') + '</div>';
+    box.appendChild(wk);
   }
   function addBusiness() {
     var name = $('#new-biz').value.trim();
@@ -1377,35 +1457,69 @@
     return { ym: ym, days: n, body: Math.round(b / n), mind: Math.round(m / n), life: Math.round(l / n) };
   }
 
-  // Money score per month: spend pace vs budget, fetched once per month & cached.
-  var moneyMonthCache = {};   // ym -> { spent, limit } | 'loading'
+  // Money score per month — fetched once per month & cached.
+  // Daily-win driven: every day you stay under your daily budget counts FOR you.
+  var moneyMonthCache = {};   // ym -> { spent, limit, perDay: {date: spend} } | 'loading'
   function ensureMoneyMonth(ym, onReady) {
     var c = moneyMonthCache[ym];
     if (c && c !== 'loading') return c;
     if (c === 'loading' || OFFLINE) return null;
     moneyMonthCache[ym] = 'loading';
-    api('moneyDashboard', { from: ym + '-01', to: ym + '-' + pad(daysInYm(ym)) }).then(function (res) {
+    var from = ym + '-01', to = ym + '-' + pad(daysInYm(ym));
+    Promise.all([
+      api('moneyDashboard', { from: from, to: to }),
+      api('moneyGetTxns', { from: from, to: to })
+    ]).then(function (res) {
+      var perDay = {};
+      ((res[1] && res[1].transactions) || []).forEach(function (t) {
+        if (t.type !== 'expense') return;
+        var dte = String(t.date).slice(0, 10);
+        perDay[dte] = (perDay[dte] || 0) + (Number(t.amount) || 0);
+      });
       moneyMonthCache[ym] = {
-        spent: Number(res && res.totalSpend) || 0,
-        limit: Number(res && res.status && res.status.limit) || 0
+        spent: Number(res[0] && res[0].totalSpend) || 0,
+        limit: Number(res[0] && res[0].status && res[0].status.limit) || 0,
+        perDay: perDay
       };
       if (onReady) onReady();
     }).catch(function () {
-      moneyMonthCache[ym] = { spent: 0, limit: 0 };
+      // Don't poison the cache with zeros — clear so the next render retries.
+      delete moneyMonthCache[ym];
       if (onReady) onReady();
     });
     return null;
+  }
+  // Per-month money detail for the report: daily wins + pace.
+  function moneyDetailFor(ym) {
+    var c = moneyMonthCache[ym];
+    if (!c || c === 'loading' || !c.limit) return null;
+    var dailyLimit = c.limit / daysInYm(ym);
+    var today = todayStr();
+    var from = ym + '-01', to = ym + '-' + pad(daysInYm(ym));
+    if (to > today) to = today;
+    var wins = 0, days = 0;
+    for (var d = from; d <= to; d = addDays(d, 1)) {
+      days++;
+      if ((c.perDay[d] || 0) <= dailyLimit) wins++;
+    }
+    if (!days) return null;
+    // Pace: how total spend compares to the elapsed share of the budget.
+    var pace = c.limit * (days / daysInYm(ym));
+    var paceScore = Math.max(0, Math.min(100, Math.round(100 * (2 - c.spent / Math.max(1, pace)) / 1.1)));
+    var winScore = Math.round(wins / days * 100);
+    return {
+      dailyLimit: dailyLimit, wins: wins, days: days,
+      winScore: winScore, paceScore: paceScore,
+      score: Math.round(winScore * 0.7 + paceScore * 0.3)
+    };
   }
   // → number (scored), null (no budget set), undefined (still loading)
   function moneyScoreFor(ym) {
     var c = moneyMonthCache[ym];
     if (!c || c === 'loading') return OFFLINE ? null : undefined;
     if (!c.limit) return null;
-    var frac = ym === ymOf(todayStr()) ? Math.max(1, Number(todayStr().slice(8, 10))) / daysInYm(ym) : 1;
-    var pace = c.limit * frac;
-    if (!pace) return null;
-    // ≤90% of pace = perfect 100; hits 0 at 2× pace.
-    return Math.max(0, Math.min(100, Math.round(100 * (2 - c.spent / pace) / 1.1)));
+    var det = moneyDetailFor(ym);
+    return det ? det.score : null;
   }
 
   function gradeOf(v) {
@@ -1473,9 +1587,25 @@
           '<span class="grade-chip g-' + (loading ? 'na' : g.cls) + '">' + (loading ? '…' : g.g) + '</span>' +
         '</div>';
       }).join('') +
-      (pillars[2].v === null && !OFFLINE ? '<div class="muted tiny" style="margin-top:6px">Set a monthly budget in Money to score the 💸 pillar.</div>' : '') +
+      (function () {
+        if (pillars[2].v === null && !OFFLINE) return '<div class="muted tiny" style="margin-top:6px">Set a monthly budget in Money to score the 💸 pillar.</div>';
+        var det = moneyDetailFor(ym);
+        if (!det) return '';
+        return '<div class="muted tiny" style="margin-top:6px">💸 Money: <b>' + det.wins + '/' + det.days + '</b> days under your ' +
+          rupee(det.dailyLimit) + '/day budget — every controlled day scores for you.</div>';
+      })() +
       '<div class="mr-note muted tiny">' + verdictLine(overall, ym) + '</div>' +
+      '<button type="button" class="link-btn mr-how-btn" id="mr-how-btn">ⓘ How scores work</button>' +
+      '<div id="mr-how" class="mr-how hidden muted tiny">' +
+        '<p><b style="color:var(--body-c)">Body</b> — daily average of: indoor + outdoor workout and diet (70%) + water goal (30%). A day with nothing logged scores 0.</p>' +
+        '<p><b style="color:var(--mind-c)">Mind</b> — reading (60%) + mood (40% when logged), with a +10 bonus for journalling.</p>' +
+        '<p><b style="color:var(--money-c)">Money</b> — 70% is <i>daily wins</i>: days you spent under your daily budget (monthly limit ÷ days in month). 30% is overall pace vs budget. Staying under your daily limit is a plus point every single day.</p>' +
+        '<p><b style="color:var(--life-c)">Life</b> — discipline (progress photo + no alcohol) blended with your habits done and businesses worked.</p>' +
+        '<p>Overall grade = average of available pillars. S ≥ 90 · A ≥ 80 · B ≥ 70 · C ≥ 55 · D ≥ 40.</p>' +
+      '</div>' +
       monthHistoryHtml(ym);
+    var howBtn = $('#mr-how-btn');
+    if (howBtn) howBtn.addEventListener('click', function () { $('#mr-how').classList.toggle('hidden'); });
   }
 
   // Grade chips for every month since the journey started — the "game map".
@@ -4392,6 +4522,8 @@
             '<div><span class="muted tiny">Projected</span><b>' + rupee(s.projection) + '</b></div>' +
           '</div>' : '<p class="muted tiny" style="margin-top:8px">Set a monthly budget in the <b>Budget</b> tab to see your guard-rail.</p>') +
       '</div>' +
+      (s.limit ? '<div class="card"><div class="eyebrow">Daily discipline · last 7 days</div><div id="money-discipline" class="disc-row"><span class="muted tiny">Loading…</span></div>' +
+        '<p class="muted tiny" style="margin-top:8px">Green = you stayed under ' + rupee(s.limit / (s.daysInMonth || 30)) + '/day. Every green day lifts your Money score.</p></div>' : '') +
       '<div class="card"><div class="eyebrow">Needs / Wants / Savings</div>' +
         '<div class="nws-bar"><span class="nws-need" style="width:' + Math.round(groups.need / totalKind * 100) + '%"></span>' +
         '<span class="nws-want" style="width:' + Math.round(groups.want / totalKind * 100) + '%"></span>' +
@@ -4409,10 +4541,33 @@
           return '<div class="list-row"><span>' + esc(m.merchant) + '</span><b>' + rupee(m.total) + '</b></div>';
         }).join('') : '<p class="muted tiny">—</p>'
       ) + '</div>';
+    if (s.limit) moneyRenderDiscipline();
+  }
+  // Last-7-days under/over daily-budget dots on the Money overview.
+  function moneyRenderDiscipline() {
+    var slot = $('#money-discipline'); if (!slot) return;
+    var ym = ymOf(todayStr());
+    var c = ensureMoneyMonth(ym, moneyRenderDiscipline);
+    if (!c) return; // still loading — callback re-renders
+    if (!c.limit) { slot.innerHTML = '<span class="muted tiny">Set a budget to track this.</span>'; return; }
+    var dailyLimit = c.limit / daysInYm(ym);
+    var today = todayStr(), out = '';
+    for (var i = 6; i >= 0; i--) {
+      var dte = addDays(today, -i);
+      var inMonth = ymOf(dte) === ym;
+      var spend = inMonth ? (c.perDay[dte] || 0) : 0;
+      var win = spend <= dailyLimit;
+      out += '<div class="disc-day' + (!inMonth ? ' na' : win ? ' win' : ' over') + '">' +
+        '<span class="disc-dot">' + (!inMonth ? '·' : win ? '✓' : '✗') + '</span>' +
+        '<span class="disc-lbl">' + parse(dte).toLocaleDateString(undefined, { weekday: 'narrow' }) + '</span>' +
+        '<span class="disc-amt">' + (inMonth ? '₹' + Math.round(spend) : '') + '</span></div>';
+    }
+    slot.innerHTML = out;
   }
   // Fire-and-forget refresh after a mutation (add/delete txn, save budget) so
   // the Overview breakdown catches up without blocking the UI on a network call.
   function moneyRefreshSilently() {
+    delete moneyMonthCache[ymOf(todayStr())]; // txns changed — recompute daily wins & Life Score
     moneyInit().then(function () { if (state.money.tab === 'overview') moneyRenderOverview(); }).catch(function () {});
   }
 
@@ -4769,20 +4924,78 @@
     }).catch(function (e) { box.innerHTML = '<p class="muted tiny">' + esc(e.message) + '</p>'; });
   }
 
+  // Per-goal progress % lives in the profile blob (no backend schema change).
+  function goalProgress() { return (state.profile && state.profile.goalProgress) || {}; }
+  var GOAL_STATUS = {
+    'on-track': { label: 'On track', cls: 'gs-ok' },
+    'behind':   { label: 'At risk',  cls: 'gs-warn' },
+    'done':     { label: 'Done 🏆',  cls: 'gs-done' }
+  };
   function renderGoals() {
     var box = $('#goals-app'); if (!box) return;
     box.innerHTML = '<p class="muted tiny">Loading…</p>';
     api('listGet', { kind: 'goal' }).then(function (dd) {
       var items = (dd.items || []);
+      var prog = goalProgress();
+      // Year pace header (Strides-style): where the year is vs where your goals are.
+      var now = new Date();
+      var year = now.getFullYear();
+      var dayOfYear = Math.floor((now - new Date(year, 0, 1)) / 864e5) + 1;
+      var yearPct = Math.round(dayOfYear / 365 * 100);
+      var doneCount = items.filter(function (x) { return String(x.status) === 'done'; }).length;
+      var avg = items.length ? Math.round(items.reduce(function (s, x) {
+        return s + (String(x.status) === 'done' ? 100 : (Number(prog[x.id]) || 0));
+      }, 0) / items.length) : 0;
       box.innerHTML =
+        (items.length ?
+          '<div class="card"><div class="eyebrow">' + year + ' · Year check</div>' +
+          '<div class="yeartrack"><div class="yt-row"><span>Year gone</span><b>' + yearPct + '%</b></div>' +
+          '<div class="fc-bar"><span style="width:' + yearPct + '%;background:var(--muted)"></span></div>' +
+          '<div class="yt-row" style="margin-top:8px"><span>Goals progress</span><b>' + avg + '%' + (avg >= yearPct ? ' · ahead 🔥' : ' · behind pace') + '</b></div>' +
+          '<div class="fc-bar"><span style="width:' + avg + '%"></span></div></div>' +
+          '<div class="muted tiny" style="margin-top:8px">' + doneCount + '/' + items.length + ' goals completed</div></div>' : '') +
+        (items.length ? items.map(function (x) {
+          var st = GOAL_STATUS[String(x.status)] || GOAL_STATUS['on-track'];
+          var p = String(x.status) === 'done' ? 100 : Math.max(0, Math.min(100, Number(prog[x.id]) || 0));
+          return '<div class="card goal-card">' +
+            '<div class="list-row" style="border:0;padding:0"><b>' + esc(x.title) + '</b>' +
+              '<span style="display:flex;gap:6px;align-items:center"><button class="goal-status ' + st.cls + '" data-cycle="' + x.id + '" data-cur="' + esc(String(x.status || 'on-track')) + '">' + st.label + '</button>' +
+              '<button class="list-del" data-del="' + x.id + '">✕</button></span></div>' +
+            '<div class="goal-progress"><input type="range" min="0" max="100" step="5" value="' + p + '" data-prog="' + x.id + '"' + (String(x.status) === 'done' ? ' disabled' : '') + ' />' +
+              '<span class="mono goal-pct" id="gp-' + x.id + '">' + p + '%</span></div>' +
+            '<div class="fc-bar' + (p >= 100 ? '' : '') + '" style="margin-top:2px"><span id="gpb-' + x.id + '" style="width:' + p + '%"></span></div>' +
+            (x.note ? '<div class="muted tiny" style="margin-top:8px">' + esc(x.note) + '</div>' : '') +
+          '</div>';
+        }).join('') : '<div class="card"><p class="muted tiny" style="margin:0">No goals yet — what do you want ' + year + ' to be remembered for? Add the first one below 🎯</p></div>') +
         '<div class="card"><div class="eyebrow">New yearly goal</div>' +
           '<label>Goal<input id="gl-title" placeholder="e.g. Read 12 books" /></label>' +
-          '<div class="manual-grid"><label>Status<select id="gl-status"><option value="on-track">On track</option><option value="behind">Behind</option><option value="done">Done</option></select></label>' +
+          '<div class="manual-grid"><label>Status<select id="gl-status"><option value="on-track">On track</option><option value="behind">At risk</option><option value="done">Done</option></select></label>' +
           '<label>Note<input id="gl-note" placeholder="optional" /></label></div>' +
-          '<button id="gl-add" class="btn primary block">Add goal</button></div>' +
-        (items.length ? items.map(function (x) { var st = String(x.status || 'on-track'); return '<div class="card"><div class="list-row"><b>' + esc(x.title) + '</b><button class="list-del" data-del="' + x.id + '">✕</button></div><span class="fc-badge ' + (st === 'behind' ? 'pend' : 'done') + '">' + esc(st.replace('-', ' ')) + '</span>' + (x.note ? '<div class="muted tiny" style="margin-top:6px">' + esc(x.note) + '</div>' : '') + '</div>'; }).join('') : '<p class="muted tiny" style="margin:10px 2px">No goals yet.</p>');
+          '<button id="gl-add" class="btn primary block">Add goal</button></div>';
       $('#gl-add').addEventListener('click', function () { var t = $('#gl-title').value.trim(); if (!t) { toast('Enter a goal'); return; } api('listAdd', { kind: 'goal', item: { title: t, status: $('#gl-status').value, note: $('#gl-note').value.trim() } }).then(function () { toast('Added ✓'); renderGoals(); }).catch(function (e) { toast(e.message); }); });
       box.querySelectorAll('[data-del]').forEach(function (b) { b.addEventListener('click', function () { api('listDelete', { kind: 'goal', id: b.getAttribute('data-del') }).then(renderGoals); }); });
+      // Tap the status chip to cycle On track → At risk → Done.
+      box.querySelectorAll('[data-cycle]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var order = ['on-track', 'behind', 'done'];
+          var next = order[(order.indexOf(b.getAttribute('data-cur')) + 1) % order.length];
+          api('listUpdate', { kind: 'goal', id: b.getAttribute('data-cycle'), item: { status: next } })
+            .then(function () { if (next === 'done') toast('Goal done — legend! 🏆'); renderGoals(); })
+            .catch(function (e) { toast(e.message); });
+        });
+      });
+      // Progress slider: live bar update, save on release (debounced via change).
+      box.querySelectorAll('[data-prog]').forEach(function (r) {
+        var id = r.getAttribute('data-prog');
+        r.addEventListener('input', function () {
+          $('#gp-' + id).textContent = r.value + '%';
+          $('#gpb-' + id).style.width = r.value + '%';
+        });
+        r.addEventListener('change', function () {
+          var gp = Object.assign({}, goalProgress()); gp[id] = Number(r.value) || 0;
+          saveProfileKey('goalProgress', gp);
+        });
+      });
     }).catch(function (e) { box.innerHTML = '<p class="muted tiny">' + esc(e.message) + '</p>'; });
   }
 
