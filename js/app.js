@@ -585,7 +585,7 @@
     });
     $('#save-day').addEventListener('click', function () { pushToday(true); });
     $('#day-notes').addEventListener('input', function () {
-      state.today.notes = this.value; queueSave();
+      var d = appDay(); d.notes = this.value; queueSaveDay(d);
     });
     $('#add-habit-btn').addEventListener('click', addHabit);
     $('#new-habit').addEventListener('keydown', function (e) { if (e.key === 'Enter') addHabit(); });
@@ -704,15 +704,17 @@
     });
     if (name !== 'diet' && name !== 'fast') stopFastTimer();
     if (name !== 'breathe') stopBreathe();
+    // Leaving the mini-apps resets day-editing back to today.
+    if (name === 'home' || name === 'today' || name === 'library') state.appDate = null;
     if (name === 'home') renderHome();
     if (name === 'library') renderLibrary();
     if (name === 'today') renderToday();
     if (name === 'water') renderWaterApp();
     if (name === 'fast') renderFasting();
-    if (name === 'mood') { renderMood(state.today, '#mood-buttons'); renderMoodTrend('#mood-app-trend'); }
-    if (name === 'gut') { renderGut(state.today, '#gut-buttons'); renderGutTrend('#gut-app-trend'); }
-    if (name === 'habits') renderExtraTasks(state.today);
-    if (name === 'work') renderBusinesses(state.today);
+    if (name === 'mood') renderMoodApp();
+    if (name === 'gut') renderGutApp();
+    if (name === 'habits') renderHabitsApp();
+    if (name === 'work') renderWorkApp();
     if (name === 'journal') renderJournal();
     if (name === 'reading') renderReading();
     if (name === 'steps') renderSteps();
@@ -799,8 +801,56 @@
 
   /* ----- Journal (mood check-in + note) ----- */
   function renderJournal() {
-    renderMood(state.today, '#journal-mood');
-    $('#day-notes').value = state.today.notes || '';
+    var bar = $('#journal-daybar');
+    if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderJournal); }
+    renderMood(appDay(), '#journal-mood');
+    $('#day-notes').value = appDay().notes || '';
+  }
+
+  /* ----- Mood / Gut mini-apps: selector + colored month calendar ----- */
+  function renderMoodApp() {
+    var bar = $('#mood-daybar');
+    if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderMoodApp); }
+    renderMood(appDay(), '#mood-buttons');
+    var cal = $('#mood-cal');
+    if (cal) {
+      buildDayPicker(cal, ymOf(appDate()), renderMoodApp, function (date) {
+        var l = logFor(date);
+        return l && l.mood ? moodColor(l.mood) : null;
+      });
+      cal.classList.remove('hidden');
+    }
+    var leg = $('#mood-legend');
+    if (leg) leg.innerHTML = MOODS.map(function (mm) {
+      return '<span class="gt-key"><i style="background:' + mm.color + '"></i>' + mm.emoji + ' ' + mm.label + '</span>';
+    }).join('');
+  }
+  function renderGutApp() {
+    var bar = $('#gut-daybar');
+    if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderGutApp); }
+    renderGut(appDay(), '#gut-buttons');
+    var cal = $('#gut-cal');
+    if (cal) {
+      buildDayPicker(cal, ymOf(appDate()), renderGutApp, function (date) {
+        var l = logFor(date);
+        return l && l.gut ? gutColor(l.gut) : null;
+      });
+      cal.classList.remove('hidden');
+    }
+    var leg = $('#gut-legend');
+    if (leg) leg.innerHTML = GUT.map(function (g) {
+      return '<span class="gt-key"><i style="background:' + g.color + '"></i>' + g.emoji + ' ' + g.label + '</span>';
+    }).join('');
+    // last-30-day counts
+    var counts = {}, logged = 0, today = todayStr();
+    for (var i = 0; i < 30; i++) {
+      var l = logFor(addDays(today, -i));
+      if (l && l.gut) { counts[l.gut] = (counts[l.gut] || 0) + 1; logged++; }
+    }
+    var cbox = $('#gut-counts');
+    if (cbox) cbox.textContent = logged
+      ? 'Last 30 days: ' + GUT.filter(function (g) { return counts[g.v]; }).map(function (g) { return g.label + ' ' + counts[g.v]; }).join(' · ')
+      : 'No gut logs yet — tap an option above.';
   }
 
   /* ----- Mood meter (does NOT affect 75 Hard completion) ----- */
@@ -824,7 +874,8 @@
         d.mood = (d.mood === m.v) ? 0 : m.v;
         // Reflect on whichever mood widgets exist (Mood app + Journal).
         renderMood(d, '#mood-buttons'); renderMood(d, '#journal-mood');
-        queueSave();
+        queueSaveDay(d);
+        if (!$('#view-mood').classList.contains('hidden')) renderMoodApp();
       });
       box.appendChild(b);
     });
@@ -836,7 +887,9 @@
     { v: 2, label: 'Hard',        emoji: '🪨', color: '#ff9f43' },
     { v: 3, label: 'Healthy',     emoji: '✅', color: '#2fd47a' },
     { v: 4, label: 'Soft',        emoji: '💧', color: '#4bb6ff' },
-    { v: 5, label: 'Loose',       emoji: '🌊', color: '#ff5470' }
+    { v: 5, label: 'Loose',       emoji: '🌊', color: '#ff5470' },
+    { v: 6, label: 'Bloated',     emoji: '🎈', color: '#e3b341' },
+    { v: 7, label: 'Acidity',     emoji: '🔥', color: '#f97316' }
   ];
   function gutColor(v) { for (var i = 0; i < GUT.length; i++) if (GUT[i].v === v) return GUT[i].color; return null; }
   function gutLabel(v) { for (var i = 0; i < GUT.length; i++) if (GUT[i].v === v) return GUT[i].label; return null; }
@@ -851,13 +904,19 @@
       b.addEventListener('click', function () {
         d.gut = (d.gut === g.v) ? 0 : g.v;
         renderGut(d, '#gut-buttons');
-        queueSave();
+        queueSaveDay(d);
+        if (!$('#view-gut').classList.contains('hidden')) renderGutApp();
       });
       box.appendChild(b);
     });
   }
 
   /* ----- Custom daily habits (do NOT affect 75 Hard completion) ----- */
+  function renderHabitsApp() {
+    var bar = $('#habits-daybar');
+    if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderHabitsApp); }
+    renderExtraTasks(appDay());
+  }
   function renderExtraTasks(d) {
     var list = $('#extra-tasks'); if (!list) return;
     if (!d.extra) d.extra = {};
@@ -879,7 +938,7 @@
         if (e.target.classList.contains('habit-del')) return;
         d.extra[h.id] = !d.extra[h.id];
         renderExtraTasks(d);
-        queueSave();
+        queueSaveDay(d);
       });
       row.querySelector('.habit-del').addEventListener('click', function (e) {
         e.stopPropagation();
@@ -904,7 +963,7 @@
   function saveHabits(habits) {
     var profile = Object.assign({}, state.profile, { customTasks: habits });
     state.profile = profile;
-    renderExtraTasks(state.today);
+    renderExtraTasks(appDay());
     api('saveGoals', { profile: profile }).then(function (data) {
       if (data && data.profile) state.profile = data.profile;
     }).catch(function (e) { toast(e.message); });
@@ -917,6 +976,11 @@
     if (min <= 0) return '0m';
     var h = Math.floor(min / 60), m = min % 60;
     return (h ? h + 'h ' : '') + (m ? m + 'm' : (h ? '' : '0m'));
+  }
+  function renderWorkApp() {
+    var bar = $('#work-daybar');
+    if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderWorkApp); }
+    renderBusinesses(appDay());
   }
   function renderBusinesses(d) {
     var box = $('#biz-list'); if (!box) return;
@@ -967,7 +1031,7 @@
         '<button class="biz-clear" data-clear="t">✕</button></div>';
     function commit(rerender) {
       d.biz[b.id] = { m: Math.max(0, Number(card.querySelector('.biz-min').value) || 0), t: Math.max(0, Number(card.querySelector('.biz-task').value) || 0) };
-      queueSave();
+      queueSaveDay(d);
       if (rerender) renderBusinesses(d);
     }
     card.querySelectorAll('[data-add]').forEach(function (btn) {
@@ -1004,7 +1068,7 @@
   function saveBusinesses(list) {
     var profile = Object.assign({}, state.profile, { businesses: list });
     state.profile = profile;
-    renderBusinesses(state.today);
+    renderBusinesses(appDay());
     renderBizSettings();
     api('saveGoals', { profile: profile }).then(function (data) {
       if (data && data.profile) state.profile = data.profile;
@@ -1045,8 +1109,8 @@
         g.addEventListener('click', function () {
           // tapping a glass sets the level to that glass (toggle last one off)
           var newFilled = (idx + 1 === filled) ? idx : idx + 1;
-          state.today.waterMl = newFilled * GLASS;
-          afterWaterChange();
+          d.waterMl = newFilled * GLASS;
+          afterWaterChange(d);
         });
       })(i);
       glasses.appendChild(g);
@@ -1084,6 +1148,100 @@
     }).catch(function (err) {
       toast('Saved locally · ' + err.message);
     });
+  }
+
+  /* ---------------- Mini-app day selection (edit any past date) ----------------
+     Every mini-app reads/writes appDay() instead of state.today. A shared date
+     bar (‹ date ›, tap for a month picker) sets state.appDate; null = today. */
+  function appDate() { return state.appDate || todayStr(); }
+  function appDay() {
+    var date = appDate();
+    if (date === todayStr()) return state.today;
+    var found = logFor(date);
+    if (!found) {
+      found = emptyDay(date);
+      state.logs.push(found);
+      state.logs.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    }
+    return found;
+  }
+  function queueSaveDay(d) {
+    if (!d || d.date === todayStr()) return queueSave();
+    d.completed = goalMet(d);
+    upsertLocal(d);
+    var payload = Object.assign({}, d);
+    clearTimeout(state.saveTimerPast);
+    state.saveTimerPast = setTimeout(function () {
+      api('saveDay', { day: payload }).then(function () {
+        toast('Saved ' + shortDate(payload.date) + ' ✓');
+      }).catch(function (err) { toast('Saved locally · ' + err.message); });
+    }, 700);
+  }
+  function dayBarHtml() {
+    var date = appDate(), isToday = date === todayStr();
+    return '<div class="daybar">' +
+      '<button class="icon-btn db-prev" type="button" aria-label="Previous day">‹</button>' +
+      '<button class="db-mid" type="button">📅 <b>' + (isToday ? 'Today' : prettyDate(date)) + '</b> <span class="db-carat">▾</span></button>' +
+      '<button class="icon-btn db-next" type="button"' + (isToday ? ' disabled' : '') + ' aria-label="Next day">›</button>' +
+    '</div>' +
+    '<div class="db-pick card hidden"></div>' +
+    (isToday ? '' : '<p class="db-editing tiny">✏️ Editing a past day — <button class="link-btn db-today" type="button">back to today</button></p>');
+  }
+  function bindDayBar(scope, rerender) {
+    var prev = scope.querySelector('.db-prev'); if (!prev) return;
+    var next = scope.querySelector('.db-next'), mid = scope.querySelector('.db-mid');
+    var pick = scope.querySelector('.db-pick'), tdy = scope.querySelector('.db-today');
+    prev.addEventListener('click', function () { state.appDate = addDays(appDate(), -1); rerender(); });
+    if (next) next.addEventListener('click', function () {
+      var n = addDays(appDate(), 1);
+      state.appDate = (n >= todayStr()) ? null : n;
+      rerender();
+    });
+    if (tdy) tdy.addEventListener('click', function () { state.appDate = null; rerender(); });
+    mid.addEventListener('click', function () {
+      if (pick.classList.contains('hidden')) {
+        buildDayPicker(pick, ymOf(appDate()), rerender, null);
+        pick.classList.remove('hidden');
+      } else pick.classList.add('hidden');
+    });
+  }
+  // Month grid picker. colorFn(date) may return a CSS color to tint a day
+  // (used by Mood/Gut to double as a "status calendar").
+  function buildDayPicker(pick, ym, rerender, colorFn) {
+    var today = todayStr();
+    pick.innerHTML =
+      '<div class="cal-nav" style="margin-bottom:8px">' +
+        '<button class="icon-btn dp-prev" type="button">‹</button>' +
+        '<div class="cal-month-label">' + ymLabel(ym) + '</div>' +
+        '<button class="icon-btn dp-next" type="button"' + (ym >= ymOf(today) ? ' disabled' : '') + '>›</button>' +
+      '</div><div class="calendar-grid month dp-grid"></div>';
+    var grid = pick.querySelector('.dp-grid');
+    var p = ym.split('-'), first = new Date(+p[0], +p[1] - 1, 1), lead = (first.getDay() + 6) % 7;
+    ['M', 'T', 'W', 'T', 'F', 'S', 'S'].forEach(function (w) {
+      var h = el('div', 'cal-dow mono'); h.textContent = w; grid.appendChild(h);
+    });
+    for (var b = 0; b < lead; b++) grid.appendChild(el('div', 'cal-blank'));
+    var days = daysInYm(ym);
+    for (var day = 1; day <= days; day++) {
+      (function (date) {
+        var cell = el('div', 'cal-cell dp-cell');
+        cell.innerHTML = '<span class="cc-num">' + Number(date.slice(8)) + '</span>';
+        if (date > today) cell.classList.add('pre');
+        else {
+          var col = colorFn && colorFn(date);
+          if (col) { cell.style.background = 'color-mix(in srgb, ' + col + ' 30%, var(--bg-soft))'; cell.style.borderColor = col; cell.style.color = 'var(--text)'; }
+          cell.classList.add('editable');
+          if (date === appDate()) cell.classList.add('today');
+          cell.addEventListener('click', function () {
+            state.appDate = (date === today) ? null : date;
+            rerender();
+          });
+        }
+        grid.appendChild(cell);
+      })(ym + '-' + pad(day));
+    }
+    pick.querySelector('.dp-prev').addEventListener('click', function () { buildDayPicker(pick, ymShift(ym, -1), rerender, colorFn); });
+    pick.querySelector('.dp-next').addEventListener('click', function () { buildDayPicker(pick, ymShift(ym, 1), rerender, colorFn); });
   }
 
   /* ---------------- Calendar (real month grid) ---------------- */
@@ -2097,7 +2255,8 @@
 
   /* ----- Intermittent fasting ----- */
   // Milestones (hours). The "mark" you earn is the highest one you reach.
-  var MILESTONES = [12, 14, 16, 18, 20, 24, 36];
+  // Every hour from 12h to 24h (so 17/19/21h fasts get their own mark), then long-haul marks.
+  var MILESTONES = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 36, 48];
 
   function stopFastTimer() { if (state.fastTimer) { clearInterval(state.fastTimer); state.fastTimer = null; } }
 
@@ -2148,6 +2307,9 @@
             '<div class="fast-center"><div id="fast-elapsed" class="fast-elapsed">00:00:00</div>' +
             '<div id="fast-state" class="muted tiny">elapsed</div></div>' +
           '</div>' +
+          '<div class="fast-chips">' + [12, 14, 16, 18, 20, 24].map(function (h) {
+            return '<span class="fast-chip" data-fm="' + h + '">' + h + 'h</span>';
+          }).join('') + '</div>' +
           '<div class="fast-times"><span>Started <b id="fast-started">' + clockTime(f.startAt) + '</b></span>' +
             '<button id="fast-edit-start" class="link-btn">Edit start</button></div>' +
           '<div id="fast-edit-box" class="fast-edit-box hidden">' +
@@ -2178,15 +2340,126 @@
           '<p class="muted tiny">Start a fast — the timer counts up and logs the milestone you reach when you end it. Adjust the start time if you began earlier.</p>' +
           '<label>Start time<input type="datetime-local" id="fast-start-input"></label>' +
           '<button id="fast-start" class="btn primary block">Start fast</button>' +
-          '<div id="fast-history" class="fast-history"></div>' +
-        '</div>';
+          '<button id="fast-manual-toggle" class="link-btn" style="margin-top:8px">＋ Log a past fast</button>' +
+          '<div id="fast-manual" class="fast-edit-box hidden">' +
+            '<label class="tiny">Start<input type="datetime-local" id="fm-start"></label>' +
+            '<label class="tiny">End<input type="datetime-local" id="fm-end"></label>' +
+            '<div class="row-2"><button id="fm-save" class="btn primary">Save fast</button>' +
+            '<button id="fm-cancel" class="btn">Cancel</button></div></div>' +
+        '</div>' +
+        '<div class="card">' +
+          '<div class="cal-nav" style="margin-bottom:8px">' +
+            '<button id="fc-prev" class="icon-btn" type="button">‹</button>' +
+            '<div id="fc-label" class="cal-month-label"></div>' +
+            '<button id="fc-next" class="icon-btn" type="button">›</button>' +
+          '</div>' +
+          '<div id="fast-cal" class="calendar-grid month"></div>' +
+          '<div class="gt-legend" style="margin-top:10px">' +
+            '<span class="gt-key"><i style="background:var(--green)"></i>18h+</span>' +
+            '<span class="gt-key"><i style="background:#38bdf8"></i>16–18h</span>' +
+            '<span class="gt-key"><i style="background:var(--amber)"></i>14–16h</span>' +
+            '<span class="gt-key"><i style="background:#8da3c4"></i>under 14h</span>' +
+          '</div>' +
+          '<p class="muted tiny" style="margin:8px 0 0">Tap a fast to edit it · tap an empty day to log one.</p>' +
+        '</div>' +
+        '<div class="card" style="padding-top:12px"><div id="fast-history" class="fast-history"></div></div>';
       $('#fast-start-input').value = toLocalInput(new Date().toISOString());
       $('#fast-start').addEventListener('click', function () {
         var v = $('#fast-start-input').value;
         if (v && new Date(v).getTime() > Date.now()) { toast('Start time can’t be in the future'); return; }
         startFast(v ? fromLocalInput(v) : new Date().toISOString());
       });
+      $('#fast-manual-toggle').addEventListener('click', function () { fastManualOpen(); });
+      $('#fm-cancel').addEventListener('click', function () { $('#fast-manual').classList.add('hidden'); });
+      $('#fm-save').addEventListener('click', saveManualFast);
       loadFastHistory();
+    }
+  }
+
+  // Prefill + open the manual past-fast form (dateStr optional: 8pm that day → noon next).
+  function fastManualOpen(dateStr) {
+    var fm = $('#fast-manual'); if (!fm) return;
+    fm.classList.remove('hidden');
+    if (dateStr) {
+      $('#fm-start').value = dateStr + 'T20:00';
+      $('#fm-end').value = addDays(dateStr, 1) + 'T12:00';
+    } else if (!$('#fm-start').value) {
+      var y = addDays(todayStr(), -1);
+      $('#fm-start').value = y + 'T20:00';
+      $('#fm-end').value = todayStr() + 'T12:00';
+    }
+    fm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  function saveManualFast() {
+    var s = $('#fm-start').value, e = $('#fm-end').value;
+    if (!s || !e) { toast('Set both times'); return; }
+    var sT = new Date(s).getTime(), eT = new Date(e).getTime();
+    if (eT <= sT) { toast('End must be after start'); return; }
+    if (eT > Date.now()) { toast('End time can’t be in the future'); return; }
+    if (eT - sT > 72 * 3600000) { toast('That’s over 72h — double-check the dates'); return; }
+    var btn = $('#fm-save'); btn.disabled = true; btn.textContent = 'Saving…';
+    // No dedicated endpoint needed: create an open fast, then close it with updateFast.
+    api('startFast', { startAt: fromLocalInput(s) }).then(function (data) {
+      return api('updateFast', { id: data.fast.id, startAt: fromLocalInput(s), endAt: fromLocalInput(e) });
+    }).then(function () {
+      state.activeFast = null;
+      var mark = milestoneInfo((eT - sT) / 3600000).reached;
+      toast(mark ? 'Past fast logged — ' + mark + 'h mark 🎉' : 'Past fast logged ✓');
+      renderFasting();
+    }).catch(function (err) { toast(err.message); btn.disabled = false; btn.textContent = 'Save fast'; });
+  }
+
+  // Month calendar of fasts (colored by duration tier, keyed to the START date).
+  function fastTierColor(hours) {
+    if (hours >= 18) return 'var(--green)';
+    if (hours >= 16) return '#38bdf8';
+    if (hours >= 14) return 'var(--amber)';
+    return '#8da3c4';
+  }
+  function buildFastCal(fasts) {
+    var grid = $('#fast-cal'), label = $('#fc-label');
+    if (!grid || !label) return;
+    var ym = state.fastCalYm || (state.fastCalYm = ymOf(todayStr()));
+    label.textContent = ymLabel(ym);
+    $('#fc-next').disabled = ym >= ymOf(todayStr());
+    var byDate = {};
+    (fasts || []).forEach(function (f) {
+      var dte = fmt(parse(new Date(f.startAt)));
+      var h = (new Date(f.endAt) - new Date(f.startAt)) / 3.6e6;
+      if (!byDate[dte] || h > byDate[dte].h) byDate[dte] = { h: h, f: f };
+    });
+    grid.innerHTML = '';
+    var today = todayStr();
+    var p = ym.split('-'), first = new Date(+p[0], +p[1] - 1, 1), lead = (first.getDay() + 6) % 7;
+    ['M', 'T', 'W', 'T', 'F', 'S', 'S'].forEach(function (w) {
+      var h = el('div', 'cal-dow mono'); h.textContent = w; grid.appendChild(h);
+    });
+    for (var b = 0; b < lead; b++) grid.appendChild(el('div', 'cal-blank'));
+    var days = daysInYm(ym);
+    for (var day = 1; day <= days; day++) {
+      (function (date) {
+        var cell = el('div', 'cal-cell');
+        var hit = byDate[date];
+        cell.innerHTML = '<span class="cc-num">' + Number(date.slice(8)) + '</span>' +
+          '<span class="cc-date">' + (hit ? Math.floor(hit.h) + 'h' : '') + '</span>';
+        if (date > today) cell.classList.add('pre');
+        else {
+          cell.classList.add('editable');
+          if (hit) {
+            var col = fastTierColor(hit.h);
+            cell.style.background = 'color-mix(in srgb, ' + col + ' 30%, var(--bg-soft))';
+            cell.style.borderColor = col; cell.style.color = 'var(--text)';
+            cell.addEventListener('click', function () {
+              var row = document.querySelector('[data-fast-row="' + hit.f.id + '"]');
+              if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); row.classList.add('flash'); setTimeout(function () { row.classList.remove('flash'); }, 1200); }
+            });
+          } else {
+            cell.addEventListener('click', function () { fastManualOpen(date); });
+          }
+        }
+        if (date === today) cell.classList.add('today');
+        grid.appendChild(cell);
+      })(ym + '-' + pad(day));
     }
   }
 
@@ -2208,7 +2481,13 @@
     var mark = $('#fast-mark');
     if (mark) mark.textContent = mi.reached ? mi.reached + 'h mark' : 'warming up';
     var st = $('#fast-state');
-    if (st) st.textContent = mi.next ? ('next: ' + mi.next + 'h') : 'beast mode 🦾';
+    if (st) {
+      var mins = mi.next ? Math.max(0, Math.round((mi.next - hours) * 60)) : 0;
+      st.textContent = mi.next ? ('next: ' + mi.next + 'h in ' + (mins >= 60 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : mins + 'm')) : 'beast mode 🦾';
+    }
+    document.querySelectorAll('[data-fm]').forEach(function (c) {
+      c.classList.toggle('hit', hours >= Number(c.getAttribute('data-fm')));
+    });
   }
 
   function startFast(startIso) {
@@ -2232,10 +2511,18 @@
 
   function loadFastHistory() {
     api('getFasts', {}).then(function (data) {
+      var all = data.fasts || [];
+      buildFastCal(all);
+      var fcPrev = $('#fc-prev'), fcNext = $('#fc-next');
+      if (fcPrev && !fcPrev._bound) {
+        fcPrev._bound = true;
+        fcPrev.addEventListener('click', function () { state.fastCalYm = ymShift(state.fastCalYm, -1); buildFastCal(all); });
+        fcNext.addEventListener('click', function () { state.fastCalYm = ymShift(state.fastCalYm, 1); buildFastCal(all); });
+      }
       var box = $('#fast-history'); if (!box) return;
-      var list = (data.fasts || []).slice(0, 8);
+      var list = all.slice(0, 10);
       box.innerHTML = '';
-      if (!list.length) return;
+      if (!list.length) { box.innerHTML = '<p class="muted tiny">No fasts yet — start your first one above.</p>'; return; }
       box.appendChild(el('div', 'muted tiny fh-title', 'Recent fasts'));
       list.forEach(function (f) { box.appendChild(buildFastRow(f)); });
     }).catch(function () {});
@@ -2245,6 +2532,7 @@
     var dur = new Date(f.endAt).getTime() - new Date(f.startAt).getTime();
     var mark = milestoneInfo(dur / 3600000).reached;
     var wrap = el('div', 'fh-item');
+    wrap.setAttribute('data-fast-row', f.id);
     var row = el('div', 'fh-row');
     row.innerHTML =
       '<span class="fh-date">' + new Date(f.startAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + '</span>' +
@@ -3291,8 +3579,8 @@
   }
 
   // Re-render every visible view that shows water, so a change reflects everywhere.
-  function afterWaterChange() {
-    queueSave();
+  function afterWaterChange(d) {
+    if (d && d.date !== todayStr()) queueSaveDay(d); else queueSave();
     if (!$('#view-today').classList.contains('hidden')) renderToday();
     if (!$('#view-water').classList.contains('hidden')) renderWaterApp();
     if (!$('#view-home').classList.contains('hidden')) renderHome();
@@ -3308,10 +3596,12 @@
   }
   function renderWaterApp() {
     var box = $('#water-app'); if (!box) return;
-    var ml = Number(state.today.waterMl) || 0, pct = pctOf(ml, WATER_GOAL);
+    var d = appDay();
+    var ml = Number(d.waterMl) || 0, pct = pctOf(ml, WATER_GOAL);
     var prev = lastJarPct < 0 ? pct : lastJarPct;
     var yFor = function (p) { return Math.round(150 * (1 - p / 100)); }; // interior height
-    box.innerHTML = '';
+    box.innerHTML = dayBarHtml();
+    bindDayBar(box, renderWaterApp);
     var card = el('div', 'card water-card' + (pct >= 100 ? ' full' : '') + (pct >= 20 ? ' has-water' : ''));
     card.innerHTML =
       '<div class="jar-wrap">' +
@@ -3344,7 +3634,7 @@
         '<button class="btn danger" data-w="-250">−250</button>' +
       '</div>';
     box.appendChild(card);
-    box.appendChild(renderWater(state.today));
+    box.appendChild(renderWater(d));
     // Two rAFs so the browser paints the previous level first, then glides.
     requestAnimationFrame(function () { requestAnimationFrame(function () {
       var w = card.querySelector('.jar-water');
@@ -3354,26 +3644,27 @@
     card.querySelectorAll('[data-w]').forEach(function (b) {
       b.addEventListener('click', function () {
         var v = Number(b.getAttribute('data-w'));
-        var was = Number(state.today.waterMl) || 0;
-        state.today.waterMl = Math.max(0, Math.min(WATER_GOAL * 3, was + v));
-        if (was < WATER_GOAL && state.today.waterMl >= WATER_GOAL) toast('4 L done — goal smashed! 💧👑');
-        afterWaterChange();
+        var was = Number(d.waterMl) || 0;
+        d.waterMl = Math.max(0, Math.min(WATER_GOAL * 3, was + v));
+        if (was < WATER_GOAL && d.waterMl >= WATER_GOAL) toast('4 L done — goal smashed! 💧👑');
+        afterWaterChange(d);
       });
     });
   }
   function renderReading() {
     var box = $('#reading-app'); if (!box) return;
-    var d = state.today, r = (state.profile && state.profile.reading) || {};
-    box.innerHTML =
-      '<div class="card"><div class="eyebrow">Today · 75 Hard</div>' +
-        '<label class="fx-toggle" style="margin-top:8px"><input type="checkbox" id="reading-done"' + (d.reading ? ' checked' : '') + ' /> Read 10 pages today</label></div>' +
+    var d = appDay(), r = (state.profile && state.profile.reading) || {};
+    box.innerHTML = dayBarHtml() +
+      '<div class="card"><div class="eyebrow">' + (appDate() === todayStr() ? 'Today' : prettyDate(appDate())) + ' · 75 Hard</div>' +
+        '<label class="fx-toggle" style="margin-top:8px"><input type="checkbox" id="reading-done"' + (d.reading ? ' checked' : '') + ' /> Read 10 pages</label></div>' +
       '<div class="card"><div class="eyebrow">Current book</div>' +
         '<label style="margin-top:8px">Title<input id="rd-book" value="' + esc(r.book || '') + '" placeholder="e.g. Atomic Habits" /></label>' +
         '<div class="manual-grid"><label>Current page<input id="rd-page" type="number" inputmode="numeric" value="' + (r.page || '') + '" /></label>' +
         '<label>Total pages<input id="rd-total" type="number" inputmode="numeric" value="' + (r.total || '') + '" /></label></div>' +
         (r.total ? '<div class="fc-bar" style="margin:6px 0 12px"><span style="width:' + pctOf(r.page || 0, r.total) + '%"></span></div><div class="muted tiny">Page ' + (r.page || 0) + ' / ' + r.total + ' · ' + pctOf(r.page || 0, r.total) + '%</div>' : '') +
         '<button id="rd-save" class="btn primary block" style="margin-top:10px">Save book</button></div>';
-    $('#reading-done').addEventListener('change', function () { d.reading = this.checked; queueSave(); });
+    bindDayBar(box, renderReading);
+    $('#reading-done').addEventListener('change', function () { d.reading = this.checked; queueSaveDay(d); });
     $('#rd-save').addEventListener('click', function () {
       var prof = Object.assign({}, state.profile, { reading: { book: $('#rd-book').value.trim(), page: Number($('#rd-page').value) || 0, total: Number($('#rd-total').value) || 0 } });
       state.profile = prof;
@@ -3424,10 +3715,10 @@
   }
   function renderSteps() {
     var box = $('#steps-app'); if (!box) return;
-    var m = metricsOf(state.today);
+    var day = appDay(), m = metricsOf(day);
     var steps = Number(m.steps) || 0, goal = Number(state.profile && state.profile.stepGoal) || 10000;
     var pct = pctOf(steps, goal);
-    box.innerHTML =
+    box.innerHTML = dayBarHtml() +
       '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
         ringMini(pct, 'var(--body-c)', 92, '<b>' + pct + '%</b>') +
         '<div class="hero-meta"><div class="metric-big"><b>' + steps.toLocaleString() + '</b></div>' +
@@ -3441,31 +3732,32 @@
       '<label>Active min<input id="mt-active" type="number" inputmode="numeric" value="' + (m.active || '') + '" /></label></div>' +
       '<button id="mt-save" class="btn block">Save</button></div>' +
       '<div class="card"><div class="eyebrow">Steps · last 7 days</div><div id="steps-trend"></div></div>';
+    bindDayBar(box, renderSteps);
     box.querySelectorAll('[data-s]').forEach(function (b) {
       b.addEventListener('click', function () {
         var v = b.getAttribute('data-s');
-        if (v === 'set') { var x = prompt('Steps today:', steps); if (x == null) return; m.steps = Math.max(0, Number(x) || 0); }
+        if (v === 'set') { var x = prompt('Steps:', steps); if (x == null) return; m.steps = Math.max(0, Number(x) || 0); }
         else m.steps = steps + Number(v);
-        queueSave(); renderSteps();
+        queueSaveDay(day); renderSteps();
       });
     });
     $('#steps-goal-btn').addEventListener('click', function () {
       var x = prompt('Daily step goal:', goal); if (x == null) return;
       saveProfileKey('stepGoal', Math.max(1000, Number(x) || 10000), renderSteps);
     });
-    $('#mt-save').addEventListener('click', function () { m.burn = Number($('#mt-burn').value) || 0; m.active = Number($('#mt-active').value) || 0; queueSave(); toast('Saved ✓'); });
+    $('#mt-save').addEventListener('click', function () { m.burn = Number($('#mt-burn').value) || 0; m.active = Number($('#mt-active').value) || 0; queueSaveDay(day); toast('Saved ✓'); });
     metricTrend('steps', '#steps-trend', '');
   }
   function renderSleep() {
     var box = $('#sleep-app'); if (!box) return;
-    var m = metricsOf(state.today);
+    var day = appDay(), m = metricsOf(day);
     var mins = Number(m.sleepMin) || 0;
     var goalH = Number(state.profile && state.profile.sleepGoal) || 8;
     var pct = pctOf(mins, goalH * 60);
     var q = Number(m.sleepQ) || 0;
     var note = !mins ? 'Log last night to see your trend.'
       : mins >= goalH * 60 ? 'Fully charged 🔋' : mins >= goalH * 60 * 0.8 ? 'Decent — a little short.' : 'Running on fumes — sleep earlier tonight 😴';
-    box.innerHTML =
+    box.innerHTML = dayBarHtml() +
       '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
         ringMini(pct, 'var(--mind-c)', 92, '<b>' + (mins ? Math.floor(mins / 60) + 'h' + (mins % 60 ? (mins % 60) + '' : '') : '—') + '</b>') +
         '<div class="hero-meta"><div class="metric-big"><b>' + (mins ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : 'No log yet') + '</b></div>' +
@@ -3482,6 +3774,7 @@
       var x = prompt('Sleep goal (hours):', goalH); if (x == null) return;
       saveProfileKey('sleepGoal', Math.min(14, Math.max(4, Number(x) || 8)), renderSleep);
     });
+    bindDayBar(box, renderSleep);
     box.querySelectorAll('[data-star]').forEach(function (b) {
       b.addEventListener('click', function () {
         // Update stars in place — a re-render would wipe unsaved hour/min inputs.
@@ -3489,12 +3782,12 @@
         box.querySelectorAll('[data-star]').forEach(function (s) {
           s.classList.toggle('on', Number(s.getAttribute('data-star')) <= m.sleepQ);
         });
-        queueSave();
+        queueSaveDay(day);
       });
     });
     $('#sl-save').addEventListener('click', function () {
       m.sleepMin = (Number($('#sl-h').value) || 0) * 60 + (Number($('#sl-m').value) || 0);
-      queueSave(); toast('Saved ✓'); renderSleep();
+      queueSaveDay(day); toast('Saved ✓'); renderSleep();
     });
     metricTrend('sleepMin', '#sleep-trend', 'h', 60);
   }
@@ -3528,7 +3821,7 @@
 
   function renderBody() {
     var box = $('#body-app'); if (!box) return;
-    var m = metricsOf(state.today);
+    var day = appDay(), m = metricsOf(day);
     var goal = Number(state.profile && state.profile.weightGoal) || 0;
     var heightCm = Number(state.profile && state.profile.heightCm) || 0;
     var cur = Number(m.weight) || (lastMetric('weight') || {}).v || 0;
@@ -3543,7 +3836,7 @@
     }
     var deltaHtml = !delta ? '' :
       '<span class="delta ' + (delta < 0 ? 'down' : 'up') + '">' + (delta < 0 ? '▼' : '▲') + ' ' + Math.abs(delta).toFixed(1) + ' kg since start</span>';
-    box.innerHTML =
+    box.innerHTML = dayBarHtml() +
       '<div class="card body-hero">' +
         '<div class="bh-main"><div class="metric-big"><b>' + (cur || '—') + '</b> <span class="muted">kg</span></div>' + deltaHtml + '</div>' +
         '<div class="bh-chips">' +
@@ -3569,7 +3862,8 @@
         '<label>Height (cm)<input id="bd-height" type="number" inputmode="decimal" value="' + (heightCm || '') + '" /></label>' +
         '<label>Goal weight (kg)<input id="bd-goal" type="number" inputmode="decimal" value="' + (goal || '') + '" /></label>' +
         '</div>' +
-        '<button id="bd-save" class="btn primary block">Log today</button></div>';
+        '<button id="bd-save" class="btn primary block">Log this day</button></div>';
+    bindDayBar(box, renderBody);
     $('#bd-save').addEventListener('click', function () {
       m.weight = Number($('#bd-w').value) || 0; m.waist = Number($('#bd-waist').value) || 0; m.bodyfat = Number($('#bd-bf').value) || 0;
       m.chest = Number($('#bd-chest').value) || 0; m.arms = Number($('#bd-arms').value) || 0; m.hips = Number($('#bd-hips').value) || 0;
@@ -3577,7 +3871,7 @@
         weightGoal: Number($('#bd-goal').value) || 0,
         heightCm: Number($('#bd-height').value) || 0
       });
-      queueSave();
+      queueSaveDay(day);
       api('saveGoals', { profile: state.profile }).catch(function () {});
       toast('Logged ✓'); renderBody();
     });
@@ -3607,7 +3901,8 @@
   }
   function renderGym() {
     var box = $('#gym-app'); if (!box) return;
-    var list = gymOf(state.today);
+    var day = appDay();
+    var list = gymOf(day);
     var vol = 0;
     list.forEach(function (e) { vol += (Number(e.sets) || 0) * (Number(e.reps) || 0) * (Number(e.kg) || 0); });
     var weekDays = 0, today = todayStr();
@@ -3621,10 +3916,10 @@
     names.forEach(function (n) { if (options.indexOf(n) < 0) options.push(n); });
     var prev = lastGymDay();
 
-    box.innerHTML =
+    box.innerHTML = dayBarHtml() +
       '<div class="card"><div class="gym-stats">' +
         '<div class="js-stat"><b>' + list.length + '</b><span>exercises</span></div>' +
-        '<div class="js-stat"><b>' + (vol ? (vol >= 1000 ? (vol / 1000).toFixed(1) + 't' : vol + 'kg') : '0') + '</b><span>volume today</span></div>' +
+        '<div class="js-stat"><b>' + (vol ? (vol >= 1000 ? (vol / 1000).toFixed(1) + 't' : vol + 'kg') : '0') + '</b><span>volume</span></div>' +
         '<div class="js-stat"><b>' + weekDays + '/7</b><span>days this week</span></div>' +
       '</div></div>' +
       '<div class="card"><div class="eyebrow" style="margin-bottom:8px">Add exercise</div>' +
@@ -3634,10 +3929,10 @@
           '<label>Reps<input id="gym-reps" type="number" inputmode="numeric" value="10" /></label>' +
           '<label>Weight kg<input id="gym-kg" type="number" inputmode="decimal" value="" placeholder="0" /></label>' +
         '</div>' +
-        '<button id="gym-add" class="btn primary block">Add to today</button>' +
+        '<button id="gym-add" class="btn primary block">Add exercise</button>' +
         (!list.length && prev ? '<button id="gym-copy" class="btn block" style="margin-top:8px">↻ Repeat ' + shortDate(prev.date) + ' workout (' + prev.metrics.gym.length + ' lifts)</button>' : '') +
       '</div>' +
-      '<div class="card"><div class="eyebrow" style="margin-bottom:4px">Today</div><div id="gym-today">' +
+      '<div class="card"><div class="eyebrow" style="margin-bottom:4px">' + (appDate() === todayStr() ? 'Today' : prettyDate(appDate())) + '</div><div id="gym-today">' +
         (list.length ? list.map(function (e, i) {
           var pr = prs[e.n] && Number(e.kg) >= prs[e.n].kg && Number(e.kg) > 0;
           return '<div class="list-row"><div><b>' + esc(e.n) + '</b>' + (pr ? ' <span class="pr-badge">PR 🏅</span>' : '') +
@@ -3661,20 +3956,21 @@
         kg: Math.max(0, Number($('#gym-kg').value) || 0)
       };
       var prevBest = prs[entry.n] ? prs[entry.n].kg : 0;
-      gymOf(state.today).push(entry);
-      queueSave();
+      gymOf(day).push(entry);
+      queueSaveDay(day);
       if (entry.kg > 0 && entry.kg > prevBest) toast('New PR on ' + entry.n + ' — ' + entry.kg + ' kg! 🏅');
       renderGym();
     });
     var copyBtn = $('#gym-copy');
     if (copyBtn) copyBtn.addEventListener('click', function () {
-      prev.metrics.gym.forEach(function (e) { gymOf(state.today).push({ n: e.n, sets: e.sets, reps: e.reps, kg: e.kg }); });
-      queueSave(); toast('Workout copied — beat it today 🔥'); renderGym();
+      prev.metrics.gym.forEach(function (e) { gymOf(day).push({ n: e.n, sets: e.sets, reps: e.reps, kg: e.kg }); });
+      queueSaveDay(day); toast('Workout copied — beat it today 🔥'); renderGym();
     });
+    bindDayBar(box, renderGym);
     box.querySelectorAll('[data-gi]').forEach(function (b) {
       b.addEventListener('click', function () {
-        gymOf(state.today).splice(Number(b.getAttribute('data-gi')), 1);
-        queueSave(); renderGym();
+        gymOf(day).splice(Number(b.getAttribute('data-gi')), 1);
+        queueSaveDay(day); renderGym();
       });
     });
   }
@@ -3697,10 +3993,24 @@
   function renderBreathe() {
     var box = $('#breathe-app'); if (!box) return;
     stopBreathe(true);
-    var m = metricsOf(state.today);
+    var day = appDay(), m = metricsOf(day);
     var doneMin = Number(m.breathMin) || 0;
     var mode = BREATHE_MODES.filter(function (x) { return x.id === breathe.mode; })[0] || BREATHE_MODES[0];
-    box.innerHTML =
+    if (appDate() !== todayStr()) {
+      // Past day: sessions are live-only — show/edit that day's banked minutes.
+      box.innerHTML = dayBarHtml() +
+        '<div class="card"><div class="eyebrow">' + prettyDate(appDate()) + '</div>' +
+        '<div class="metric-big" style="margin-top:8px"><b>' + doneMin + '</b> <span class="muted">min breathed</span></div>' +
+        '<div class="manual-grid" style="margin-top:10px"><label>Adjust minutes<input id="br-past" type="number" inputmode="numeric" value="' + (doneMin || '') + '" /></label></div>' +
+        '<button id="br-past-save" class="btn primary block">Save</button></div>';
+      bindDayBar(box, renderBreathe);
+      $('#br-past-save').addEventListener('click', function () {
+        m.breathMin = Math.max(0, Number($('#br-past').value) || 0);
+        queueSaveDay(day); toast('Saved ✓'); renderBreathe();
+      });
+      return;
+    }
+    box.innerHTML = dayBarHtml() +
       '<div class="seg" id="br-modes">' + BREATHE_MODES.map(function (x) {
         return '<button data-brm="' + x.id + '"' + (x.id === breathe.mode ? ' class="active"' : '') + '>' + x.name + '</button>';
       }).join('') + '</div>' +
@@ -3713,6 +4023,7 @@
         '<button id="br-start" class="btn primary block">Start session</button>' +
         (doneMin ? '<p class="muted tiny center" style="margin:10px 0 0">🫁 ' + doneMin + ' min breathed today</p>' : '') +
       '</div>';
+    bindDayBar(box, renderBreathe);
     $('#br-modes').addEventListener('click', function (e) {
       var b = e.target.closest('[data-brm]'); if (!b) return;
       breathe.mode = b.getAttribute('data-brm'); renderBreathe();
@@ -3764,30 +4075,44 @@
   function renderDetox() {
     var box = $('#detox-app'); if (!box) return;
     if (state.detoxTimer) { clearInterval(state.detoxTimer); state.detoxTimer = null; }
-    var m = metricsOf(state.today);
+    var day = appDay(), m = metricsOf(day);
     var total = Number(m.detoxMin) || 0;
     var goal = Number(state.profile && state.profile.detoxGoal) || 60;
-    var startedAt = Number(localStorage.getItem(detoxKey())) || 0;
+    var isToday = appDate() === todayStr();
+    var startedAt = isToday ? (Number(localStorage.getItem(detoxKey())) || 0) : 0;
     var pct = pctOf(total, goal);
-    box.innerHTML =
+    box.innerHTML = dayBarHtml() +
       '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
         ringMini(pct, 'var(--mind-c)', 92, '<b>' + pct + '%</b>') +
         '<div class="hero-meta"><div class="metric-big"><b>' + total + '</b> <span class="muted">min offline</span></div>' +
         '<div class="muted tiny">goal <button class="inline-edit" id="dx-goal-btn">' + goal + ' min</button> / day' + (pct >= 100 ? ' · unplugged 🏆' : '') + '</div></div></div>' +
-      '<div class="card detox-card' + (startedAt ? ' active' : '') + '">' +
-        (startedAt
-          ? '<div class="eyebrow">Detox running</div><div id="dx-elapsed" class="dx-elapsed mono">00:00</div>' +
-            '<p class="muted tiny center" style="margin:4px 0 12px">Phone down. Live a little 🌿</p>' +
-            '<button id="dx-stop" class="btn primary block">End detox &amp; bank minutes</button>'
-          : '<div class="eyebrow">Start a phone-free block</div>' +
-            '<p class="muted tiny" style="margin:8px 0 12px">Start the timer, put the phone face-down. End it when you pick the phone back up — the minutes get banked here.</p>' +
-            '<button id="dx-start" class="btn primary block">📵 Start detox</button>') +
-      '</div>' +
+      (isToday
+        ? '<div class="card detox-card' + (startedAt ? ' active' : '') + '">' +
+          (startedAt
+            ? '<div class="eyebrow">Detox running</div><div id="dx-elapsed" class="dx-elapsed mono">00:00</div>' +
+              '<p class="muted tiny center" style="margin:4px 0 12px">Phone down. Live a little 🌿</p>' +
+              '<button id="dx-stop" class="btn primary block">End detox &amp; bank minutes</button>'
+            : '<div class="eyebrow">Start a phone-free block</div>' +
+              '<p class="muted tiny" style="margin:8px 0 12px">Start the timer, put the phone face-down. End it when you pick the phone back up — the minutes get banked here.</p>' +
+              '<button id="dx-start" class="btn primary block">📵 Start detox</button>') +
+          '</div>'
+        : '<div class="card"><div class="eyebrow">Edit ' + prettyDate(appDate()) + '</div>' +
+          '<div class="manual-grid" style="margin-top:8px"><label>Offline minutes<input id="dx-past" type="number" inputmode="numeric" value="' + (total || '') + '" /></label></div>' +
+          '<button id="dx-past-save" class="btn primary block">Save</button></div>') +
       '<div class="card"><div class="eyebrow">Offline minutes · last 7 days</div><div id="detox-trend"></div></div>';
+    bindDayBar(box, renderDetox);
     $('#dx-goal-btn').addEventListener('click', function () {
       var x = prompt('Daily phone-free goal (minutes):', goal); if (x == null) return;
       saveProfileKey('detoxGoal', Math.max(10, Number(x) || 60), renderDetox);
     });
+    if (!isToday) {
+      $('#dx-past-save').addEventListener('click', function () {
+        m.detoxMin = Math.max(0, Number($('#dx-past').value) || 0);
+        queueSaveDay(day); toast('Saved ✓'); renderDetox();
+      });
+      metricTrend('detoxMin', '#detox-trend', 'm');
+      return;
+    }
     if (startedAt) {
       var elapsedEl = $('#dx-elapsed');
       var tickFn = function () {

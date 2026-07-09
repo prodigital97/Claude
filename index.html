@@ -162,22 +162,25 @@
       <!-- MOOD (mini-app, Body) -->
       <div id="view-mood" class="view hidden">
         <h2 class="view-title">Mood</h2>
-        <p class="muted tiny" style="margin:0 2px 12px">How are you feeling today?</p>
+        <div id="mood-daybar"></div>
+        <p class="muted tiny" style="margin:0 2px 12px">How were you feeling?</p>
         <div id="mood-buttons" class="mood-buttons"></div>
-        <div class="card"><h3>Last 14 days</h3><div id="mood-app-trend"></div></div>
+        <div class="card"><h3>Mood calendar</h3><p class="muted tiny" style="margin:0 0 8px">Tap a day to view or edit it.</p><div id="mood-cal"></div><div id="mood-legend" class="gt-legend"></div></div>
       </div>
 
       <!-- GUT (mini-app, Body) -->
       <div id="view-gut" class="view hidden">
         <h2 class="view-title">Gut health</h2>
-        <p class="muted tiny" style="margin:0 2px 12px">Log today's gut health.</p>
-        <div id="gut-buttons" class="mood-buttons"></div>
-        <div class="card"><h3>Last 14 days</h3><div id="gut-app-trend"></div></div>
+        <div id="gut-daybar"></div>
+        <p class="muted tiny" style="margin:0 2px 12px">How did your gut do?</p>
+        <div id="gut-buttons" class="mood-buttons wrap"></div>
+        <div class="card"><h3>Gut calendar</h3><p class="muted tiny" style="margin:0 0 8px">Tap a day to view or edit it.</p><div id="gut-cal"></div><div id="gut-legend" class="gt-legend"></div><p id="gut-counts" class="muted tiny" style="margin:10px 0 0"></p></div>
       </div>
 
       <!-- HABITS (mini-app) -->
       <div id="view-habits" class="view hidden">
         <h2 class="view-title">Habits</h2>
+        <div id="habits-daybar"></div>
         <p class="muted tiny" style="margin:0 2px 12px">Daily habits you want to keep — not part of 75 Hard.</p>
         <div id="extra-tasks" class="tasklist"></div>
         <div class="add-habit">
@@ -189,15 +192,17 @@
       <!-- WORK (mini-app) -->
       <div id="view-work" class="view hidden">
         <h2 class="view-title">Work log</h2>
-        <p class="muted tiny" style="margin:0 2px 12px">Time &amp; tasks per business, today.</p>
+        <div id="work-daybar"></div>
+        <p class="muted tiny" style="margin:0 2px 12px">Time &amp; tasks per business.</p>
         <div id="biz-list"></div>
       </div>
 
       <!-- JOURNAL (mini-app, Mind) -->
       <div id="view-journal" class="view hidden">
         <h2 class="view-title">Journal</h2>
+        <div id="journal-daybar"></div>
         <p class="muted tiny" style="margin:0 2px 10px">A quick end-of-day check-in.</p>
-        <div class="eyebrow" style="margin:6px 2px">Today's mood</div>
+        <div class="eyebrow" style="margin:6px 2px">Mood</div>
         <div id="journal-mood" class="mood-buttons"></div>
         <label class="notes-field card" style="margin-top:12px">
           <span class="muted tiny">Journal entry</span>
