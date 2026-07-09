@@ -817,3 +817,108 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
   .view, .modal-card, .cal-cell.today, .skeleton { animation: none; }
   * { transition-duration: .01ms !important; }
 }
+
+/* ============================================================
+   Water jar — animated fill + waves + bubbles
+   ============================================================ */
+.jar-wrap { display: flex; align-items: center; gap: 18px; }
+.jar { width: 138px; height: 184px; flex: none; }
+.jar-glass { fill: var(--bg-soft); }
+.jar-glass-line { fill: none; stroke: var(--line); stroke-width: 2.5; }
+.jar-lid { fill: var(--card-2); stroke: var(--line); stroke-width: 1.5; }
+.jar-tick { stroke: color-mix(in srgb, var(--muted) 40%, transparent); stroke-width: 1.5; }
+.jar-water { transition: transform 1s cubic-bezier(.3,.8,.3,1); }
+.wave { fill: #38bdf8; }
+.wave.w1 { opacity: .85; animation: waveslide 3.4s linear infinite; }
+.wave.w2 { fill: #0ea5e9; opacity: .5; animation: waveslide 5.2s linear infinite reverse; }
+@keyframes waveslide { from { transform: translateX(0); } to { transform: translateX(-48px); } }
+.bub { fill: rgba(255,255,255,.5); opacity: 0; }
+.has-water .bub { animation: bubbleup 3.6s ease-in infinite; }
+.has-water .bub.b2 { animation-delay: 1.2s; animation-duration: 4.2s; }
+.has-water .bub.b3 { animation-delay: 2.2s; animation-duration: 3s; }
+@keyframes bubbleup {
+  0% { opacity: 0; transform: translateY(0); }
+  15% { opacity: .8; }
+  85% { opacity: .6; }
+  100% { opacity: 0; transform: translateY(-95px); }
+}
+.water-card.full .jar-glass-line { stroke: #38bdf8; }
+.water-card.full .jar { filter: drop-shadow(0 0 14px rgba(56,189,248,.35)); }
+.jar-side { flex: 1; min-width: 0; }
+.jar-pct { font-size: 30px; font-weight: 800; margin: 6px 0 4px; color: #38bdf8; }
+.jar-note { line-height: 1.4; }
+
+/* ============================================================
+   Mini-app hero rows + rings + inline goal edit
+   ============================================================ */
+.hero-row { display: flex; align-items: center; gap: 16px; }
+.hero-row.goal-hit { border-color: color-mix(in srgb, var(--green) 45%, transparent); }
+.ring-mini { position: relative; display: inline-grid; place-items: center; flex: none; }
+.ring-mini svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.rm-bg { fill: none; stroke: var(--bg-soft); stroke-width: 7; }
+.rm-fg { fill: none; stroke-width: 7; stroke-linecap: round; transition: stroke-dashoffset .6s ease; }
+.rm-center { position: absolute; font-size: 15px; font-weight: 800; }
+.inline-edit {
+  border: 0; border-bottom: 1px dashed var(--muted); background: transparent; color: var(--text);
+  font-size: inherit; font-weight: 700; padding: 0 1px; cursor: pointer;
+}
+.star-row { display: flex; gap: 6px; }
+.star { flex: 1; border: 1px solid var(--line); background: var(--bg-soft); border-radius: 10px; padding: 8px 0; font-size: 20px; color: var(--muted); opacity: .5; cursor: pointer; }
+.star.on { color: var(--amber); opacity: 1; border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
+
+/* ============================================================
+   Body — hero, chips, weight chart
+   ============================================================ */
+.body-hero .bh-main { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.delta { font-size: 13px; font-weight: 700; }
+.delta.down { color: var(--green); }
+.delta.up { color: var(--amber); }
+.bh-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.bh-chip { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 12px; color: var(--muted); }
+.bh-chip b { color: var(--text); }
+.wchart { width: 100%; height: auto; margin-top: 6px; }
+.wc-line { fill: none; stroke: var(--primary); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.wc-area { fill: color-mix(in srgb, var(--primary) 14%, transparent); }
+.wc-dot { fill: var(--primary); }
+.wc-lbl { font-size: 9px; fill: var(--muted); font-family: var(--mono); }
+.wc-cur { font-size: 11px; font-weight: 800; fill: var(--text); }
+
+/* ============================================================
+   Gym Log
+   ============================================================ */
+.gym-stats { display: flex; gap: 10px; }
+.gym-stats .js-stat { padding: 10px 6px; }
+.gym-stats .js-stat b { font-size: 18px; }
+.gym-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 10px 0; }
+.pr-badge { font-size: 10px; font-weight: 800; color: var(--amber); background: color-mix(in srgb, var(--amber) 15%, transparent); border-radius: 6px; padding: 2px 6px; vertical-align: 1px; }
+
+/* ============================================================
+   Breathe — guided circle
+   ============================================================ */
+.breathe-card { padding: 22px 16px; }
+.br-stage { position: relative; width: 210px; height: 210px; margin: 6px auto 0; display: grid; place-items: center; }
+.br-ring { position: absolute; inset: 0; border-radius: 50%; border: 2px dashed color-mix(in srgb, var(--mind-c) 35%, transparent); }
+.br-circle {
+  width: 140px; height: 140px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--mind-c) 75%, #fff 10%), var(--mind-c));
+  display: grid; place-items: center; text-align: center; color: #fff;
+  box-shadow: 0 10px 40px color-mix(in srgb, var(--mind-c) 45%, transparent);
+  transform: scale(1); transition: transform 4s ease-in-out; will-change: transform;
+}
+.br-circle span { display: block; }
+#br-label { font-weight: 800; font-size: 15px; text-shadow: 0 1px 4px rgba(0,0,0,.25); }
+.br-count { font-family: var(--mono); font-size: 24px; font-weight: 700; margin-top: 2px; text-shadow: 0 1px 4px rgba(0,0,0,.25); }
+
+/* ============================================================
+   Digital Detox
+   ============================================================ */
+.detox-card { text-align: center; }
+.detox-card.active { border-color: color-mix(in srgb, var(--mind-c) 50%, transparent); }
+.dx-elapsed { font-size: 44px; font-weight: 800; letter-spacing: 2px; margin: 10px 0 2px; }
+.detox-card.active .dx-elapsed { animation: dxglow 2.4s ease-in-out infinite; }
+@keyframes dxglow { 0%,100% { text-shadow: 0 0 18px color-mix(in srgb, var(--mind-c) 55%, transparent); } 50% { text-shadow: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .wave, .bub, .dx-elapsed { animation: none !important; }
+  .jar-water, .br-circle { transition-duration: .01ms !important; }
+}

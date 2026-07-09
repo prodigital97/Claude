@@ -703,6 +703,7 @@
       b.classList.toggle('active', b.dataset.view === name);
     });
     if (name !== 'diet' && name !== 'fast') stopFastTimer();
+    if (name !== 'breathe') stopBreathe();
     if (name === 'home') renderHome();
     if (name === 'library') renderLibrary();
     if (name === 'today') renderToday();
@@ -717,6 +718,9 @@
     if (name === 'steps') renderSteps();
     if (name === 'sleep') renderSleep();
     if (name === 'body') renderBody();
+    if (name === 'gym') renderGym();
+    if (name === 'breathe') renderBreathe();
+    if (name === 'detox') renderDetox();
     if (name === 'money') renderMoney();
     if (name === 'subs') renderSubs();
     if (name === 'savings') renderSavings();
@@ -3142,14 +3146,13 @@
     { id: 'steps',     name: 'Steps',     icon: '👟', pillar: 'body', open: function () { switchView('steps'); } },
     { id: 'sleep',     name: 'Sleep',     icon: '😴', pillar: 'body', open: function () { switchView('sleep'); } },
     { id: 'body',      name: 'Body',      icon: '⚖️', pillar: 'body', open: function () { switchView('body'); } },
-    { id: 'gym',       name: 'Gym Log',   icon: '🏋️', pillar: 'body' },
+    { id: 'gym',       name: 'Gym Log',   icon: '🏋️', pillar: 'body', open: function () { switchView('gym'); } },
     { id: 'calc',      name: 'Calc',      icon: '🧮', pillar: 'body', open: function () { switchView('calc'); } },
     { id: 'journal',   name: 'Journal',   icon: '📓', pillar: 'mind', open: function () { switchView('journal'); } },
     { id: 'reading',   name: 'Reading',   icon: '📖', pillar: 'mind', open: function () { switchView('reading'); } },
-    { id: 'breathe',   name: 'Breathe',   icon: '🫁', pillar: 'mind' },
-    { id: 'detox',     name: 'Detox',     icon: '📵', pillar: 'mind' },
+    { id: 'breathe',   name: 'Breathe',   icon: '🫁', pillar: 'mind', open: function () { switchView('breathe'); } },
+    { id: 'detox',     name: 'Detox',     icon: '📵', pillar: 'mind', open: function () { switchView('detox'); } },
     { id: 'money',     name: 'Money',     icon: '💸', pillar: 'money', open: function () { switchView('money'); } },
-    { id: 'budgets',   name: 'Budgets',   icon: '📊', pillar: 'money', open: function () { switchView('money'); } },
     { id: 'subs',      name: 'Subs',      icon: '🔁', pillar: 'money', open: function () { switchView('subs'); } },
     { id: 'savings',   name: 'Savings',   icon: '🐷', pillar: 'money', open: function () { switchView('savings'); } },
     { id: 'habits',    name: 'Habits',    icon: '🔗', pillar: 'life', open: function () { switchView('habits'); } },
@@ -3294,27 +3297,66 @@
     if (!$('#view-water').classList.contains('hidden')) renderWaterApp();
     if (!$('#view-home').classList.contains('hidden')) renderHome();
   }
+  // Animated water jar — the level glides to the new value on every sip.
+  var lastJarPct = -1;
+  function waterNote(ml, pct) {
+    if (pct >= 100) return 'Goal smashed — hydration king 👑';
+    if (pct >= 75) return 'Almost there — one more push 💪';
+    if (pct >= 50) return 'Halfway. Keep sipping 🌊';
+    if (ml > 0) return 'Good start — stay on it.';
+    return 'First sip of the day?';
+  }
   function renderWaterApp() {
     var box = $('#water-app'); if (!box) return;
     var ml = Number(state.today.waterMl) || 0, pct = pctOf(ml, WATER_GOAL);
+    var prev = lastJarPct < 0 ? pct : lastJarPct;
+    var yFor = function (p) { return Math.round(150 * (1 - p / 100)); }; // interior height
     box.innerHTML = '';
-    var card = el('div', 'card');
+    var card = el('div', 'card water-card' + (pct >= 100 ? ' full' : '') + (pct >= 20 ? ' has-water' : ''));
     card.innerHTML =
-      '<div class="water-big"><b>' + litres(ml) + '</b> <span class="muted">/ ' + litres(WATER_GOAL) + ' L</span></div>' +
-      '<div class="fc-bar" style="margin:12px 0 14px"><span style="width:' + pct + '%"></span></div>' +
+      '<div class="jar-wrap">' +
+        '<svg viewBox="0 0 150 200" class="jar" aria-hidden="true">' +
+          '<defs><clipPath id="jarclip"><rect x="25" y="24" width="100" height="150" rx="16"/></clipPath></defs>' +
+          '<rect class="jar-lid" x="43" y="8" width="64" height="12" rx="6"/>' +
+          '<rect class="jar-glass" x="25" y="24" width="100" height="150" rx="16"/>' +
+          '<g clip-path="url(#jarclip)"><g class="jar-water" style="transform:translateY(' + yFor(prev) + 'px)">' +
+            '<path class="wave w2" d="M0 30 Q 15 22, 30 30 T 60 30 T 90 30 T 120 30 T 150 30 T 180 30 T 210 30 T 240 30 T 270 30 T 300 30 V 240 H 0 Z"/>' +
+            '<path class="wave w1" d="M0 32 Q 12 25, 24 32 T 48 32 T 72 32 T 96 32 T 120 32 T 144 32 T 168 32 T 192 32 T 216 32 T 240 32 T 264 32 T 288 32 V 240 H 0 Z"/>' +
+            '<circle class="bub b1" cx="55" cy="150" r="3"/>' +
+            '<circle class="bub b2" cx="82" cy="165" r="2.4"/>' +
+            '<circle class="bub b3" cx="102" cy="145" r="2"/>' +
+          '</g></g>' +
+          '<rect class="jar-glass-line" x="25" y="24" width="100" height="150" rx="16"/>' +
+          '<line class="jar-tick" x1="112" y1="61" x2="122" y2="61"/>' +
+          '<line class="jar-tick" x1="112" y1="99" x2="122" y2="99"/>' +
+          '<line class="jar-tick" x1="112" y1="136" x2="122" y2="136"/>' +
+        '</svg>' +
+        '<div class="jar-side">' +
+          '<div class="water-big"><b>' + litres(ml) + '</b> <span class="muted">/ ' + litres(WATER_GOAL) + ' L</span></div>' +
+          '<div class="jar-pct mono">' + pct + '%</div>' +
+          '<div class="muted tiny jar-note">' + waterNote(ml, pct) + '</div>' +
+        '</div>' +
+      '</div>' +
       '<div class="water-quick">' +
         '<button class="btn" data-w="250">+250 ml</button>' +
         '<button class="btn" data-w="500">+500 ml</button>' +
         '<button class="btn" data-w="1000">+1 L</button>' +
-        '<button class="btn danger" data-w="reset">Reset</button>' +
+        '<button class="btn danger" data-w="-250">−250</button>' +
       '</div>';
     box.appendChild(card);
     box.appendChild(renderWater(state.today));
+    // Two rAFs so the browser paints the previous level first, then glides.
+    requestAnimationFrame(function () { requestAnimationFrame(function () {
+      var w = card.querySelector('.jar-water');
+      if (w) w.style.transform = 'translateY(' + yFor(pct) + 'px)';
+    }); });
+    lastJarPct = pct;
     card.querySelectorAll('[data-w]').forEach(function (b) {
       b.addEventListener('click', function () {
-        var v = b.getAttribute('data-w');
-        if (v === 'reset') state.today.waterMl = 0;
-        else state.today.waterMl = Math.min(WATER_GOAL * 3, (Number(state.today.waterMl) || 0) + Number(v));
+        var v = Number(b.getAttribute('data-w'));
+        var was = Number(state.today.waterMl) || 0;
+        state.today.waterMl = Math.max(0, Math.min(WATER_GOAL * 3, was + v));
+        if (was < WATER_GOAL && state.today.waterMl >= WATER_GOAL) toast('4 L done — goal smashed! 💧👑');
         afterWaterChange();
       });
     });
@@ -3342,6 +3384,34 @@
   /* ----- Steps / Sleep / Body — stored in day-log metrics {} ----- */
   function metricsOf(d) { if (!d.metrics) d.metrics = {}; return d.metrics; }
   function setMetric(k, v) { metricsOf(state.today)[k] = v; queueSave(); }
+  // Small progress ring used by mini-app heroes.
+  function ringMini(pct, color, size, inner) {
+    var circ = 2 * Math.PI * 26;
+    var off = circ * (1 - Math.min(100, Math.max(0, pct)) / 100);
+    return '<span class="ring-mini" style="width:' + size + 'px;height:' + size + 'px">' +
+      '<svg viewBox="0 0 64 64"><circle class="rm-bg" cx="32" cy="32" r="26"></circle>' +
+      '<circle class="rm-fg" cx="32" cy="32" r="26" style="stroke:' + color + ';stroke-dasharray:' + circ + ';stroke-dashoffset:' + off + '"></circle></svg>' +
+      '<span class="rm-center">' + inner + '</span></span>';
+  }
+  // Latest non-zero metric value on or before today, scanning back through logs.
+  function lastMetric(key) {
+    var today = todayStr();
+    for (var i = state.logs.length - 1; i >= 0; i--) {
+      var l = state.logs[i];
+      if (l.date > today) continue;
+      var v = l.metrics && Number(l.metrics[key]);
+      if (v) return { v: v, date: l.date };
+    }
+    return null;
+  }
+  // First (earliest) non-zero metric value — the baseline.
+  function firstMetric(key) {
+    for (var i = 0; i < state.logs.length; i++) {
+      var v = state.logs[i].metrics && Number(state.logs[i].metrics[key]);
+      if (v) return { v: v, date: state.logs[i].date };
+    }
+    return null;
+  }
   function metricTrend(key, sel, unit, div) {
     var box = $(sel); if (!box) return;
     var today = todayStr(), bars = '', max = 0, vals = [];
@@ -3356,23 +3426,32 @@
     var box = $('#steps-app'); if (!box) return;
     var m = metricsOf(state.today);
     var steps = Number(m.steps) || 0, goal = Number(state.profile && state.profile.stepGoal) || 10000;
+    var pct = pctOf(steps, goal);
     box.innerHTML =
-      '<div class="card"><div class="metric-big"><b>' + steps.toLocaleString() + '</b> <span class="muted">/ ' + goal.toLocaleString() + ' steps</span></div>' +
-      '<div class="fc-bar" style="margin:10px 0 14px"><span style="width:' + pctOf(steps, goal) + '%"></span></div>' +
-      '<div class="water-quick"><button class="btn" data-s="1000">+1,000</button><button class="btn" data-s="2500">+2,500</button><button class="btn" data-s="set">Set exact</button><button class="btn danger" data-s="reset">Reset</button></div></div>' +
-      '<div class="card"><div class="manual-grid">' +
+      '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
+        ringMini(pct, 'var(--body-c)', 92, '<b>' + pct + '%</b>') +
+        '<div class="hero-meta"><div class="metric-big"><b>' + steps.toLocaleString() + '</b></div>' +
+        '<div class="muted tiny">of <button class="inline-edit" id="steps-goal-btn">' + goal.toLocaleString() + '</button> steps' +
+        (pct >= 100 ? ' · crushed 🎉' : '') + '</div></div></div>' +
+      '<div class="card"><div class="water-quick">' +
+        '<button class="btn" data-s="1000">+1,000</button><button class="btn" data-s="2500">+2,500</button>' +
+        '<button class="btn" data-s="5000">+5,000</button><button class="btn" data-s="set">Set exact</button></div>' +
+      '<div class="manual-grid" style="margin-top:12px">' +
       '<label>Calories burned<input id="mt-burn" type="number" inputmode="numeric" value="' + (m.burn || '') + '" /></label>' +
       '<label>Active min<input id="mt-active" type="number" inputmode="numeric" value="' + (m.active || '') + '" /></label></div>' +
       '<button id="mt-save" class="btn block">Save</button></div>' +
-      '<div class="card"><div class="eyebrow">Steps</div><div id="steps-trend"></div></div>';
+      '<div class="card"><div class="eyebrow">Steps · last 7 days</div><div id="steps-trend"></div></div>';
     box.querySelectorAll('[data-s]').forEach(function (b) {
       b.addEventListener('click', function () {
         var v = b.getAttribute('data-s');
-        if (v === 'reset') m.steps = 0;
-        else if (v === 'set') { var x = prompt('Steps today:', steps); if (x == null) return; m.steps = Math.max(0, Number(x) || 0); }
+        if (v === 'set') { var x = prompt('Steps today:', steps); if (x == null) return; m.steps = Math.max(0, Number(x) || 0); }
         else m.steps = steps + Number(v);
         queueSave(); renderSteps();
       });
+    });
+    $('#steps-goal-btn').addEventListener('click', function () {
+      var x = prompt('Daily step goal:', goal); if (x == null) return;
+      saveProfileKey('stepGoal', Math.max(1000, Number(x) || 10000), renderSteps);
     });
     $('#mt-save').addEventListener('click', function () { m.burn = Number($('#mt-burn').value) || 0; m.active = Number($('#mt-active').value) || 0; queueSave(); toast('Saved ✓'); });
     metricTrend('steps', '#steps-trend', '');
@@ -3381,41 +3460,363 @@
     var box = $('#sleep-app'); if (!box) return;
     var m = metricsOf(state.today);
     var mins = Number(m.sleepMin) || 0;
+    var goalH = Number(state.profile && state.profile.sleepGoal) || 8;
+    var pct = pctOf(mins, goalH * 60);
+    var q = Number(m.sleepQ) || 0;
+    var note = !mins ? 'Log last night to see your trend.'
+      : mins >= goalH * 60 ? 'Fully charged 🔋' : mins >= goalH * 60 * 0.8 ? 'Decent — a little short.' : 'Running on fumes — sleep earlier tonight 😴';
     box.innerHTML =
-      '<div class="card"><div class="metric-big"><b>' + (mins ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : '—') + '</b> <span class="muted">last night</span></div>' +
-      '<div class="manual-grid" style="margin-top:12px"><label>Hours<input id="sl-h" type="number" inputmode="numeric" value="' + (mins ? Math.floor(mins / 60) : '') + '" /></label>' +
+      '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
+        ringMini(pct, 'var(--mind-c)', 92, '<b>' + (mins ? Math.floor(mins / 60) + 'h' + (mins % 60 ? (mins % 60) + '' : '') : '—') + '</b>') +
+        '<div class="hero-meta"><div class="metric-big"><b>' + (mins ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : 'No log yet') + '</b></div>' +
+        '<div class="muted tiny">goal <button class="inline-edit" id="sleep-goal-btn">' + goalH + 'h</button> · ' + note + '</div></div></div>' +
+      '<div class="card"><div class="manual-grid"><label>Hours<input id="sl-h" type="number" inputmode="numeric" value="' + (mins ? Math.floor(mins / 60) : '') + '" /></label>' +
       '<label>Minutes<input id="sl-m" type="number" inputmode="numeric" value="' + (mins ? mins % 60 : '') + '" /></label></div>' +
-      '<button id="sl-save" class="btn primary block">Save sleep</button></div>' +
-      '<div class="card"><div class="eyebrow">Sleep · hours</div><div id="sleep-trend"></div></div>';
+      '<div class="eyebrow" style="margin:6px 0 6px">Sleep quality</div>' +
+      '<div class="star-row" id="sl-stars">' + [1, 2, 3, 4, 5].map(function (s) {
+        return '<button class="star' + (q >= s ? ' on' : '') + '" data-star="' + s + '">★</button>';
+      }).join('') + '</div>' +
+      '<button id="sl-save" class="btn primary block" style="margin-top:10px">Save sleep</button></div>' +
+      '<div class="card"><div class="eyebrow">Sleep · hours · last 7 days</div><div id="sleep-trend"></div></div>';
+    $('#sleep-goal-btn').addEventListener('click', function () {
+      var x = prompt('Sleep goal (hours):', goalH); if (x == null) return;
+      saveProfileKey('sleepGoal', Math.min(14, Math.max(4, Number(x) || 8)), renderSleep);
+    });
+    box.querySelectorAll('[data-star]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        // Update stars in place — a re-render would wipe unsaved hour/min inputs.
+        m.sleepQ = Number(b.getAttribute('data-star'));
+        box.querySelectorAll('[data-star]').forEach(function (s) {
+          s.classList.toggle('on', Number(s.getAttribute('data-star')) <= m.sleepQ);
+        });
+        queueSave();
+      });
+    });
     $('#sl-save').addEventListener('click', function () {
       m.sleepMin = (Number($('#sl-h').value) || 0) * 60 + (Number($('#sl-m').value) || 0);
       queueSave(); toast('Saved ✓'); renderSleep();
     });
     metricTrend('sleepMin', '#sleep-trend', 'h', 60);
   }
+
+  // 30-day weight line chart (SVG). Skips unlogged days, connects the dots.
+  function weightChartSvg(days) {
+    var today = todayStr(), pts = [];
+    for (var i = days - 1; i >= 0; i--) {
+      var dte = addDays(today, -i);
+      var l = logFor(dte);
+      var v = l && l.metrics && Number(l.metrics.weight);
+      if (v) pts.push({ x: days - 1 - i, v: v });
+    }
+    if (pts.length < 2) return '<p class="muted tiny" style="margin:6px 0 0">Log your weight on a few days to unlock the trend line.</p>';
+    var min = pts[0].v, max = pts[0].v;
+    pts.forEach(function (p) { if (p.v < min) min = p.v; if (p.v > max) max = p.v; });
+    var padV = Math.max(0.5, (max - min) * 0.15); min -= padV; max += padV;
+    var W = 320, H = 120, L = 8, R = 8, T = 12, B = 18;
+    var X = function (x) { return L + x / (days - 1) * (W - L - R); };
+    var Y = function (v) { return T + (1 - (v - min) / (max - min)) * (H - T - B); };
+    var line = pts.map(function (p, i) { return (i ? 'L' : 'M') + X(p.x).toFixed(1) + ' ' + Y(p.v).toFixed(1); }).join(' ');
+    var area = line + ' L' + X(pts[pts.length - 1].x).toFixed(1) + ' ' + (H - B) + ' L' + X(pts[0].x).toFixed(1) + ' ' + (H - B) + ' Z';
+    var dots = pts.map(function (p) { return '<circle cx="' + X(p.x).toFixed(1) + '" cy="' + Y(p.v).toFixed(1) + '" r="3" class="wc-dot"/>'; }).join('');
+    var last = pts[pts.length - 1];
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="wchart">' +
+      '<path class="wc-area" d="' + area + '"/><path class="wc-line" d="' + line + '"/>' + dots +
+      '<text class="wc-lbl" x="' + L + '" y="' + (H - 4) + '">' + (max - padV).toFixed(1) + '–' + (min + padV).toFixed(1) + ' kg · last ' + days + ' days</text>' +
+      '<text class="wc-cur" x="' + Math.min(W - 30, X(last.x)) + '" y="' + Math.max(10, Y(last.v) - 8) + '">' + last.v + '</text>' +
+    '</svg>';
+  }
+
   function renderBody() {
     var box = $('#body-app'); if (!box) return;
     var m = metricsOf(state.today);
-    // latest known weight across logs for trend context
     var goal = Number(state.profile && state.profile.weightGoal) || 0;
+    var heightCm = Number(state.profile && state.profile.heightCm) || 0;
+    var cur = Number(m.weight) || (lastMetric('weight') || {}).v || 0;
+    var first = firstMetric('weight');
+    var delta = first && cur ? cur - first.v : 0;
+    var bmi = cur && heightCm ? cur / Math.pow(heightCm / 100, 2) : 0;
+    var bmiTag = !bmi ? '' : bmi < 18.5 ? 'underweight' : bmi < 25 ? 'healthy' : bmi < 30 ? 'overweight' : 'obese';
+    // Goal progress: from starting weight toward goal weight.
+    var gp = null;
+    if (first && goal && cur && first.v !== goal) {
+      gp = Math.max(0, Math.min(100, Math.round((first.v - cur) / (first.v - goal) * 100)));
+    }
+    var deltaHtml = !delta ? '' :
+      '<span class="delta ' + (delta < 0 ? 'down' : 'up') + '">' + (delta < 0 ? '▼' : '▲') + ' ' + Math.abs(delta).toFixed(1) + ' kg since start</span>';
     box.innerHTML =
-      '<div class="card"><div class="metric-big"><b>' + (m.weight || '—') + '</b> <span class="muted">kg' + (goal ? ' · goal ' + goal : '') + '</span></div>' +
-      '<div class="manual-grid" style="margin-top:12px">' +
-      '<label>Weight (kg)<input id="bd-w" type="number" inputmode="decimal" value="' + (m.weight || '') + '" /></label>' +
-      '<label>Waist (cm)<input id="bd-waist" type="number" inputmode="decimal" value="' + (m.waist || '') + '" /></label>' +
-      '<label>Body fat (%)<input id="bd-bf" type="number" inputmode="decimal" value="' + (m.bodyfat || '') + '" /></label>' +
-      '<label>Goal weight<input id="bd-goal" type="number" inputmode="decimal" value="' + (goal || '') + '" /></label></div>' +
-      '<button id="bd-save" class="btn primary block">Log today</button></div>' +
-      '<div class="card"><div class="eyebrow">Weight · kg</div><div id="body-trend"></div></div>';
+      '<div class="card body-hero">' +
+        '<div class="bh-main"><div class="metric-big"><b>' + (cur || '—') + '</b> <span class="muted">kg</span></div>' + deltaHtml + '</div>' +
+        '<div class="bh-chips">' +
+          (bmi ? '<span class="bh-chip">BMI <b>' + bmi.toFixed(1) + '</b> · ' + bmiTag + '</span>' : '') +
+          (goal ? '<span class="bh-chip">Goal <b>' + goal + '</b> kg</span>' : '') +
+          ((m.bodyfat || (lastMetric('bodyfat') || {}).v) ? '<span class="bh-chip">Fat <b>' + (m.bodyfat || lastMetric('bodyfat').v) + '</b>%</span>' : '') +
+        '</div>' +
+        (gp != null ?
+          '<div class="bl" style="display:flex;justify-content:space-between;font-size:12px;margin:10px 0 5px"><span class="muted">Progress to goal</span><span><b>' + gp + '%</b></span></div>' +
+          '<div class="fc-bar"><span style="width:' + gp + '%"></span></div>' : '') +
+      '</div>' +
+      '<div class="card"><div class="eyebrow">Weight · last 30 days</div><div id="body-chart">' + weightChartSvg(30) + '</div></div>' +
+      '<div class="card"><div class="eyebrow" style="margin-bottom:8px">Log today</div>' +
+        '<div class="manual-grid">' +
+        '<label>Weight (kg)<input id="bd-w" type="number" inputmode="decimal" value="' + (m.weight || '') + '" /></label>' +
+        '<label>Body fat (%)<input id="bd-bf" type="number" inputmode="decimal" value="' + (m.bodyfat || '') + '" /></label>' +
+        '<label>Waist (cm)<input id="bd-waist" type="number" inputmode="decimal" value="' + (m.waist || '') + '" /></label>' +
+        '<label>Chest (cm)<input id="bd-chest" type="number" inputmode="decimal" value="' + (m.chest || '') + '" /></label>' +
+        '<label>Arms (cm)<input id="bd-arms" type="number" inputmode="decimal" value="' + (m.arms || '') + '" /></label>' +
+        '<label>Hips (cm)<input id="bd-hips" type="number" inputmode="decimal" value="' + (m.hips || '') + '" /></label>' +
+        '</div>' +
+        '<div class="manual-grid">' +
+        '<label>Height (cm)<input id="bd-height" type="number" inputmode="decimal" value="' + (heightCm || '') + '" /></label>' +
+        '<label>Goal weight (kg)<input id="bd-goal" type="number" inputmode="decimal" value="' + (goal || '') + '" /></label>' +
+        '</div>' +
+        '<button id="bd-save" class="btn primary block">Log today</button></div>';
     $('#bd-save').addEventListener('click', function () {
       m.weight = Number($('#bd-w').value) || 0; m.waist = Number($('#bd-waist').value) || 0; m.bodyfat = Number($('#bd-bf').value) || 0;
-      var g = Number($('#bd-goal').value) || 0;
-      state.profile = Object.assign({}, state.profile, { weightGoal: g });
+      m.chest = Number($('#bd-chest').value) || 0; m.arms = Number($('#bd-arms').value) || 0; m.hips = Number($('#bd-hips').value) || 0;
+      state.profile = Object.assign({}, state.profile, {
+        weightGoal: Number($('#bd-goal').value) || 0,
+        heightCm: Number($('#bd-height').value) || 0
+      });
       queueSave();
       api('saveGoals', { profile: state.profile }).catch(function () {});
       toast('Logged ✓'); renderBody();
     });
-    metricTrend('weight', '#body-trend', 'kg');
+  }
+
+  /* ================= Gym Log (Body) ================= */
+  var GYM_PRESETS = ['Bench Press', 'Squat', 'Deadlift', 'Overhead Press', 'Barbell Row', 'Pull-ups', 'Lat Pulldown', 'Bicep Curl', 'Leg Press', 'Shoulder Press', 'Dips', 'Lunges'];
+  function gymOf(d) { var m = metricsOf(d); if (!m.gym) m.gym = []; return m.gym; }
+  function gymPRs() {
+    var prs = {};
+    (state.logs || []).forEach(function (l) {
+      ((l.metrics && l.metrics.gym) || []).forEach(function (e) {
+        var k = String(e.n || '').trim(); if (!k) return;
+        if (!prs[k] || Number(e.kg) > prs[k].kg) prs[k] = { kg: Number(e.kg) || 0, reps: Number(e.reps) || 0, date: l.date };
+      });
+    });
+    return prs;
+  }
+  function lastGymDay() {
+    var today = todayStr();
+    for (var i = state.logs.length - 1; i >= 0; i--) {
+      var l = state.logs[i];
+      if (l.date >= today) continue;
+      if (l.metrics && l.metrics.gym && l.metrics.gym.length) return l;
+    }
+    return null;
+  }
+  function renderGym() {
+    var box = $('#gym-app'); if (!box) return;
+    var list = gymOf(state.today);
+    var vol = 0;
+    list.forEach(function (e) { vol += (Number(e.sets) || 0) * (Number(e.reps) || 0) * (Number(e.kg) || 0); });
+    var weekDays = 0, today = todayStr();
+    for (var i = 0; i < 7; i++) {
+      var l = logFor(addDays(today, -i));
+      if (l && l.metrics && l.metrics.gym && l.metrics.gym.length) weekDays++;
+    }
+    var prs = gymPRs();
+    var names = Object.keys(prs);
+    var options = GYM_PRESETS.slice();
+    names.forEach(function (n) { if (options.indexOf(n) < 0) options.push(n); });
+    var prev = lastGymDay();
+
+    box.innerHTML =
+      '<div class="card"><div class="gym-stats">' +
+        '<div class="js-stat"><b>' + list.length + '</b><span>exercises</span></div>' +
+        '<div class="js-stat"><b>' + (vol ? (vol >= 1000 ? (vol / 1000).toFixed(1) + 't' : vol + 'kg') : '0') + '</b><span>volume today</span></div>' +
+        '<div class="js-stat"><b>' + weekDays + '/7</b><span>days this week</span></div>' +
+      '</div></div>' +
+      '<div class="card"><div class="eyebrow" style="margin-bottom:8px">Add exercise</div>' +
+        '<select id="gym-name">' + options.map(function (n) { return '<option>' + esc(n) + '</option>'; }).join('') + '<option value="__custom">✏️ Custom…</option></select>' +
+        '<div class="gym-grid">' +
+          '<label>Sets<input id="gym-sets" type="number" inputmode="numeric" value="3" /></label>' +
+          '<label>Reps<input id="gym-reps" type="number" inputmode="numeric" value="10" /></label>' +
+          '<label>Weight kg<input id="gym-kg" type="number" inputmode="decimal" value="" placeholder="0" /></label>' +
+        '</div>' +
+        '<button id="gym-add" class="btn primary block">Add to today</button>' +
+        (!list.length && prev ? '<button id="gym-copy" class="btn block" style="margin-top:8px">↻ Repeat ' + shortDate(prev.date) + ' workout (' + prev.metrics.gym.length + ' lifts)</button>' : '') +
+      '</div>' +
+      '<div class="card"><div class="eyebrow" style="margin-bottom:4px">Today</div><div id="gym-today">' +
+        (list.length ? list.map(function (e, i) {
+          var pr = prs[e.n] && Number(e.kg) >= prs[e.n].kg && Number(e.kg) > 0;
+          return '<div class="list-row"><div><b>' + esc(e.n) + '</b>' + (pr ? ' <span class="pr-badge">PR 🏅</span>' : '') +
+            '<div class="muted tiny">' + e.sets + ' × ' + e.reps + (e.kg ? ' @ ' + e.kg + ' kg' : ' · bodyweight') + '</div></div>' +
+            '<button class="list-del" data-gi="' + i + '">✕</button></div>';
+        }).join('') : '<p class="muted tiny">Nothing logged yet — hit your first set 💪</p>') +
+      '</div></div>' +
+      (names.length ? '<div class="card"><div class="eyebrow" style="margin-bottom:4px">Personal records</div>' +
+        names.sort(function (a, b) { return prs[b].kg - prs[a].kg; }).slice(0, 8).map(function (n) {
+          return '<div class="list-row"><div><b>' + esc(n) + '</b><div class="muted tiny">' + shortDate(prs[n].date) + '</div></div>' +
+            '<span class="mono">' + prs[n].kg + ' kg</span></div>';
+        }).join('') + '</div>' : '');
+
+    $('#gym-add').addEventListener('click', function () {
+      var sel = $('#gym-name').value, name = sel;
+      if (sel === '__custom') { name = (prompt('Exercise name:') || '').trim(); if (!name) return; }
+      var entry = {
+        n: name.slice(0, 40),
+        sets: Math.max(1, Number($('#gym-sets').value) || 1),
+        reps: Math.max(1, Number($('#gym-reps').value) || 1),
+        kg: Math.max(0, Number($('#gym-kg').value) || 0)
+      };
+      var prevBest = prs[entry.n] ? prs[entry.n].kg : 0;
+      gymOf(state.today).push(entry);
+      queueSave();
+      if (entry.kg > 0 && entry.kg > prevBest) toast('New PR on ' + entry.n + ' — ' + entry.kg + ' kg! 🏅');
+      renderGym();
+    });
+    var copyBtn = $('#gym-copy');
+    if (copyBtn) copyBtn.addEventListener('click', function () {
+      prev.metrics.gym.forEach(function (e) { gymOf(state.today).push({ n: e.n, sets: e.sets, reps: e.reps, kg: e.kg }); });
+      queueSave(); toast('Workout copied — beat it today 🔥'); renderGym();
+    });
+    box.querySelectorAll('[data-gi]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        gymOf(state.today).splice(Number(b.getAttribute('data-gi')), 1);
+        queueSave(); renderGym();
+      });
+    });
+  }
+
+  /* ================= Breathe (Mind) ================= */
+  var BREATHE_MODES = [
+    { id: 'box', name: 'Box', desc: '4·4·4·4 — focus', phases: [['Breathe in', 4, 1.35], ['Hold', 4, 1.35], ['Breathe out', 4, 1], ['Hold', 4, 1]] },
+    { id: '478', name: '4-7-8', desc: 'calm & sleep', phases: [['Breathe in', 4, 1.35], ['Hold', 7, 1.35], ['Breathe out', 8, 1]] },
+    { id: 'coh', name: '5-5', desc: 'coherent balance', phases: [['Breathe in', 5, 1.35], ['Breathe out', 5, 1]] }
+  ];
+  var breathe = { mode: 'box', mins: 3, running: false, tick: null, phaseAt: 0, endAt: 0 };
+  function stopBreathe(silent) {
+    if (breathe.tick) { clearInterval(breathe.tick); breathe.tick = null; }
+    breathe.running = false;
+    if (!silent) {
+      var c = $('#br-circle');
+      if (c) { c.style.transitionDuration = '.8s'; c.style.transform = 'scale(1)'; }
+    }
+  }
+  function renderBreathe() {
+    var box = $('#breathe-app'); if (!box) return;
+    stopBreathe(true);
+    var m = metricsOf(state.today);
+    var doneMin = Number(m.breathMin) || 0;
+    var mode = BREATHE_MODES.filter(function (x) { return x.id === breathe.mode; })[0] || BREATHE_MODES[0];
+    box.innerHTML =
+      '<div class="seg" id="br-modes">' + BREATHE_MODES.map(function (x) {
+        return '<button data-brm="' + x.id + '"' + (x.id === breathe.mode ? ' class="active"' : '') + '>' + x.name + '</button>';
+      }).join('') + '</div>' +
+      '<p class="muted tiny center" style="margin:0 0 6px">' + mode.desc + '</p>' +
+      '<div class="card breathe-card">' +
+        '<div class="br-stage"><div class="br-ring"></div><div id="br-circle" class="br-circle"><span id="br-label">Ready?</span><span id="br-count" class="br-count"></span></div></div>' +
+        '<div class="seg" id="br-mins" style="max-width:240px;margin:14px auto 10px">' +
+          [1, 3, 5].map(function (n) { return '<button data-brt="' + n + '"' + (n === breathe.mins ? ' class="active"' : '') + '>' + n + ' min</button>'; }).join('') +
+        '</div>' +
+        '<button id="br-start" class="btn primary block">Start session</button>' +
+        (doneMin ? '<p class="muted tiny center" style="margin:10px 0 0">🫁 ' + doneMin + ' min breathed today</p>' : '') +
+      '</div>';
+    $('#br-modes').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-brm]'); if (!b) return;
+      breathe.mode = b.getAttribute('data-brm'); renderBreathe();
+    });
+    $('#br-mins').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-brt]'); if (!b) return;
+      breathe.mins = Number(b.getAttribute('data-brt')); renderBreathe();
+    });
+    $('#br-start').addEventListener('click', function () {
+      if (breathe.running) { stopBreathe(); $('#br-start').textContent = 'Start session'; $('#br-label').textContent = 'Paused'; $('#br-count').textContent = ''; return; }
+      startBreathe(mode);
+    });
+  }
+  function startBreathe(mode) {
+    breathe.running = true;
+    breathe.endAt = Date.now() + breathe.mins * 60000;
+    $('#br-start').textContent = 'Stop';
+    var phaseIdx = -1, phaseLeft = 0;
+    var next = function () {
+      phaseIdx = (phaseIdx + 1) % mode.phases.length;
+      var p = mode.phases[phaseIdx];
+      phaseLeft = p[1];
+      $('#br-label').textContent = p[0];
+      $('#br-count').textContent = phaseLeft;
+      var c = $('#br-circle');
+      c.style.transitionDuration = p[1] + 's';
+      c.style.transform = 'scale(' + p[2] + ')';
+    };
+    next();
+    breathe.tick = setInterval(function () {
+      if (!breathe.running) return;
+      phaseLeft--;
+      if (Date.now() >= breathe.endAt) {
+        stopBreathe();
+        var m = metricsOf(state.today);
+        m.breathMin = (Number(m.breathMin) || 0) + breathe.mins;
+        queueSave();
+        toast('Session complete — ' + breathe.mins + ' min of calm 🫁✨');
+        renderBreathe();
+        return;
+      }
+      if (phaseLeft <= 0) next();
+      else $('#br-count').textContent = phaseLeft;
+    }, 1000);
+  }
+
+  /* ================= Digital Detox (Mind) ================= */
+  function detoxKey() { return 'hard_detox_' + (state.username || ''); }
+  function renderDetox() {
+    var box = $('#detox-app'); if (!box) return;
+    if (state.detoxTimer) { clearInterval(state.detoxTimer); state.detoxTimer = null; }
+    var m = metricsOf(state.today);
+    var total = Number(m.detoxMin) || 0;
+    var goal = Number(state.profile && state.profile.detoxGoal) || 60;
+    var startedAt = Number(localStorage.getItem(detoxKey())) || 0;
+    var pct = pctOf(total, goal);
+    box.innerHTML =
+      '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
+        ringMini(pct, 'var(--mind-c)', 92, '<b>' + pct + '%</b>') +
+        '<div class="hero-meta"><div class="metric-big"><b>' + total + '</b> <span class="muted">min offline</span></div>' +
+        '<div class="muted tiny">goal <button class="inline-edit" id="dx-goal-btn">' + goal + ' min</button> / day' + (pct >= 100 ? ' · unplugged 🏆' : '') + '</div></div></div>' +
+      '<div class="card detox-card' + (startedAt ? ' active' : '') + '">' +
+        (startedAt
+          ? '<div class="eyebrow">Detox running</div><div id="dx-elapsed" class="dx-elapsed mono">00:00</div>' +
+            '<p class="muted tiny center" style="margin:4px 0 12px">Phone down. Live a little 🌿</p>' +
+            '<button id="dx-stop" class="btn primary block">End detox &amp; bank minutes</button>'
+          : '<div class="eyebrow">Start a phone-free block</div>' +
+            '<p class="muted tiny" style="margin:8px 0 12px">Start the timer, put the phone face-down. End it when you pick the phone back up — the minutes get banked here.</p>' +
+            '<button id="dx-start" class="btn primary block">📵 Start detox</button>') +
+      '</div>' +
+      '<div class="card"><div class="eyebrow">Offline minutes · last 7 days</div><div id="detox-trend"></div></div>';
+    $('#dx-goal-btn').addEventListener('click', function () {
+      var x = prompt('Daily phone-free goal (minutes):', goal); if (x == null) return;
+      saveProfileKey('detoxGoal', Math.max(10, Number(x) || 60), renderDetox);
+    });
+    if (startedAt) {
+      var elapsedEl = $('#dx-elapsed');
+      var tickFn = function () {
+        var s = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+        var hh = Math.floor(s / 3600), mm2 = Math.floor((s % 3600) / 60), ss = s % 60;
+        elapsedEl.textContent = (hh ? hh + ':' : '') + (mm2 < 10 ? '0' : '') + mm2 + ':' + (ss < 10 ? '0' : '') + ss;
+      };
+      tickFn();
+      state.detoxTimer = setInterval(tickFn, 1000);
+      $('#dx-stop').addEventListener('click', function () {
+        var mins = Math.round((Date.now() - startedAt) / 60000);
+        localStorage.removeItem(detoxKey());
+        if (state.detoxTimer) { clearInterval(state.detoxTimer); state.detoxTimer = null; }
+        if (mins >= 1) {
+          m.detoxMin = (Number(m.detoxMin) || 0) + mins;
+          queueSave();
+          toast('+' + mins + ' min banked 📵✨');
+        } else {
+          toast('Under a minute — not banked.');
+        }
+        renderDetox();
+      });
+    } else {
+      $('#dx-start').addEventListener('click', function () {
+        localStorage.setItem(detoxKey(), String(Date.now()));
+        renderDetox();
+      });
+    }
+    metricTrend('detoxMin', '#detox-trend', 'm');
   }
 
   /* ----- Money / Subs / Savings / Tasks / Goals (generic list apps) ----- */
