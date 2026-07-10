@@ -630,6 +630,10 @@
     $('#bf-sex').addEventListener('change', function () {
       $('#bf-hip-wrap').classList.toggle('hidden', this.value !== 'female');
     });
+    // Once the user edits an auto-filled Calc field, stop overwriting it —
+    // everything else keeps syncing live from the latest Body log.
+    $('#view-calc').addEventListener('input', function (e) { if (e.target.id) state.calcTouched[e.target.id] = true; });
+    $('#view-calc').addEventListener('change', function (e) { if (e.target.id) state.calcTouched[e.target.id] = true; });
     $('#fx-sound').addEventListener('change', function () { FX.set('sound', this.checked); });
     $('#fx-haptics').addEventListener('change', function () { FX.set('haptics', this.checked); });
     // Admin dashboard
@@ -3299,7 +3303,8 @@
     if (p.goalType) $('#g-goaltype').value = p.goalType;
     $('#g-age').value = p.age || '';
     $('#g-height').value = p.heightCm || '';
-    $('#g-weight').value = p.weightKg || '';
+    // Prefer the latest weight logged in Body over the older manual profile value.
+    $('#g-weight').value = (lastMetric('weight') || {}).v || p.weightKg || '';
     $('#g-cal').value = p.calorieGoal || '';
     $('#g-protein').value = p.proteinGoal || '';
     $('#g-carbs').value = p.carbGoal || '';
@@ -3311,18 +3316,35 @@
   /* ---------------- Fitness calculators ---------------- */
   var ACT_FACTORS = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, athlete: 1.9 };
 
+  // Auto-fills a field from Body/profile data, unless the user has directly
+  // edited that field this session (tracked via state.calcTouched). Always
+  // re-syncs untouched fields, so a fresh Body log shows up immediately.
+  if (!state.calcTouched) state.calcTouched = {};
+  function calcAutoFill(sel, v) {
+    var e = $(sel); if (!e || state.calcTouched[e.id]) return;
+    if (!(v || v === 0)) return;
+    e.value = v;
+  }
+  function calcAutoSelect(sel, v) {
+    var e = $(sel); if (!e || !v || state.calcTouched[e.id]) return;
+    e.value = v;
+  }
   function renderCalc() {
     var p = state.profile || {};
-    var pre = function (sel, v) { var e = $(sel); if (e && !e.value && (v || v === 0)) e.value = v; };
-    var preSel = function (sel, v) { var e = $(sel); if (e && v) e.value = v; };
-    pre('#bmi-h', p.heightCm); pre('#bmi-w', p.weightKg);
-    pre('#bf-h', p.heightCm); preSel('#bf-sex', p.sex);
+    var weight = (lastMetric('weight') || {}).v || p.weightKg;
+    var neck = (lastMetric('neck') || {}).v;
+    var waist = (lastMetric('waist') || {}).v;
+    var hip = (lastMetric('hips') || {}).v;
+
+    calcAutoFill('#bmi-h', p.heightCm); calcAutoFill('#bmi-w', weight);
+    calcAutoFill('#bf-h', p.heightCm); calcAutoSelect('#bf-sex', p.sex);
+    calcAutoFill('#bf-neck', neck); calcAutoFill('#bf-waist', waist); calcAutoFill('#bf-hip', hip);
     $('#bf-hip-wrap').classList.toggle('hidden', $('#bf-sex').value !== 'female');
-    preSel('#cal-sex', p.sex); pre('#cal-age', p.age); pre('#cal-h', p.heightCm); pre('#cal-w', p.weightKg);
-    preSel('#cal-act', p.activity); preSel('#cal-goal', p.goalType);
-    pre('#mac-cal', p.calorieGoal);
-    preSel('#iw-sex', p.sex); pre('#iw-h', p.heightCm);
-    pre('#wtr-w', p.weightKg);
+    calcAutoSelect('#cal-sex', p.sex); calcAutoFill('#cal-age', p.age); calcAutoFill('#cal-h', p.heightCm); calcAutoFill('#cal-w', weight);
+    calcAutoSelect('#cal-act', p.activity); calcAutoSelect('#cal-goal', p.goalType);
+    calcAutoFill('#mac-cal', p.calorieGoal);
+    calcAutoSelect('#iw-sex', p.sex); calcAutoFill('#iw-h', p.heightCm);
+    calcAutoFill('#wtr-w', weight);
   }
 
   function calcOut(sel, html) { $(sel).innerHTML = html; }
@@ -3339,15 +3361,14 @@
     else if (type === 'bodyfat') {
       var sex = $('#bf-sex').value, H = num('#bf-h'), neck = num('#bf-neck'), waist = num('#bf-waist'), hip = num('#bf-hip');
       if (!H || !neck || !waist) return calcOut('#bf-out', 'Enter height, neck & waist.');
-      var bf;
-      if (sex === 'female') {
-        if (!hip) return calcOut('#bf-out', 'Enter hip measurement.');
-        bf = 495 / (1.29579 - 0.35004 * log10(waist + hip - neck) + 0.22100 * log10(H)) - 450;
-      } else {
-        if (waist - neck <= 0) return calcOut('#bf-out', 'Waist must be larger than neck.');
-        bf = 495 / (1.0324 - 0.19077 * log10(waist - neck) + 0.15456 * log10(H)) - 450;
-      }
-      calcOut('#bf-out', '<b>' + bf.toFixed(1) + '%</b> body fat (estimate)');
+      if (sex === 'female' && !hip) return calcOut('#bf-out', 'Enter hip measurement.');
+      if (sex !== 'female' && waist - neck <= 0) return calcOut('#bf-out', 'Waist must be larger than neck.');
+      var bf = navyBodyFat(sex, H, neck, waist, hip);
+      // ACE body-fat categories differ by sex.
+      var tag = sex === 'female'
+        ? (bf < 14 ? 'essential' : bf < 21 ? 'athlete' : bf < 25 ? 'fitness' : bf < 32 ? 'acceptable' : 'obese range')
+        : (bf < 6 ? 'essential' : bf < 14 ? 'athlete' : bf < 18 ? 'fitness' : bf < 25 ? 'acceptable' : 'obese range');
+      calcOut('#bf-out', '<b>' + bf.toFixed(1) + '%</b> body fat (' + (sex === 'female' ? 'women' : 'men') + ', US Navy estimate) · ' + tag);
     }
     else if (type === 'calories') {
       var s = $('#cal-sex').value, age = num('#cal-age'), ch = num('#cal-h'), cw = num('#cal-w');
@@ -3951,16 +3972,34 @@
     '</svg>';
   }
 
+  // Shared U.S. Navy circumference body-fat formula — used by Body's live
+  // estimate AND the Calculators app, so both always agree.
+  function navyBodyFat(sex, heightCm, neck, waist, hip) {
+    if (!heightCm || !neck || !waist) return null;
+    if (sex === 'female') {
+      if (!hip) return null;
+      return 495 / (1.29579 - 0.35004 * log10(waist + hip - neck) + 0.22100 * log10(heightCm)) - 450;
+    }
+    if (waist - neck <= 0) return null;
+    return 495 / (1.0324 - 0.19077 * log10(waist - neck) + 0.15456 * log10(heightCm)) - 450;
+  }
+
   function renderBody() {
     var box = $('#body-app'); if (!box) return;
     var day = appDay(), m = metricsOf(day);
     var goal = Number(state.profile && state.profile.weightGoal) || 0;
     var heightCm = Number(state.profile && state.profile.heightCm) || 0;
+    var sex = (state.profile && state.profile.sex) || '';
     var cur = Number(m.weight) || (lastMetric('weight') || {}).v || 0;
+    var neckV = Number(m.neck) || (lastMetric('neck') || {}).v || 0;
+    var waistV = Number(m.waist) || (lastMetric('waist') || {}).v || 0;
+    var hipV = Number(m.hips) || (lastMetric('hips') || {}).v || 0;
     var first = firstMetric('weight');
     var delta = first && cur ? cur - first.v : 0;
     var bmi = cur && heightCm ? cur / Math.pow(heightCm / 100, 2) : 0;
     var bmiTag = !bmi ? '' : bmi < 18.5 ? 'underweight' : bmi < 25 ? 'healthy' : bmi < 30 ? 'overweight' : 'obese';
+    var manualBf = m.bodyfat || (lastMetric('bodyfat') || {}).v || 0;
+    var autoBf = manualBf ? null : navyBodyFat(sex, heightCm, neckV, waistV, hipV);
     // Goal progress: from starting weight toward goal weight.
     var gp = null;
     if (first && goal && cur && first.v !== goal) {
@@ -3974,32 +4013,38 @@
         '<div class="bh-chips">' +
           (bmi ? '<span class="bh-chip">BMI <b>' + bmi.toFixed(1) + '</b> · ' + bmiTag + '</span>' : '') +
           (goal ? '<span class="bh-chip">Goal <b>' + goal + '</b> kg</span>' : '') +
-          ((m.bodyfat || (lastMetric('bodyfat') || {}).v) ? '<span class="bh-chip">Fat <b>' + (m.bodyfat || lastMetric('bodyfat').v) + '</b>%</span>' : '') +
+          (manualBf ? '<span class="bh-chip">Fat <b>' + manualBf + '</b>%</span>' :
+            autoBf ? '<span class="bh-chip">Fat <b>' + autoBf.toFixed(1) + '</b>% <i>(Navy est.)</i></span>' : '') +
         '</div>' +
         (gp != null ?
           '<div class="bl" style="display:flex;justify-content:space-between;font-size:12px;margin:10px 0 5px"><span class="muted">Progress to goal</span><span><b>' + gp + '%</b></span></div>' +
           '<div class="fc-bar"><span style="width:' + gp + '%"></span></div>' : '') +
       '</div>' +
       '<div class="card"><div class="eyebrow">Weight · last 30 days</div><div id="body-chart">' + weightChartSvg(30) + '</div></div>' +
-      '<div class="card"><div class="eyebrow" style="margin-bottom:8px">Log today</div>' +
+      '<div class="card"><div class="eyebrow" style="margin-bottom:8px">Log this day</div>' +
         '<div class="manual-grid">' +
         '<label>Weight (kg)<input id="bd-w" type="number" inputmode="decimal" value="' + (m.weight || '') + '" /></label>' +
-        '<label>Body fat (%)<input id="bd-bf" type="number" inputmode="decimal" value="' + (m.bodyfat || '') + '" /></label>' +
+        '<label>Body fat (%) <span class="muted tiny">optional</span><input id="bd-bf" type="number" inputmode="decimal" value="' + (m.bodyfat || '') + '" placeholder="' + (autoBf ? autoBf.toFixed(1) + ' est.' : '') + '" /></label>' +
+        '<label>Neck (cm)<input id="bd-neck" type="number" inputmode="decimal" value="' + (m.neck || '') + '" /></label>' +
         '<label>Waist (cm)<input id="bd-waist" type="number" inputmode="decimal" value="' + (m.waist || '') + '" /></label>' +
         '<label>Chest (cm)<input id="bd-chest" type="number" inputmode="decimal" value="' + (m.chest || '') + '" /></label>' +
         '<label>Arms (cm)<input id="bd-arms" type="number" inputmode="decimal" value="' + (m.arms || '') + '" /></label>' +
         '<label>Hips (cm)<input id="bd-hips" type="number" inputmode="decimal" value="' + (m.hips || '') + '" /></label>' +
         '</div>' +
         '<div class="manual-grid">' +
+        '<label>Sex <span class="muted tiny">for BMR/body-fat calcs</span><select id="bd-sex"><option value="">—</option><option value="male"' + (sex === 'male' ? ' selected' : '') + '>Male</option><option value="female"' + (sex === 'female' ? ' selected' : '') + '>Female</option></select></label>' +
         '<label>Height (cm)<input id="bd-height" type="number" inputmode="decimal" value="' + (heightCm || '') + '" /></label>' +
         '<label>Goal weight (kg)<input id="bd-goal" type="number" inputmode="decimal" value="' + (goal || '') + '" /></label>' +
         '</div>' +
+        '<p class="muted tiny" style="margin:4px 2px 10px">These feed straight into the <b>Calc</b> app — log once here, use everywhere.</p>' +
         '<button id="bd-save" class="btn primary block">Log this day</button></div>';
     bindDayBar(box, renderBody);
     $('#bd-save').addEventListener('click', function () {
       m.weight = Number($('#bd-w').value) || 0; m.waist = Number($('#bd-waist').value) || 0; m.bodyfat = Number($('#bd-bf').value) || 0;
+      m.neck = Number($('#bd-neck').value) || 0;
       m.chest = Number($('#bd-chest').value) || 0; m.arms = Number($('#bd-arms').value) || 0; m.hips = Number($('#bd-hips').value) || 0;
       state.profile = Object.assign({}, state.profile, {
+        sex: $('#bd-sex').value || state.profile.sex || '',
         weightGoal: Number($('#bd-goal').value) || 0,
         heightCm: Number($('#bd-height').value) || 0
       });

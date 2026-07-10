@@ -1026,3 +1026,5 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .mr-how-btn { margin-top: 8px; font-size: 12px; }
 .mr-how { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 10px; line-height: 1.5; }
 .mr-how p { margin: 0 0 8px; }
+
+.bh-chip i { font-style: normal; opacity: .65; font-size: 10px; }
