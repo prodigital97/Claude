@@ -1028,3 +1028,49 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .mr-how p { margin: 0 0 8px; }
 
 .bh-chip i { font-style: normal; opacity: .65; font-size: 10px; }
+
+/* ============================================================
+   Body 2.0 — metric selector, hero chart, comparison tiles, insight
+   ============================================================ */
+.bm-chips { display: flex; gap: 7px; overflow-x: auto; padding: 2px 0 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.bm-chips::-webkit-scrollbar { display: none; }
+.bm-chip {
+  flex: none; border: 1px solid var(--line); background: var(--card); color: var(--muted);
+  border-radius: 999px; padding: 8px 15px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.bm-chip.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+.body-hero2 { padding: 16px 16px 12px; }
+.bh2-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+.bh2-main { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 4px; }
+.bh2-val b { font-size: 44px; font-weight: 800; letter-spacing: -1px; line-height: 1.05; }
+.bh2-unit { font-size: 18px; color: var(--muted); font-weight: 700; margin-left: 4px; }
+.bh2-delta { text-align: right; font-weight: 800; font-size: 16px; white-space: nowrap; margin-top: 8px; }
+.bh2-delta small { display: block; font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-top: 2px; }
+.bh2-delta.good { color: var(--green); }
+.bh2-delta.warn { color: var(--amber); }
+.bchart { width: 100%; height: 96px; display: block; margin-top: 6px; }
+.bc-area { fill: url(#bgrad); }
+.bc-line { fill: none; stroke: var(--green); stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+.bc-end { fill: var(--green); }
+.bh2-axis { display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); letter-spacing: .06em; margin-top: 6px; }
+
+.bm-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin-bottom: 14px; }
+.bm-tile {
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  padding: 11px 12px; cursor: pointer; text-align: left; color: var(--text);
+  display: flex; flex-direction: column; gap: 5px; min-width: 0;
+}
+.bm-tile .bmt-val { font-size: 16px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bm-tile .bmt-val small { font-size: 10px; color: var(--muted); font-weight: 600; }
+.bmt-delta { font-size: 11px; font-weight: 800; margin-left: 5px; }
+.bmt-delta.good { color: var(--green); }
+.bmt-delta.warn { color: var(--amber); }
+
+.body-insight {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: color-mix(in srgb, var(--green) 10%, var(--card));
+  border-color: color-mix(in srgb, var(--green) 35%, transparent);
+  font-size: 13.5px; line-height: 1.5; font-weight: 500;
+}
+.body-insight .bi-ico { color: var(--green); font-size: 12px; margin-top: 3px; flex: none; }

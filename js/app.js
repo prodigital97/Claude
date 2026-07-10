@@ -3945,31 +3945,105 @@
     metricTrend('sleepMin', '#sleep-trend', 'h', 60);
   }
 
-  // 30-day weight line chart (SVG). Skips unlogged days, connects the dots.
-  function weightChartSvg(days) {
-    var today = todayStr(), pts = [];
-    for (var i = days - 1; i >= 0; i--) {
-      var dte = addDays(today, -i);
-      var l = logFor(dte);
-      var v = l && l.metrics && Number(l.metrics.weight);
-      if (v) pts.push({ x: days - 1 - i, v: v });
-    }
-    if (pts.length < 2) return '<p class="muted tiny" style="margin:6px 0 0">Log your weight on a few days to unlock the trend line.</p>';
+  /* ----- Body metric engine: series, trend, chart ----- */
+  var BODY_METRICS = [
+    { k: 'weight',  label: 'Weight', unit: 'kg', dec: 1, downGood: true },
+    { k: 'bodyfat', label: 'Fat',    unit: '%',  dec: 1, downGood: true },
+    { k: 'waist',   label: 'Waist',  unit: 'cm', dec: 0, downGood: true },
+    { k: 'chest',   label: 'Chest',  unit: 'cm', dec: 0, downGood: false },
+    { k: 'arms',    label: 'Arms',   unit: 'cm', dec: 0, downGood: false },
+    { k: 'hips',    label: 'Hips',   unit: 'cm', dec: 0, downGood: true },
+    { k: 'neck',    label: 'Neck',   unit: 'cm', dec: 0, downGood: true }
+  ];
+  function bodyMetricDef(k) { return BODY_METRICS.filter(function (x) { return x.k === k; })[0] || BODY_METRICS[0]; }
+  // All logged points for a metric, oldest → newest.
+  function metricSeries(key) {
+    var today = todayStr(), out = [];
+    (state.logs || []).forEach(function (l) {
+      if (l.date > today) return;
+      var v = l.metrics && Number(l.metrics[key]);
+      if (v) out.push({ date: l.date, v: v });
+    });
+    return out;
+  }
+  // Least-squares slope in units/week over the last `days` (default 42).
+  function metricTrendWk(key, days) {
+    var cut = addDays(todayStr(), -(days || 42));
+    var pts = metricSeries(key).filter(function (p) { return p.date >= cut; });
+    if (pts.length < 3) return null;
+    var x0 = parseDateLocal(pts[0].date);
+    var sx = 0, sy = 0, sxx = 0, sxy = 0, n = pts.length;
+    pts.forEach(function (p) {
+      var x = (parseDateLocal(p.date) - x0) / 864e5;
+      sx += x; sy += p.v; sxx += x * x; sxy += x * p.v;
+    });
+    var denom = n * sxx - sx * sx;
+    if (!denom) return null;
+    return (n * sxy - sx * sy) / denom * 7;
+  }
+  function parseDateLocal(s) { var p = String(s).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]).getTime(); }
+
+  // Mock-style area chart for any body metric: gradient fill, start/trend/today axis.
+  function bodyChartSvg(def) {
+    var pts = metricSeries(def.k);
+    if (pts.length < 2) return '<p class="muted tiny" style="margin:10px 0 4px">Log ' + def.label.toLowerCase() + ' on a few days to unlock the trend chart.</p>';
     var min = pts[0].v, max = pts[0].v;
     pts.forEach(function (p) { if (p.v < min) min = p.v; if (p.v > max) max = p.v; });
-    var padV = Math.max(0.5, (max - min) * 0.15); min -= padV; max += padV;
-    var W = 320, H = 120, L = 8, R = 8, T = 12, B = 18;
-    var X = function (x) { return L + x / (days - 1) * (W - L - R); };
+    var padV = Math.max(def.dec ? 0.5 : 1, (max - min) * 0.2); min -= padV; max += padV;
+    var t0 = parseDateLocal(pts[0].date), t1 = parseDateLocal(pts[pts.length - 1].date);
+    var span = Math.max(1, t1 - t0);
+    var W = 320, H = 96, L = 4, R = 4, T = 8, B = 6;
+    var X = function (p) { return L + (parseDateLocal(p.date) - t0) / span * (W - L - R); };
     var Y = function (v) { return T + (1 - (v - min) / (max - min)) * (H - T - B); };
-    var line = pts.map(function (p, i) { return (i ? 'L' : 'M') + X(p.x).toFixed(1) + ' ' + Y(p.v).toFixed(1); }).join(' ');
-    var area = line + ' L' + X(pts[pts.length - 1].x).toFixed(1) + ' ' + (H - B) + ' L' + X(pts[0].x).toFixed(1) + ' ' + (H - B) + ' Z';
-    var dots = pts.map(function (p) { return '<circle cx="' + X(p.x).toFixed(1) + '" cy="' + Y(p.v).toFixed(1) + '" r="3" class="wc-dot"/>'; }).join('');
+    var line = pts.map(function (p, i) { return (i ? 'L' : 'M') + X(p).toFixed(1) + ' ' + Y(p.v).toFixed(1); }).join(' ');
+    var area = line + ' L' + X(pts[pts.length - 1]).toFixed(1) + ' ' + (H - B) + ' L' + X(pts[0]).toFixed(1) + ' ' + (H - B) + ' Z';
     var last = pts[pts.length - 1];
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="wchart">' +
-      '<path class="wc-area" d="' + area + '"/><path class="wc-line" d="' + line + '"/>' + dots +
-      '<text class="wc-lbl" x="' + L + '" y="' + (H - 4) + '">' + (max - padV).toFixed(1) + '–' + (min + padV).toFixed(1) + ' kg · last ' + days + ' days</text>' +
-      '<text class="wc-cur" x="' + Math.min(W - 30, X(last.x)) + '" y="' + Math.max(10, Y(last.v) - 8) + '">' + last.v + '</text>' +
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="bchart" preserveAspectRatio="none">' +
+      '<defs><linearGradient id="bgrad" x1="0" y1="0" x2="0" y2="1">' +
+        '<stop offset="0%" stop-color="var(--green)" stop-opacity=".28"/>' +
+        '<stop offset="100%" stop-color="var(--green)" stop-opacity="0"/>' +
+      '</linearGradient></defs>' +
+      '<path class="bc-area" d="' + area + '"/><path class="bc-line" d="' + line + '"/>' +
+      '<circle class="bc-end" cx="' + X(last).toFixed(1) + '" cy="' + Y(last.v).toFixed(1) + '" r="3.5"/>' +
     '</svg>';
+  }
+
+  // Latest value + change since the first log of that metric.
+  function metricNow(key) {
+    var s = metricSeries(key);
+    if (!s.length) return null;
+    var first = s[0], last = s[s.length - 1];
+    return { v: last.v, delta: s.length > 1 ? last.v - first.v : null, firstV: first.v, firstDate: first.date };
+  }
+
+  // Auto insight: trend + recomposition + ETA to goal weight.
+  function bodyInsight(goal) {
+    var bits = [];
+    var w = metricNow('weight'), tw = metricTrendWk('weight');
+    var wa = metricNow('waist'), ch = metricNow('chest');
+    var waistDown = wa && wa.delta != null && wa.delta < 0;
+    var chestUp = ch && ch.delta != null && ch.delta > 0;
+    if (waistDown && chestUp) {
+      bits.push('Waist down ' + Math.abs(wa.delta).toFixed(0) + ' cm, chest up ' + ch.delta.toFixed(0) + ' cm — that’s recomposition, not just loss');
+    } else if (waistDown) {
+      bits.push('Waist down ' + Math.abs(wa.delta).toFixed(0) + ' cm since day 1');
+    }
+    if (tw != null && Math.abs(tw) >= 0.05) {
+      bits.push('weight trending ' + (tw < 0 ? '−' : '+') + Math.abs(tw).toFixed(2) + ' kg/wk');
+    }
+    if (goal && w && tw != null && Math.abs(tw) >= 0.05) {
+      var gap = goal - w.v;
+      if (gap * tw > 0) { // moving toward the goal
+        var daysToGoal = Math.round(gap / (tw / 7));
+        if (daysToGoal > 0 && daysToGoal < 400) {
+          var eta = parse(addDays(todayStr(), daysToGoal)).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+          bits.push('on pace for ' + goal + ' kg by ' + eta);
+        }
+      }
+    }
+    if (!bits.length) return null;
+    var s = bits.join(' — ');
+    return s.charAt(0).toUpperCase() + s.slice(1) + '.';
   }
 
   // Shared U.S. Navy circumference body-fat formula — used by Body's live
@@ -3990,37 +4064,66 @@
     var goal = Number(state.profile && state.profile.weightGoal) || 0;
     var heightCm = Number(state.profile && state.profile.heightCm) || 0;
     var sex = (state.profile && state.profile.sex) || '';
-    var cur = Number(m.weight) || (lastMetric('weight') || {}).v || 0;
     var neckV = Number(m.neck) || (lastMetric('neck') || {}).v || 0;
     var waistV = Number(m.waist) || (lastMetric('waist') || {}).v || 0;
     var hipV = Number(m.hips) || (lastMetric('hips') || {}).v || 0;
-    var first = firstMetric('weight');
-    var delta = first && cur ? cur - first.v : 0;
-    var bmi = cur && heightCm ? cur / Math.pow(heightCm / 100, 2) : 0;
-    var bmiTag = !bmi ? '' : bmi < 18.5 ? 'underweight' : bmi < 25 ? 'healthy' : bmi < 30 ? 'overweight' : 'obese';
     var manualBf = m.bodyfat || (lastMetric('bodyfat') || {}).v || 0;
     var autoBf = manualBf ? null : navyBodyFat(sex, heightCm, neckV, waistV, hipV);
-    // Goal progress: from starting weight toward goal weight.
-    var gp = null;
-    if (first && goal && cur && first.v !== goal) {
-      gp = Math.max(0, Math.min(100, Math.round((first.v - cur) / (first.v - goal) * 100)));
-    }
-    var deltaHtml = !delta ? '' :
-      '<span class="delta ' + (delta < 0 ? 'down' : 'up') + '">' + (delta < 0 ? '▼' : '▲') + ' ' + Math.abs(delta).toFixed(1) + ' kg since start</span>';
+
+    // Selected hero metric (chips at top switch it).
+    if (!state.bodyMetric) state.bodyMetric = 'weight';
+    var def = bodyMetricDef(state.bodyMetric);
+    var now = metricNow(def.k);
+    // Fat has a computed fallback when never logged manually.
+    if (!now && def.k === 'bodyfat' && autoBf) now = { v: autoBf, delta: null, firstV: null, firstDate: null };
+    var cur = now ? now.v : 0;
+    var heroDelta = now && now.delta != null && Math.abs(now.delta) >= 0.05 ? now.delta : null;
+    var deltaGood = heroDelta != null && ((heroDelta < 0) === def.downGood);
+    var tw = metricTrendWk(def.k);
+    var bmiW = metricNow('weight');
+    var bmi = bmiW && heightCm ? bmiW.v / Math.pow(heightCm / 100, 2) : 0;
+    var bmiTag = !bmi ? '' : bmi < 18.5 ? 'underweight' : bmi < 25 ? 'healthy' : bmi < 30 ? 'overweight' : 'obese';
+    var series = metricSeries(def.k);
+    var insight = bodyInsight(goal);
+
     box.innerHTML = dayBarHtml() +
-      '<div class="card body-hero">' +
-        '<div class="bh-main"><div class="metric-big"><b>' + (cur || '—') + '</b> <span class="muted">kg</span></div>' + deltaHtml + '</div>' +
-        '<div class="bh-chips">' +
-          (bmi ? '<span class="bh-chip">BMI <b>' + bmi.toFixed(1) + '</b> · ' + bmiTag + '</span>' : '') +
-          (goal ? '<span class="bh-chip">Goal <b>' + goal + '</b> kg</span>' : '') +
-          (manualBf ? '<span class="bh-chip">Fat <b>' + manualBf + '</b>%</span>' :
-            autoBf ? '<span class="bh-chip">Fat <b>' + autoBf.toFixed(1) + '</b>% <i>(Navy est.)</i></span>' : '') +
+      // Metric selector
+      '<div class="bm-chips">' + BODY_METRICS.map(function (x) {
+        return '<button type="button" class="bm-chip' + (x.k === def.k ? ' active' : '') + '" data-bm="' + x.k + '">' + x.label + '</button>';
+      }).join('') + '</div>' +
+      // Hero: current value + delta + area chart
+      '<div class="card body-hero2">' +
+        '<div class="bh2-top"><span class="eyebrow">Current · ' + def.label + '</span>' +
+          (def.k === 'weight' && goal ? '<span class="eyebrow">Goal ' + goal + ' kg</span>' : '') + '</div>' +
+        '<div class="bh2-main">' +
+          '<div class="bh2-val"><b>' + (cur ? cur.toFixed(def.dec) : '—') + '</b><span class="bh2-unit">' + def.unit + '</span>' +
+            (!manualBf && def.k === 'bodyfat' && cur ? '<span class="muted tiny" style="margin-left:6px">Navy est.</span>' : '') + '</div>' +
+          (heroDelta != null ? '<div class="bh2-delta ' + (deltaGood ? 'good' : 'warn') + '">' +
+            (heroDelta < 0 ? '−' : '+') + Math.abs(heroDelta).toFixed(def.dec) + ' ' + def.unit +
+            '<small>since day 1</small></div>' : '') +
         '</div>' +
-        (gp != null ?
-          '<div class="bl" style="display:flex;justify-content:space-between;font-size:12px;margin:10px 0 5px"><span class="muted">Progress to goal</span><span><b>' + gp + '%</b></span></div>' +
-          '<div class="fc-bar"><span style="width:' + gp + '%"></span></div>' : '') +
+        bodyChartSvg(def) +
+        (series.length >= 2 ?
+          '<div class="bh2-axis mono">' +
+            '<span>' + parse(series[0].date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }).toUpperCase() + ' · ' + series[0].v.toFixed(def.dec) + '</span>' +
+            '<span>' + (tw != null ? 'TREND ' + (tw < 0 ? '−' : '+') + Math.abs(tw).toFixed(2) + ' ' + def.unit.toUpperCase() + '/WK' : '') + '</span>' +
+            '<span>TODAY</span>' +
+          '</div>' : '') +
       '</div>' +
-      '<div class="card"><div class="eyebrow">Weight · last 30 days</div><div id="body-chart">' + weightChartSvg(30) + '</div></div>' +
+      // Comparison tiles for every other metric (tap = switch)
+      '<div class="bm-tiles">' + BODY_METRICS.filter(function (x) { return x.k !== def.k; }).map(function (x) {
+        var n = metricNow(x.k);
+        if (!n && x.k === 'bodyfat' && autoBf) n = { v: autoBf, delta: null, est: true };
+        var dTxt = n && n.delta != null && Math.abs(n.delta) >= 0.05
+          ? '<span class="bmt-delta ' + (((n.delta < 0) === x.downGood) ? 'good' : 'warn') + '">' + (n.delta < 0 ? '−' : '+') + Math.abs(n.delta).toFixed(x.dec) + '</span>' : '';
+        return '<button type="button" class="bm-tile" data-bm="' + x.k + '">' +
+          '<span class="eyebrow">' + x.label + '</span>' +
+          '<span class="bmt-val">' + (n ? (n.est ? '~' : '') + n.v.toFixed(x.dec) : '—') + ' <small>' + x.unit + '</small>' + dTxt + '</span></button>';
+      }).join('') +
+        (bmi ? '<button type="button" class="bm-tile" data-bm="weight"><span class="eyebrow">BMI</span><span class="bmt-val">' + bmi.toFixed(1) + ' <small>' + bmiTag + '</small></span></button>' : '') +
+      '</div>' +
+      // Insight
+      (insight ? '<div class="card body-insight"><span class="bi-ico">◆</span><span>' + insight + '</span></div>' : '') +
       '<div class="card"><div class="eyebrow" style="margin-bottom:8px">Log this day</div>' +
         '<div class="manual-grid">' +
         '<label>Weight (kg)<input id="bd-w" type="number" inputmode="decimal" value="' + (m.weight || '') + '" /></label>' +
@@ -4039,6 +4142,13 @@
         '<p class="muted tiny" style="margin:4px 2px 10px">These feed straight into the <b>Calc</b> app — log once here, use everywhere.</p>' +
         '<button id="bd-save" class="btn primary block">Log this day</button></div>';
     bindDayBar(box, renderBody);
+    box.querySelectorAll('[data-bm]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        state.bodyMetric = b.getAttribute('data-bm');
+        renderBody();
+        window.scrollTo(0, 0);
+      });
+    });
     $('#bd-save').addEventListener('click', function () {
       m.weight = Number($('#bd-w').value) || 0; m.waist = Number($('#bd-waist').value) || 0; m.bodyfat = Number($('#bd-bf').value) || 0;
       m.neck = Number($('#bd-neck').value) || 0;
