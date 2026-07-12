@@ -321,6 +321,26 @@
       var all = (d.foods && d.foods[me.username]) || [];
       return { foods: all.filter(function (x) { return x.date === (p.date || todayStr()); }) };
     }
+    if (action === 'getFoodRange') {
+      var allR = (d.foods && d.foods[me.username]) || [];
+      var from = p.from || todayStr(), to = p.to || todayStr();
+      var perDay = {};
+      allR.filter(function (x) { return x.date >= from && x.date <= to; }).forEach(function (x) {
+        var e = perDay[x.date] || (perDay[x.date] = { date: x.date, cal: 0, p: 0, c: 0, f: 0, s: 0, fb: 0 });
+        e.cal += Number(x.calories) || 0; e.p += Number(x.protein) || 0; e.c += Number(x.carbs) || 0;
+        e.f += Number(x.fat) || 0; e.s += Number(x.sugar) || 0; e.fb += Number(x.fiber || 0);
+      });
+      var days = Object.keys(perDay).sort();
+      var tot = { cal: 0, p: 0, c: 0, f: 0, s: 0, fb: 0 };
+      days.forEach(function (dt) { var e = perDay[dt]; tot.cal += e.cal; tot.p += e.p; tot.c += e.c; tot.f += e.f; tot.s += e.s; tot.fb += e.fb; });
+      var n = days.length;
+      function avgR(v) { return n ? Math.round(v / n) : 0; }
+      return {
+        from: from, to: to, daysLogged: n, perDay: days.map(function (dt) { return perDay[dt]; }),
+        total: { cal: Math.round(tot.cal), p: Math.round(tot.p), c: Math.round(tot.c), f: Math.round(tot.f), s: Math.round(tot.s), fb: Math.round(tot.fb) },
+        avg: { cal: avgR(tot.cal), p: avgR(tot.p), c: avgR(tot.c), f: avgR(tot.f), s: avgR(tot.s), fb: avgR(tot.fb) }
+      };
+    }
     if (action === 'addFood') {
       d.foods = d.foods || {}; var arr = d.foods[me.username] || (d.foods[me.username] = []);
       var rec = p.food; rec.id = 'f_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
@@ -2366,25 +2386,140 @@
     });
   }
 
+  /* ----- Diet Week/Month averages ----- */
+  function dietWeekRange(dateStr) {
+    var dow = (parse(dateStr).getDay() + 6) % 7; // 0 = Monday
+    var from = addDays(dateStr, -dow);
+    return { from: from, to: addDays(from, 6) };
+  }
+  function dietRangeFor(mode, anchor) {
+    if (mode === 'month') { var ym = ymOf(anchor); return { from: ym + '-01', to: ym + '-' + pad(daysInYm(ym)) }; }
+    return dietWeekRange(anchor);
+  }
+  function dietRangeLabel(mode, anchor) {
+    if (mode === 'month') return ymLabel(ymOf(anchor));
+    var r = dietWeekRange(anchor);
+    var af = parse(r.from).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    var bf = parse(r.to).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    return af + ' – ' + bf;
+  }
+  if (!state.dietRangeCache) state.dietRangeCache = {};
+  function loadFoodRange(from, to) {
+    var key = from + '_' + to;
+    if (state.dietRangeCache[key]) return Promise.resolve(state.dietRangeCache[key]);
+    return api('getFoodRange', { from: from, to: to }).then(function (data) {
+      state.dietRangeCache[key] = data;
+      return data;
+    });
+  }
+  function dietRangeChart(range) {
+    var byDate = {}; (range.perDay || []).forEach(function (d) { byDate[d.date] = d.cal; });
+    var max = 0; (range.perDay || []).forEach(function (d) { if (d.cal > max) max = d.cal; });
+    var goal = dietGoals().cal;
+    if (goal > max) max = goal;
+    var bars = '', d = range.from;
+    while (d <= range.to) {
+      var v = byDate[d] || 0;
+      var h = max ? Math.max(v ? 4 : 2, Math.round(v / max * 52)) : 2;
+      var isFuture = d > todayStr();
+      bars += '<div class="rc-col"><div class="rc-bar' + (isFuture ? ' future' : v ? '' : ' empty') + '" style="height:' + h + 'px" title="' + shortDate(d) + ': ' + Math.round(v) + ' kcal"></div>' +
+        '<span class="rc-lbl">' + parse(d).toLocaleDateString(undefined, { weekday: 'narrow' }) + '</span></div>';
+      d = addDays(d, 1);
+    }
+    return '<div class="rc-bars">' + bars + '</div>';
+  }
+
   function renderDiet() {
     if (!state.dietDate) state.dietDate = todayStr();
-    var date = state.dietDate;
-    var di = $('#diet-date');
-    if (di) { di.value = date; di.max = todayStr(); }
-    var lbl = $('#diet-date-label');
-    if (lbl) lbl.textContent = (date === todayStr()) ? 'Today' : prettyDate(date);
-    if (state.foodsDate !== date) {
-      $('#meals').innerHTML = '<p class="muted tiny center">Loading…</p>';
-      loadFoods(date).then(renderDietBody).catch(function (e) {
-        $('#meals').innerHTML = '<p class="muted tiny center">' + esc(e.message) + '</p>';
-      });
-    } else {
-      renderDietBody();
+    if (!state.dietMode) state.dietMode = 'day';
+    var mode = state.dietMode, date = state.dietDate;
+
+    document.querySelectorAll('#diet-mode [data-mode]').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-mode') === mode);
+    });
+    $('#diet-range-extra').classList.toggle('hidden', mode === 'day');
+    $('#meals').classList.toggle('hidden', mode !== 'day');
+    $('#diet-date').classList.toggle('hidden', mode !== 'day');
+
+    if (mode === 'day') {
+      var di = $('#diet-date');
+      if (di) { di.value = date; di.max = todayStr(); }
+      var lbl = $('#diet-date-label');
+      if (lbl) { lbl.classList.remove('hidden'); lbl.textContent = (date === todayStr()) ? 'Today' : prettyDate(date); }
+      if (state.foodsDate !== date) {
+        $('#meals').innerHTML = '<p class="muted tiny center">Loading…</p>';
+        loadFoods(date).then(renderDietBody).catch(function (e) {
+          $('#meals').innerHTML = '<p class="muted tiny center">' + esc(e.message) + '</p>';
+        });
+      } else renderDietBody();
+      return;
     }
+
+    // Week / Month averages
+    var lbl2 = $('#diet-date-label');
+    if (lbl2) { lbl2.classList.remove('hidden'); lbl2.textContent = dietRangeLabel(mode, date); }
+    var r = dietRangeFor(mode, date);
+    $('#cal-eaten').textContent = '…';
+    loadFoodRange(r.from, r.to).then(function (range) {
+      renderDietRangeBody(mode, range);
+    }).catch(function (e) { toast(e.message); });
+  }
+  function renderDietRangeBody(mode, range) {
+    var g = dietGoals();
+    var a = range.avg || {};
+    $('#cal-eaten').textContent = a.cal || 0;
+    $('#cal-goal').textContent = g.cal ? g.cal : '—';
+    var totalDays = mode === 'month' ? daysInYm(ymOf(range.from)) : 7;
+    var loggedDays = range.daysLogged || 0;
+    var cutTo = range.to < todayStr() ? range.to : todayStr();
+    var elapsedDays = Math.min(totalDays, Math.max(1,
+      Math.round((parse(cutTo) - parse(range.from)) / 86400000) + 1));
+    $('#cal-sub').textContent = 'avg/day · ' + loggedDays + ' of ' + elapsedDays + ' day' + (elapsedDays === 1 ? '' : 's') + ' logged';
+
+    var ring =$('#cal-ring');
+    var circ = 2 * Math.PI * 34;
+    var frac = g.cal ? Math.min(1, a.cal / g.cal) : 0;
+    ring.style.strokeDashoffset = circ * (1 - frac);
+    ring.style.stroke = (g.cal && a.cal > g.cal) ? 'var(--red)' : '#2fd47a';
+
+    var bars = $('#macro-bars'); bars.innerHTML = '';
+    [['p', 'Protein (avg)', a.p, g.protein], ['c', 'Carbs (avg)', a.c, g.carbs],
+     ['f', 'Fat (avg)', a.f, g.fat], ['s', 'Sugar (avg)', a.s, g.sugar], ['fb', 'Fibre (avg)', a.fb, g.fiber]].forEach(function (m) {
+      var over = m[0] !== 'fb' && m[3] && m[2] > m[3];
+      var pct = m[3] ? Math.min(100, Math.round((m[2] / m[3]) * 100)) : 0;
+      var row = el('div', 'macro ' + m[0] + (over ? ' over' : ''));
+      var goalTxt = m[3] ? ' / ' + m[3] + 'g' + (m[0] === 's' ? ' max' : (m[0] === 'fb' ? ' goal' : '')) : '';
+      row.innerHTML = '<div class="ml"><span>' + m[1] + '</span><span><b>' + Math.round(m[2] || 0) + 'g</b>' + goalTxt + '</span></div>' +
+        '<div class="bar"><span style="width:' + pct + '%"></span></div>';
+      bars.appendChild(row);
+    });
+    $('#goal-hint').classList.toggle('hidden', !!g.cal);
+    $('#diet-range-chart').innerHTML = dietRangeChart(range) +
+      '<p class="muted tiny" style="margin-top:8px">Total this ' + mode + ': <b>' + (range.total ? Math.round(range.total.cal) : 0) + ' kcal</b> across ' + (range.daysLogged || 0) + ' logged day' + ((range.daysLogged || 0) === 1 ? '' : 's') + '.</p>';
   }
   function setDietDate(date) {
     if (date > todayStr()) return;
     state.dietDate = date;
+    renderDiet();
+  }
+  function setDietMode(mode) {
+    state.dietMode = mode;
+    renderDiet();
+  }
+  function shiftDietRange(dir) {
+    var mode = state.dietMode || 'day';
+    if (mode === 'day') { setDietDate(addDays(state.dietDate || todayStr(), dir)); return; }
+    if (mode === 'week') {
+      var n = addDays(state.dietDate || todayStr(), dir * 7);
+      if (n > todayStr() && dir > 0) return;
+      state.dietDate = n; renderDiet(); return;
+    }
+    // month
+    var ny = ymShift(ymOf(state.dietDate || todayStr()), dir);
+    if (ny > ymOf(todayStr()) && dir > 0) return;
+    // Landing back on the current month restores today as the anchor date
+    // (so switching to Day mode afterwards shows today, not the 1st).
+    state.dietDate = (ny === ymOf(todayStr())) ? todayStr() : ny + '-01';
     renderDiet();
   }
 
@@ -2717,7 +2852,7 @@
 
     $('#cal-eaten').textContent = Math.round(t.cal);
     $('#cal-goal').textContent = g.cal ? g.cal : '—';
-    $('#cal-left').textContent = g.cal ? Math.round(g.cal - t.cal) : '—';
+    $('#cal-sub').textContent = (g.cal ? Math.round(g.cal - t.cal) : '—') + ' remaining';
     $('#goal-hint').classList.toggle('hidden', !!g.cal);
 
     var ring = $('#cal-ring');
@@ -2981,6 +3116,7 @@
         .then(function (data) {
           for (var i = 0; i < state.foods.length; i++) { if (state.foods[i].id === id && data.food) { state.foods[i] = data.food; break; } }
           state.editingFoodId = null;
+          state.dietRangeCache = {};
           closeFoodModal(); renderDietBody(); toast('Updated ✓');
         }).catch(function (e) { toast(e.message); });
       return;
@@ -3027,6 +3163,7 @@
     food.date = state.dietDate || todayStr();
     api('addFood', { food: food }).then(function (data) {
       state.foods.push(data.food);
+      state.dietRangeCache = {};
       closeFoodModal();
       renderDietBody();
       toast('Added ✓');
@@ -3035,6 +3172,7 @@
   function deleteFood(id) {
     api('deleteFood', { id: id }).then(function () {
       state.foods = state.foods.filter(function (f) { return f.id !== id; });
+      state.dietRangeCache = {};
       renderDietBody();
     }).catch(function (e) { toast(e.message); });
   }
@@ -3253,10 +3391,14 @@
     $('#p-add').addEventListener('click', addPortion);
     $('#calc-goals').addEventListener('click', calcGoals);
     $('#save-goals').addEventListener('click', saveGoals);
-    // Diet date navigation
-    $('#diet-prev').addEventListener('click', function () { setDietDate(addDays(state.dietDate || todayStr(), -1)); });
-    $('#diet-next').addEventListener('click', function () { setDietDate(addDays(state.dietDate || todayStr(), 1)); });
+    // Diet date navigation + Day/Week/Month averages
+    $('#diet-prev').addEventListener('click', function () { shiftDietRange(-1); });
+    $('#diet-next').addEventListener('click', function () { shiftDietRange(1); });
     $('#diet-date').addEventListener('change', function () { if (this.value) setDietDate(this.value); });
+    $('#diet-mode').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-mode]'); if (!b) return;
+      setDietMode(b.getAttribute('data-mode'));
+    });
   }
 
   function calcGoals() {

@@ -110,6 +110,7 @@ function doPost(e) {
       case 'deleteAccount': data = handleDeleteAccount(body); break;
       case 'saveGoals':  data = handleSaveGoals(body);  break;
       case 'getFood':    data = handleGetFood(body);    break;
+      case 'getFoodRange': data = handleGetFoodRange(body); break;
       case 'addFood':    data = handleAddFood(body);    break;
       case 'deleteFood': data = handleDeleteFood(body); break;
       case 'updateFood': data = handleUpdateFood(body); break;
@@ -466,6 +467,45 @@ function handleGetFood(body) {
     out.push(foodFromRow(r, idx));
   }
   return { foods: out };
+}
+
+// One efficient sheet scan for a whole week/month — per-day totals + range
+// averages, so the Diet screen's Week/Month toggle doesn't need N getFood calls.
+function handleGetFoodRange(body) {
+  var user = authUser(body);
+  var from = String(body.from || todayStr());
+  var to = String(body.to || todayStr());
+  var sheet = getSheet(FOOD_SHEET, FOOD_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(FOOD_HEADERS);
+  var perDay = {};
+  for (var i = 1; i < values.length; i++) {
+    var r = values[i];
+    if (normalizeUsername(r[idx.username]) !== user.username) continue;
+    var d = formatDate(r[idx.date]);
+    if (d < from || d > to) continue;
+    var e = perDay[d] || (perDay[d] = { date: d, cal: 0, p: 0, c: 0, f: 0, s: 0, fb: 0 });
+    e.cal += Number(r[idx.calories]) || 0;
+    e.p += Number(r[idx.protein]) || 0;
+    e.c += Number(r[idx.carbs]) || 0;
+    e.f += Number(r[idx.fat]) || 0;
+    e.s += Number(r[idx.sugar]) || 0;
+    e.fb += Number(r[idx.fiber]) || 0;
+  }
+  var days = Object.keys(perDay).sort();
+  var tot = { cal: 0, p: 0, c: 0, f: 0, s: 0, fb: 0 };
+  days.forEach(function (d) {
+    var e = perDay[d];
+    tot.cal += e.cal; tot.p += e.p; tot.c += e.c; tot.f += e.f; tot.s += e.s; tot.fb += e.fb;
+  });
+  var n = days.length;
+  function avg(v) { return n ? v / n : 0; }
+  return {
+    from: from, to: to, daysLogged: n,
+    perDay: days.map(function (d) { return perDay[d]; }),
+    total: { cal: Math.round(tot.cal), p: Math.round(tot.p), c: Math.round(tot.c), f: Math.round(tot.f), s: Math.round(tot.s), fb: Math.round(tot.fb) },
+    avg: { cal: Math.round(avg(tot.cal)), p: Math.round(avg(tot.p)), c: Math.round(avg(tot.c)), f: Math.round(avg(tot.f)), s: Math.round(avg(tot.s)), fb: Math.round(avg(tot.fb)) }
+  };
 }
 
 function handleAddFood(body) {

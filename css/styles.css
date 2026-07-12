@@ -1088,3 +1088,11 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .walk-grid b { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .walk-grid span { font-size: 9px; color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: .08em; text-align: center; }
 @media (prefers-reduced-motion: reduce) { .walk-dot { animation: none; } }
+
+/* Diet Week/Month average — calories-per-day bar chart */
+.rc-bars { display: flex; align-items: flex-end; gap: 6px; height: 70px; }
+.rc-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; justify-content: flex-end; min-width: 0; }
+.rc-bar { width: 100%; border-radius: 5px 5px 3px 3px; background: linear-gradient(180deg, var(--primary), var(--amber)); }
+.rc-bar.empty { background: var(--bg-soft); border: 1px solid var(--line); }
+.rc-bar.future { background: transparent; border: 1px dashed var(--line); opacity: .5; }
+.rc-lbl { font-size: 9px; color: var(--muted); font-family: var(--mono); }

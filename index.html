@@ -311,6 +311,12 @@
       <div id="view-diet" class="view hidden">
         <h2 class="view-title">Diet &amp; Calories</h2>
 
+        <div class="seg" id="diet-mode">
+          <button data-mode="day" class="active">Day</button>
+          <button data-mode="week">Week</button>
+          <button data-mode="month">Month</button>
+        </div>
+
         <div class="date-bar">
           <button id="diet-prev" class="icon-btn">‹</button>
           <div class="date-bar-mid">
@@ -324,7 +330,7 @@
           <div class="cal-head">
             <div>
               <div class="cal-big"><span id="cal-eaten">0</span> <span class="muted">/ <span id="cal-goal">—</span> kcal</span></div>
-              <div class="muted tiny"><span id="cal-left">—</span> remaining</div>
+              <div class="muted tiny"><span id="cal-sub">— remaining</span></div>
             </div>
             <div class="cal-ring-wrap">
               <svg viewBox="0 0 80 80" class="ring small"><circle class="ring-bg" cx="40" cy="40" r="34"></circle><circle id="cal-ring" class="ring-fg" cx="40" cy="40" r="34"></circle></svg>
@@ -332,6 +338,10 @@
           </div>
           <div id="macro-bars" class="macro-bars"></div>
           <p id="goal-hint" class="muted tiny center hidden">Set your calorie goal in <b>Settings → Diet goals</b> for targets.</p>
+        </div>
+
+        <div id="diet-range-extra" class="hidden">
+          <div class="card"><div class="eyebrow">Calories per day</div><div id="diet-range-chart"></div></div>
         </div>
 
         <div id="meals"></div>
