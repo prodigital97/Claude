@@ -3866,12 +3866,169 @@
     });
     box.innerHTML = '<div class="mbars">' + bars + '</div><div class="muted tiny" style="margin-top:6px">Last 7 days</div>';
   }
+  /* ================= Walk Mode — live pedometer (sensor + GPS) =================
+     Web apps can't count steps in the background like Google Fit (that needs a
+     native app). While ATLAS is open, though, we CAN: accelerometer peak
+     detection counts steps, GPS measures distance, a wake-lock keeps the screen
+     on, and ending the walk banks steps/kcal/minutes into the day log. */
+  var walk = {
+    running: false, steps: 0, km: 0, startAt: 0,
+    lastStepAt: 0, gravity: 9.8, lastPos: null,
+    watchId: null, wakeLock: null, tick: null, motionOn: false, gpsOn: false
+  };
+  function walkWeight() {
+    return (lastMetric('weight') || {}).v || Number(state.profile && state.profile.weightKg) || 70;
+  }
+  // Calories: prefer GPS distance (0.53 kcal/kg/km walking), else per-step.
+  function walkKcal() {
+    var w = walkWeight();
+    if (walk.km > 0.05) return walk.km * 0.53 * w;
+    return walk.steps * 0.04 * (w / 70);
+  }
+  // Steps estimated from distance when motion sensors are unavailable.
+  function walkStrideM() {
+    var h = Number(state.profile && state.profile.heightCm) || 170;
+    return h * 0.415 / 100;
+  }
+  function onWalkMotion(e) {
+    var a = e.accelerationIncludingGravity;
+    if (!a || a.x == null) return;
+    var mag = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+    // Slow-follow gravity baseline, then peak-detect the walking bounce.
+    walk.gravity = walk.gravity * 0.94 + mag * 0.06;
+    var dev = mag - walk.gravity;
+    var now = Date.now();
+    // A step: clear upward spike, at most ~3.3 steps/sec.
+    if (dev > 1.1 && now - walk.lastStepAt > 300) {
+      walk.lastStepAt = now;
+      walk.steps++;
+    }
+  }
+  function walkHaversine(a, b) {
+    var R = 6371, toR = Math.PI / 180;
+    var dLat = (b.latitude - a.latitude) * toR, dLon = (b.longitude - a.longitude) * toR;
+    var s = Math.sin(dLat / 2), t = Math.sin(dLon / 2);
+    var h = s * s + Math.cos(a.latitude * toR) * Math.cos(b.latitude * toR) * t * t;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  function onWalkPos(pos) {
+    var c = pos.coords;
+    if (!c || c.accuracy > 35) return;  // ignore sloppy fixes
+    if (walk.lastPos) {
+      var km = walkHaversine(walk.lastPos, c);
+      // Ignore jitter (< accuracy) and teleports (> 100 m in one fix).
+      if (km * 1000 > Math.max(8, c.accuracy / 2) && km < 0.1) walk.km += km;
+      else if (km >= 0.1) return; // teleport — don't move the anchor
+    }
+    walk.lastPos = { latitude: c.latitude, longitude: c.longitude };
+  }
+  function walkAcquireWakeLock() {
+    if (navigator.wakeLock && navigator.wakeLock.request) {
+      navigator.wakeLock.request('screen').then(function (wl) { walk.wakeLock = wl; }).catch(function () {});
+    }
+  }
+  function startWalk() {
+    var begin = function () {
+      walk.running = true; walk.steps = 0; walk.km = 0; walk.lastPos = null;
+      walk.startAt = Date.now(); walk.lastStepAt = 0; walk.gravity = 9.8;
+      window.addEventListener('devicemotion', onWalkMotion);
+      if (navigator.geolocation) {
+        try {
+          walk.watchId = navigator.geolocation.watchPosition(onWalkPos, function () { walk.gpsOn = false; },
+            { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 });
+          walk.gpsOn = true;
+        } catch (e) { walk.gpsOn = false; }
+      }
+      walkAcquireWakeLock();
+      document.addEventListener('visibilitychange', walkOnVisible);
+      walk.tick = setInterval(walkUpdateLive, 1000);
+      toast('Walk started — keep ATLAS open 🚶');
+      renderSteps();
+    };
+    // iOS requires an in-gesture permission request for motion sensors.
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+      DeviceMotionEvent.requestPermission().then(function (res) {
+        walk.motionOn = res === 'granted';
+        begin();
+      }).catch(function () { walk.motionOn = false; begin(); });
+    } else {
+      walk.motionOn = typeof DeviceMotionEvent !== 'undefined';
+      begin();
+    }
+  }
+  function walkOnVisible() {
+    if (walk.running && document.visibilityState === 'visible') walkAcquireWakeLock();
+  }
+  function walkLiveSteps() {
+    // No motion sensor? Estimate steps from GPS distance and stride length.
+    if (!walk.motionOn || walk.steps < 5) {
+      var est = Math.round(walk.km * 1000 / walkStrideM());
+      if (est > walk.steps) return est;
+    }
+    return walk.steps;
+  }
+  function walkUpdateLive() {
+    var elS = $('#walk-steps'), elK = $('#walk-kcal'), elM = $('#walk-min'), elD = $('#walk-km');
+    if (!elS) return;
+    var mins = Math.floor((Date.now() - walk.startAt) / 60000);
+    var s = walkLiveSteps();
+    elS.textContent = s.toLocaleString();
+    elK.textContent = Math.round(walk.km > 0.05 ? walkKcal() : s * 0.04 * (walkWeight() / 70));
+    elM.textContent = mins;
+    if (elD) elD.textContent = walk.km >= 0.01 ? walk.km.toFixed(2) : '—';
+  }
+  function stopWalk(bank) {
+    window.removeEventListener('devicemotion', onWalkMotion);
+    document.removeEventListener('visibilitychange', walkOnVisible);
+    if (walk.watchId != null && navigator.geolocation) { try { navigator.geolocation.clearWatch(walk.watchId); } catch (e) {} }
+    if (walk.wakeLock) { try { walk.wakeLock.release(); } catch (e) {} walk.wakeLock = null; }
+    if (walk.tick) { clearInterval(walk.tick); walk.tick = null; }
+    walk.running = false;
+    if (bank) {
+      var s = walkLiveSteps();
+      var mins = Math.max(1, Math.round((Date.now() - walk.startAt) / 60000));
+      var kcal = Math.round(walkKcal());
+      if (s > 0 || walk.km > 0.05) {
+        var m = metricsOf(state.today);
+        m.steps = (Number(m.steps) || 0) + s;
+        m.burn = (Number(m.burn) || 0) + kcal;
+        m.active = (Number(m.active) || 0) + mins;
+        queueSave();
+        toast('+' + s.toLocaleString() + ' steps · ' + kcal + ' kcal banked 🔥');
+      } else {
+        toast('No movement detected — nothing banked.');
+      }
+    }
+    renderSteps();
+  }
+  function walkCardHtml() {
+    if (appDate() !== todayStr()) return '';
+    if (!walk.running) {
+      return '<div class="card walk-card">' +
+        '<div class="eyebrow">Walk mode · live tracker</div>' +
+        '<p class="muted tiny" style="margin:8px 0 10px">Counts steps with your phone\'s motion sensor and distance via GPS while ATLAS is open — screen stays awake. Ends by banking steps, calories (from your logged weight) and active minutes into today. <b>Note:</b> web apps can\'t count in the background like Google Fit; keep the app open during the walk.</p>' +
+        '<button id="walk-start" class="btn primary block">🚶 Start walk</button></div>';
+    }
+    return '<div class="card walk-card live">' +
+      '<div class="eyebrow"><span class="walk-dot"></span> Walking · keep app open</div>' +
+      '<div class="walk-grid">' +
+        '<div><b id="walk-steps">' + walkLiveSteps().toLocaleString() + '</b><span>steps</span></div>' +
+        '<div><b id="walk-kcal">' + Math.round(walkKcal()) + '</b><span>kcal</span></div>' +
+        '<div><b id="walk-min">' + Math.floor((Date.now() - walk.startAt) / 60000) + '</b><span>min</span></div>' +
+        '<div><b id="walk-km">' + (walk.km >= 0.01 ? walk.km.toFixed(2) : '—') + '</b><span>km' + (walk.gpsOn ? '' : ' (no GPS)') + '</span></div>' +
+      '</div>' +
+      (!walk.motionOn ? '<p class="muted tiny" style="margin:2px 0 8px">Motion sensor unavailable — steps estimated from GPS distance.</p>' : '') +
+      '<div class="row-2"><button id="walk-stop" class="btn primary">✅ End &amp; bank</button>' +
+      '<button id="walk-cancel" class="btn danger">Discard</button></div></div>';
+  }
+
   function renderSteps() {
     var box = $('#steps-app'); if (!box) return;
     var day = appDay(), m = metricsOf(day);
     var steps = Number(m.steps) || 0, goal = Number(state.profile && state.profile.stepGoal) || 10000;
     var pct = pctOf(steps, goal);
     box.innerHTML = dayBarHtml() +
+      walkCardHtml() +
       '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
         ringMini(pct, 'var(--body-c)', 92, '<b>' + pct + '%</b>') +
         '<div class="hero-meta"><div class="metric-big"><b>' + steps.toLocaleString() + '</b></div>' +
@@ -3886,6 +4043,10 @@
       '<button id="mt-save" class="btn block">Save</button></div>' +
       '<div class="card"><div class="eyebrow">Steps · last 7 days</div><div id="steps-trend"></div></div>';
     bindDayBar(box, renderSteps);
+    var ws = $('#walk-start'), we = $('#walk-stop'), wc = $('#walk-cancel');
+    if (ws) ws.addEventListener('click', startWalk);
+    if (we) we.addEventListener('click', function () { stopWalk(true); });
+    if (wc) wc.addEventListener('click', function () { if (confirm('Discard this walk?')) stopWalk(false); });
     box.querySelectorAll('[data-s]').forEach(function (b) {
       b.addEventListener('click', function () {
         var v = b.getAttribute('data-s');
