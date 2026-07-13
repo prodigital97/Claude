@@ -849,6 +849,22 @@
     if (leg) leg.innerHTML = MOODS.map(function (mm) {
       return '<span class="gt-key"><i style="background:' + mm.color + '"></i>' + mm.emoji + ' ' + mm.label + '</span>';
     }).join('');
+    renderMoodRange();
+  }
+  function renderMoodRange() {
+    var box = $('#mood-range'); if (!box) return;
+    var rs = rangeState('moodrg');
+    box.innerHTML = rangeBarHtml('moodrg');
+    if (rs.mode === 'day') { bindRangeBar(box, 'moodrg', renderMoodApp); return; }
+    var r = rangeSpan(rs.mode, rs.anchor);
+    var agg = rangeAgg(r.from, r.to, function (l) { return l && l.mood ? Number(l.mood) : null; });
+    var best = MOODS.filter(function (m) { return m.v === Math.round(agg.avg); })[0];
+    box.innerHTML += '<div class="card hero-row">' +
+      ringMini(pctOf(agg.avg, 5), best ? best.color : 'var(--mind-c)', 92, '<b>' + (agg.logged ? agg.avg.toFixed(1) : '—') + '</b>') +
+      '<div class="hero-meta"><div class="metric-big"><b>' + (agg.logged ? agg.avg.toFixed(1) + '/5 ' + (best ? best.emoji : '') : 'No logs') + '</b></div>' +
+      '<div class="muted tiny">' + agg.logged + ' of ' + agg.days + ' days logged</div></div></div>' +
+      (agg.logged ? '<div class="card"><div class="eyebrow">Mood per day</div>' + rangeBarChart(agg.perDay, 'var(--mind-c)') + '</div>' : '');
+    bindRangeBar(box, 'moodrg', renderMoodApp);
   }
   function renderGutApp() {
     var bar = $('#gut-daybar');
@@ -866,16 +882,25 @@
     if (leg) leg.innerHTML = GUT.map(function (g) {
       return '<span class="gt-key"><i style="background:' + g.color + '"></i>' + g.emoji + ' ' + g.label + '</span>';
     }).join('');
-    // last-30-day counts
-    var counts = {}, logged = 0, today = todayStr();
-    for (var i = 0; i < 30; i++) {
-      var l = logFor(addDays(today, -i));
+    renderGutRange();
+  }
+  function renderGutRange() {
+    var box = $('#gut-range'); if (!box) return;
+    var rs = rangeState('gutrg');
+    box.innerHTML = rangeBarHtml('gutrg');
+    bindRangeBar(box, 'gutrg', renderGutApp);
+    // Default (Day mode): last-30-day snapshot, as before.
+    var span = rs.mode === 'day' ? { from: addDays(todayStr(), -29), to: todayStr() } : rangeSpan(rs.mode, rs.anchor);
+    var counts = {}, logged = 0;
+    rangeDatesList(span.from, span.to).filter(function (d) { return d <= todayStr(); }).forEach(function (d) {
+      var l = logFor(d);
       if (l && l.gut) { counts[l.gut] = (counts[l.gut] || 0) + 1; logged++; }
-    }
+    });
     var cbox = $('#gut-counts');
+    var label = rs.mode === 'day' ? 'Last 30 days' : rangeLabelFor(rs.mode, rs.anchor);
     if (cbox) cbox.textContent = logged
-      ? 'Last 30 days: ' + GUT.filter(function (g) { return counts[g.v]; }).map(function (g) { return g.label + ' ' + counts[g.v]; }).join(' · ')
-      : 'No gut logs yet — tap an option above.';
+      ? label + ': ' + GUT.filter(function (g) { return counts[g.v]; }).map(function (g) { return g.label + ' ' + counts[g.v]; }).join(' · ')
+      : 'No gut logs yet in this range.';
   }
 
   /* ----- Mood meter (does NOT affect 75 Hard completion) ----- */
@@ -1136,25 +1161,30 @@
     card.querySelector('.biz-task').addEventListener('change', function () { commit(true); });
     box.appendChild(card);
 
-    // This week — total minutes per day across all businesses (Toggl-style bars).
-    var wk = el('div', 'card');
-    var today2 = todayStr(), maxMin = 0, days = [];
-    for (var i = 6; i >= 0; i--) {
-      var dte = addDays(today2, -i);
-      var lg = dte === d.date ? d : logFor(dte);
-      var tot = 0;
-      if (lg && lg.biz) Object.keys(lg.biz).forEach(function (id) { tot += Number(lg.biz[id] && lg.biz[id].m) || 0; });
-      days.push({ date: dte, min: tot });
-      if (tot > maxMin) maxMin = tot;
-    }
-    var wkTotal = days.reduce(function (s, x) { return s + x.min; }, 0);
-    wk.innerHTML = '<div class="eyebrow">This week · ' + hoursMin(wkTotal) + '</div>' +
-      '<div class="wkbars">' + days.map(function (x) {
-        var h = maxMin ? Math.max(4, Math.round(x.min / maxMin * 52)) : 4;
-        return '<div class="wkcol"><div class="wkbar' + (x.min ? '' : ' empty') + '" style="height:' + h + 'px" title="' + hoursMin(x.min) + '"></div>' +
-          '<span class="wklbl">' + parse(x.date).toLocaleDateString(undefined, { weekday: 'narrow' }) + '</span></div>';
-      }).join('') + '</div>';
+    // Total minutes per day across all businesses (Toggl-style bars) — Day/Week/Month.
+    var wk = el('div');
     box.appendChild(wk);
+    renderWorkRange(wk, d);
+  }
+  function workVolOf(l) {
+    if (!l || !l.biz) return 0;
+    var t = 0;
+    Object.keys(l.biz).forEach(function (id) { t += Number(l.biz[id] && l.biz[id].m) || 0; });
+    return t;
+  }
+  function renderWorkRange(wk, todayDay) {
+    var rs = rangeState('work');
+    var range = rs.mode === 'day' ? rangeWeekOf(todayStr()) : rangeSpan(rs.mode, rs.anchor);
+    var agg = rangeAgg(range.from, range.to, function (l, dte) {
+      return workVolOf(dte === todayDay.date ? todayDay : l);
+    });
+    var worked = agg.perDay.filter(function (p) { return p.v > 0; }).length;
+    wk.innerHTML = rangeBarHtml('work') +
+      '<div class="card"><div class="eyebrow">' + (rs.mode === 'day' ? 'This week' : rangeLabelFor(rs.mode, rs.anchor)) +
+        ' · ' + hoursMin(agg.sum) + ' · ' + worked + '/' + agg.days + ' days worked</div>' +
+        rangeBarChart(agg.perDay.map(function (p) { return { date: p.date, v: p.v / 60 }; }), 'var(--life-c)', 'h', 1) +
+      '</div>';
+    bindRangeBar(wk, 'work', function () { renderWorkApp(); });
   }
   function addBusiness() {
     var name = $('#new-biz').value.trim();
@@ -1347,6 +1377,109 @@
     }
     pick.querySelector('.dp-prev').addEventListener('click', function () { buildDayPicker(pick, ymShift(ym, -1), rerender, colorFn); });
     pick.querySelector('.dp-next').addEventListener('click', function () { buildDayPicker(pick, ymShift(ym, 1), rerender, colorFn); });
+  }
+
+  /* ---------------- Generic Day/Week/Month range engine ----------------
+     Reusable across mini-apps whose data already lives in state.logs
+     (water, steps, sleep, mood, gut, gym, detox, meds, work) — everything
+     needed is already synced client-side, so switching to Week/Month is
+     instant with zero extra network calls. (Diet uses its own variant
+     because food entries are a separate, non-preloaded sheet.) */
+  function rangeState(key) {
+    if (!state.range) state.range = {};
+    if (!state.range[key]) state.range[key] = { mode: 'day', anchor: todayStr() };
+    return state.range[key];
+  }
+  function rangeWeekOf(dateStr) {
+    var dow = (parse(dateStr).getDay() + 6) % 7; // 0 = Monday
+    var from = addDays(dateStr, -dow);
+    return { from: from, to: addDays(from, 6) };
+  }
+  function rangeSpan(mode, anchor) {
+    if (mode === 'month') { var ym = ymOf(anchor); return { from: ym + '-01', to: ym + '-' + pad(daysInYm(ym)) }; }
+    if (mode === 'week') return rangeWeekOf(anchor);
+    return { from: anchor, to: anchor };
+  }
+  function rangeLabelFor(mode, anchor) {
+    if (mode === 'month') return ymLabel(ymOf(anchor));
+    var r = rangeWeekOf(anchor);
+    return parse(r.from).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' – ' +
+      parse(r.to).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  function rangeAtLatest(rs) {
+    if (rs.mode === 'week') return rangeWeekOf(rs.anchor).to >= todayStr();
+    if (rs.mode === 'month') return ymOf(rs.anchor) >= ymOf(todayStr());
+    return true;
+  }
+  function rangeShift(key, dir) {
+    var rs = rangeState(key);
+    if (rs.mode === 'week') {
+      var n = addDays(rs.anchor, dir * 7);
+      if (dir > 0 && n > todayStr()) return;
+      rs.anchor = n;
+    } else if (rs.mode === 'month') {
+      var ny = ymShift(ymOf(rs.anchor), dir);
+      if (dir > 0 && ny > ymOf(todayStr())) return;
+      rs.anchor = (ny === ymOf(todayStr())) ? todayStr() : ny + '-01';
+    }
+  }
+  // Segmented Day/Week/Month + (for week/month) a prev/label/next nav bar.
+  function rangeBarHtml(key) {
+    var rs = rangeState(key);
+    return '<div class="seg rg-mode" data-rk="' + key + '">' +
+      ['day', 'week', 'month'].map(function (m) {
+        return '<button data-rm="' + m + '"' + (rs.mode === m ? ' class="active"' : '') + '>' + (m === 'day' ? 'Day' : m === 'week' ? 'Week' : 'Month') + '</button>';
+      }).join('') + '</div>' +
+      (rs.mode === 'day' ? '' :
+        '<div class="date-bar rg-nav" data-rk="' + key + '">' +
+          '<button class="icon-btn rg-prev" type="button">‹</button>' +
+          '<div class="rg-label mono">' + rangeLabelFor(rs.mode, rs.anchor) + '</div>' +
+          '<button class="icon-btn rg-next" type="button"' + (rangeAtLatest(rs) ? ' disabled' : '') + '>›</button>' +
+        '</div>');
+  }
+  function bindRangeBar(box, key, rerender) {
+    var seg = box.querySelector('.rg-mode[data-rk="' + key + '"]');
+    if (seg) seg.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-rm]'); if (!b) return;
+      rangeState(key).mode = b.getAttribute('data-rm');
+      rerender();
+    });
+    var nav = box.querySelector('.rg-nav[data-rk="' + key + '"]');
+    if (nav) {
+      nav.querySelector('.rg-prev').addEventListener('click', function () { rangeShift(key, -1); rerender(); });
+      var nx = nav.querySelector('.rg-next');
+      if (nx) nx.addEventListener('click', function () { rangeShift(key, 1); rerender(); });
+    }
+  }
+  function rangeDatesList(from, to) {
+    var out = [], d = from, guard = 0;
+    while (d <= to && guard++ < 400) { out.push(d); d = addDays(d, 1); }
+    return out;
+  }
+  // Averages an arbitrary per-day value (extractFn(log, date) -> number|null)
+  // over the range, ignoring future dates. "hits" counts truthy values —
+  // handy for "X of Y days goal met" style stats.
+  function rangeAgg(from, to, extractFn) {
+    var dates = rangeDatesList(from, to).filter(function (d) { return d <= todayStr(); });
+    var sum = 0, n = 0, hits = 0, perDay = [];
+    dates.forEach(function (d) {
+      var v = extractFn(logFor(d), d);
+      perDay.push({ date: d, v: v || 0 });
+      if (v != null) { sum += v; n++; if (v) hits++; }
+    });
+    return { avg: n ? sum / n : 0, sum: sum, days: dates.length, logged: n, hits: hits, perDay: perDay };
+  }
+  // Small per-day bar chart shared by every range-aware mini-app.
+  function rangeBarChart(perDay, colorVar, unit, dec) {
+    var max = 0; perDay.forEach(function (p) { if (p.v > max) max = p.v; });
+    var today = todayStr();
+    var bars = perDay.map(function (p) {
+      var isFuture = p.date > today;
+      var h = max ? Math.max(p.v ? 4 : 2, Math.round(p.v / max * 52)) : 2;
+      return '<div class="rc-col"><div class="rc-bar' + (isFuture ? ' future' : p.v ? '' : ' empty') + '" style="height:' + h + 'px;' + (p.v && !isFuture ? 'background:' + colorVar : '') + '" title="' + shortDate(p.date) + ': ' + p.v.toFixed(dec || 0) + (unit || '') + '"></div>' +
+        '<span class="rc-lbl">' + (perDay.length <= 31 ? parse(p.date).toLocaleDateString(undefined, { weekday: 'narrow' }) : '') + '</span></div>';
+    }).join('');
+    return '<div class="rc-bars">' + bars + '</div>';
   }
 
   /* ---------------- Calendar (real month grid) ---------------- */
@@ -3891,11 +4024,14 @@
   }
   function renderWaterApp() {
     var box = $('#water-app'); if (!box) return;
+    var rs = rangeState('water');
+    if (rs.mode !== 'day') { renderWaterRange(box, rs); return; }
     var d = appDay();
     var ml = Number(d.waterMl) || 0, pct = pctOf(ml, WATER_GOAL);
     var prev = lastJarPct < 0 ? pct : lastJarPct;
     var yFor = function (p) { return Math.round(150 * (1 - p / 100)); }; // interior height
-    box.innerHTML = dayBarHtml();
+    box.innerHTML = rangeBarHtml('water') + dayBarHtml();
+    bindRangeBar(box, 'water', renderWaterApp);
     bindDayBar(box, renderWaterApp);
     var card = el('div', 'card water-card' + (pct >= 100 ? ' full' : '') + (pct >= 20 ? ' has-water' : ''));
     card.innerHTML =
@@ -3945,6 +4081,19 @@
         afterWaterChange(d);
       });
     });
+  }
+  function renderWaterRange(box, rs) {
+    var r = rangeSpan(rs.mode, rs.anchor);
+    var agg = rangeAgg(r.from, r.to, function (l) { return l ? Number(l.waterMl) || 0 : 0; });
+    var hits = agg.perDay.filter(function (p) { return p.date <= todayStr() && p.v >= WATER_GOAL; }).length;
+    var pct = pctOf(agg.avg, WATER_GOAL);
+    box.innerHTML = rangeBarHtml('water') +
+      '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
+        ringMini(pct, '#38bdf8', 92, '<b>' + litres(agg.avg) + '</b>') +
+        '<div class="hero-meta"><div class="metric-big"><b>' + litres(agg.avg) + ' L</b> <span class="muted">avg/day</span></div>' +
+        '<div class="muted tiny">' + hits + ' of ' + agg.logged + ' day' + (agg.logged === 1 ? '' : 's') + ' hit ' + litres(WATER_GOAL) + ' L</div></div></div>' +
+      '<div class="card"><div class="eyebrow">Water per day</div>' + rangeBarChart(agg.perDay, '#38bdf8', ' ml') + '</div>';
+    bindRangeBar(box, 'water', renderWaterApp);
   }
   function renderReading() {
     var box = $('#reading-app'); if (!box) return;
@@ -4166,10 +4315,13 @@
 
   function renderSteps() {
     var box = $('#steps-app'); if (!box) return;
+    var goal = Number(state.profile && state.profile.stepGoal) || 10000;
+    var rs = rangeState('steps');
+    if (rs.mode !== 'day') { renderStepsRange(box, rs, goal); return; }
     var day = appDay(), m = metricsOf(day);
-    var steps = Number(m.steps) || 0, goal = Number(state.profile && state.profile.stepGoal) || 10000;
+    var steps = Number(m.steps) || 0;
     var pct = pctOf(steps, goal);
-    box.innerHTML = dayBarHtml() +
+    box.innerHTML = rangeBarHtml('steps') + dayBarHtml() +
       walkCardHtml() +
       '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
         ringMini(pct, 'var(--body-c)', 92, '<b>' + pct + '%</b>') +
@@ -4184,6 +4336,7 @@
       '<label>Active min<input id="mt-active" type="number" inputmode="numeric" value="' + (m.active || '') + '" /></label></div>' +
       '<button id="mt-save" class="btn block">Save</button></div>' +
       '<div class="card"><div class="eyebrow">Steps · last 7 days</div><div id="steps-trend"></div></div>';
+    bindRangeBar(box, 'steps', renderSteps);
     bindDayBar(box, renderSteps);
     var ws = $('#walk-start'), we = $('#walk-stop'), wc = $('#walk-cancel');
     if (ws) ws.addEventListener('click', startWalk);
@@ -4204,16 +4357,32 @@
     $('#mt-save').addEventListener('click', function () { m.burn = Number($('#mt-burn').value) || 0; m.active = Number($('#mt-active').value) || 0; queueSaveDay(day); toast('Saved ✓'); });
     metricTrend('steps', '#steps-trend', '');
   }
+  function renderStepsRange(box, rs, goal) {
+    var r = rangeSpan(rs.mode, rs.anchor);
+    var agg = rangeAgg(r.from, r.to, function (l) { return l && l.metrics ? Number(l.metrics.steps) || 0 : 0; });
+    var burn = rangeAgg(r.from, r.to, function (l) { return l && l.metrics ? Number(l.metrics.burn) || 0 : 0; });
+    var hits = agg.perDay.filter(function (p) { return p.v >= goal; }).length;
+    var pct = pctOf(agg.avg, goal);
+    box.innerHTML = rangeBarHtml('steps') +
+      '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
+        ringMini(pct, 'var(--body-c)', 92, '<b>' + pct + '%</b>') +
+        '<div class="hero-meta"><div class="metric-big"><b>' + Math.round(agg.avg).toLocaleString() + '</b> <span class="muted">avg/day</span></div>' +
+        '<div class="muted tiny">' + hits + ' of ' + agg.logged + ' days hit ' + goal.toLocaleString() + ' · ' + Math.round(burn.sum) + ' kcal total</div></div></div>' +
+      '<div class="card"><div class="eyebrow">Steps per day</div>' + rangeBarChart(agg.perDay, 'var(--body-c)') + '</div>';
+    bindRangeBar(box, 'steps', renderSteps);
+  }
   function renderSleep() {
     var box = $('#sleep-app'); if (!box) return;
+    var goalH = Number(state.profile && state.profile.sleepGoal) || 8;
+    var rs = rangeState('sleep');
+    if (rs.mode !== 'day') { renderSleepRange(box, rs, goalH); return; }
     var day = appDay(), m = metricsOf(day);
     var mins = Number(m.sleepMin) || 0;
-    var goalH = Number(state.profile && state.profile.sleepGoal) || 8;
     var pct = pctOf(mins, goalH * 60);
     var q = Number(m.sleepQ) || 0;
     var note = !mins ? 'Log last night to see your trend.'
       : mins >= goalH * 60 ? 'Fully charged 🔋' : mins >= goalH * 60 * 0.8 ? 'Decent — a little short.' : 'Running on fumes — sleep earlier tonight 😴';
-    box.innerHTML = dayBarHtml() +
+    box.innerHTML = rangeBarHtml('sleep') + dayBarHtml() +
       '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
         ringMini(pct, 'var(--mind-c)', 92, '<b>' + (mins ? Math.floor(mins / 60) + 'h' + (mins % 60 ? (mins % 60) + '' : '') : '—') + '</b>') +
         '<div class="hero-meta"><div class="metric-big"><b>' + (mins ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : 'No log yet') + '</b></div>' +
@@ -4230,6 +4399,7 @@
       var x = prompt('Sleep goal (hours):', goalH); if (x == null) return;
       saveProfileKey('sleepGoal', Math.min(14, Math.max(4, Number(x) || 8)), renderSleep);
     });
+    bindRangeBar(box, 'sleep', renderSleep);
     bindDayBar(box, renderSleep);
     box.querySelectorAll('[data-star]').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -4246,6 +4416,21 @@
       queueSaveDay(day); toast('Saved ✓'); renderSleep();
     });
     metricTrend('sleepMin', '#sleep-trend', 'h', 60);
+  }
+  function renderSleepRange(box, rs, goalH) {
+    var r = rangeSpan(rs.mode, rs.anchor);
+    var agg = rangeAgg(r.from, r.to, function (l) { return l && l.metrics ? Number(l.metrics.sleepMin) || 0 : 0; });
+    var qAgg = rangeAgg(r.from, r.to, function (l) { return l && l.metrics && l.metrics.sleepQ ? Number(l.metrics.sleepQ) : null; });
+    var hits = agg.perDay.filter(function (p) { return p.v >= goalH * 60; }).length;
+    var pct = pctOf(agg.avg, goalH * 60);
+    var avgH = Math.floor(agg.avg / 60), avgM = Math.round(agg.avg % 60);
+    box.innerHTML = rangeBarHtml('sleep') +
+      '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
+        ringMini(pct, 'var(--mind-c)', 92, '<b>' + avgH + 'h</b>') +
+        '<div class="hero-meta"><div class="metric-big"><b>' + avgH + 'h ' + avgM + 'm</b> <span class="muted">avg/night</span></div>' +
+        '<div class="muted tiny">' + hits + ' of ' + agg.logged + ' nights hit ' + goalH + 'h' + (qAgg.logged ? ' · ' + qAgg.avg.toFixed(1) + '★ avg quality' : '') + '</div></div></div>' +
+      '<div class="card"><div class="eyebrow">Sleep hours per night</div>' + rangeBarChart(agg.perDay.map(function (p) { return { date: p.date, v: p.v / 60 }; }), 'var(--mind-c)', 'h', 1) + '</div>';
+    bindRangeBar(box, 'sleep', renderSleep);
   }
 
   /* ----- Body metric engine: series, trend, chart ----- */
@@ -4489,12 +4674,19 @@
     }
     return null;
   }
+  function gymVolOf(l) {
+    if (!l || !l.metrics || !l.metrics.gym) return 0;
+    var v = 0;
+    l.metrics.gym.forEach(function (e) { v += (Number(e.sets) || 0) * (Number(e.reps) || 0) * (Number(e.kg) || 0); });
+    return v;
+  }
   function renderGym() {
     var box = $('#gym-app'); if (!box) return;
+    var rs = rangeState('gym');
+    if (rs.mode !== 'day') { renderGymRange(box, rs); return; }
     var day = appDay();
     var list = gymOf(day);
-    var vol = 0;
-    list.forEach(function (e) { vol += (Number(e.sets) || 0) * (Number(e.reps) || 0) * (Number(e.kg) || 0); });
+    var vol = gymVolOf(day);
     var weekDays = 0, today = todayStr();
     for (var i = 0; i < 7; i++) {
       var l = logFor(addDays(today, -i));
@@ -4506,7 +4698,7 @@
     names.forEach(function (n) { if (options.indexOf(n) < 0) options.push(n); });
     var prev = lastGymDay();
 
-    box.innerHTML = dayBarHtml() +
+    box.innerHTML = rangeBarHtml('gym') + dayBarHtml() +
       '<div class="card"><div class="gym-stats">' +
         '<div class="js-stat"><b>' + list.length + '</b><span>exercises</span></div>' +
         '<div class="js-stat"><b>' + (vol ? (vol >= 1000 ? (vol / 1000).toFixed(1) + 't' : vol + 'kg') : '0') + '</b><span>volume</span></div>' +
@@ -4556,6 +4748,7 @@
       prev.metrics.gym.forEach(function (e) { gymOf(day).push({ n: e.n, sets: e.sets, reps: e.reps, kg: e.kg }); });
       queueSaveDay(day); toast('Workout copied — beat it today 🔥'); renderGym();
     });
+    bindRangeBar(box, 'gym', renderGym);
     bindDayBar(box, renderGym);
     box.querySelectorAll('[data-gi]').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -4563,6 +4756,19 @@
         queueSaveDay(day); renderGym();
       });
     });
+  }
+  function renderGymRange(box, rs) {
+    var r = rangeSpan(rs.mode, rs.anchor);
+    var agg = rangeAgg(r.from, r.to, gymVolOf);
+    var trained = agg.perDay.filter(function (p) { return p.v > 0; }).length;
+    box.innerHTML = rangeBarHtml('gym') +
+      '<div class="card"><div class="gym-stats">' +
+        '<div class="js-stat"><b>' + trained + '/' + agg.days + '</b><span>days trained</span></div>' +
+        '<div class="js-stat"><b>' + (agg.sum >= 1000 ? (agg.sum / 1000).toFixed(1) + 't' : Math.round(agg.sum) + 'kg') + '</b><span>total volume</span></div>' +
+        '<div class="js-stat"><b>' + (agg.avg >= 1000 ? (agg.avg / 1000).toFixed(1) + 't' : Math.round(agg.avg) + 'kg') + '</b><span>avg/day</span></div>' +
+      '</div></div>' +
+      '<div class="card"><div class="eyebrow">Volume per day</div>' + rangeBarChart(agg.perDay, 'var(--body-c)', ' kg') + '</div>';
+    bindRangeBar(box, 'gym', renderGym);
   }
 
   /* ================= Breathe (Mind) ================= */
@@ -4665,13 +4871,15 @@
   function renderDetox() {
     var box = $('#detox-app'); if (!box) return;
     if (state.detoxTimer) { clearInterval(state.detoxTimer); state.detoxTimer = null; }
+    var goal = Number(state.profile && state.profile.detoxGoal) || 60;
+    var rs = rangeState('detox');
+    if (rs.mode !== 'day') { renderDetoxRange(box, rs, goal); return; }
     var day = appDay(), m = metricsOf(day);
     var total = Number(m.detoxMin) || 0;
-    var goal = Number(state.profile && state.profile.detoxGoal) || 60;
     var isToday = appDate() === todayStr();
     var startedAt = isToday ? (Number(localStorage.getItem(detoxKey())) || 0) : 0;
     var pct = pctOf(total, goal);
-    box.innerHTML = dayBarHtml() +
+    box.innerHTML = rangeBarHtml('detox') + dayBarHtml() +
       '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
         ringMini(pct, 'var(--mind-c)', 92, '<b>' + pct + '%</b>') +
         '<div class="hero-meta"><div class="metric-big"><b>' + total + '</b> <span class="muted">min offline</span></div>' +
@@ -4690,6 +4898,7 @@
           '<div class="manual-grid" style="margin-top:8px"><label>Offline minutes<input id="dx-past" type="number" inputmode="numeric" value="' + (total || '') + '" /></label></div>' +
           '<button id="dx-past-save" class="btn primary block">Save</button></div>') +
       '<div class="card"><div class="eyebrow">Offline minutes · last 7 days</div><div id="detox-trend"></div></div>';
+    bindRangeBar(box, 'detox', renderDetox);
     bindDayBar(box, renderDetox);
     $('#dx-goal-btn').addEventListener('click', function () {
       var x = prompt('Daily phone-free goal (minutes):', goal); if (x == null) return;
@@ -4732,6 +4941,19 @@
       });
     }
     metricTrend('detoxMin', '#detox-trend', 'm');
+  }
+  function renderDetoxRange(box, rs, goal) {
+    var r = rangeSpan(rs.mode, rs.anchor);
+    var agg = rangeAgg(r.from, r.to, function (l) { return l && l.metrics ? Number(l.metrics.detoxMin) || 0 : 0; });
+    var hits = agg.perDay.filter(function (p) { return p.v >= goal; }).length;
+    var pct = pctOf(agg.avg, goal);
+    box.innerHTML = rangeBarHtml('detox') +
+      '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
+        ringMini(pct, 'var(--mind-c)', 92, '<b>' + Math.round(agg.avg) + '</b>') +
+        '<div class="hero-meta"><div class="metric-big"><b>' + Math.round(agg.avg) + ' min</b> <span class="muted">avg/day</span></div>' +
+        '<div class="muted tiny">' + hits + ' of ' + agg.logged + ' days hit ' + goal + ' min · ' + Math.round(agg.sum) + ' min total</div></div></div>' +
+      '<div class="card"><div class="eyebrow">Offline minutes per day</div>' + rangeBarChart(agg.perDay, 'var(--mind-c)', 'm') + '</div>';
+    bindRangeBar(box, 'detox', renderDetox);
   }
 
   /* ================= Meds — medicines & supplements (Body) ================= */
@@ -4778,10 +5000,13 @@
   }
   function renderMeds() {
     var box = $('#meds-app'); if (!box) return;
-    var day = appDay(), taken = medTakenMap(day), list = medsList();
+    var list = medsList();
+    var rs = rangeState('meds');
+    if (rs.mode !== 'day') { renderMedsRange(box, rs, list); return; }
+    var day = appDay(), taken = medTakenMap(day);
     var total = medDoseCount(list), done = medTakenCount(day, list);
     var pct = pctOf(done, total);
-    var html = dayBarHtml();
+    var html = rangeBarHtml('meds') + dayBarHtml();
 
     if (list.length) {
       html +=
@@ -4836,6 +5061,7 @@
       '<button id="med-add" class="btn primary block">Add med</button></div>';
 
     box.innerHTML = html;
+    bindRangeBar(box, 'meds', renderMeds);
     bindDayBar(box, renderMeds);
 
     // Tick off a dose
@@ -4871,6 +5097,24 @@
         saveProfileKey('meds', medsList().filter(function (md) { return md.id !== b.getAttribute('data-medrm'); }), renderMeds);
       });
     });
+  }
+  function renderMedsRange(box, rs, list) {
+    if (!list.length) {
+      box.innerHTML = rangeBarHtml('meds') + '<div class="card"><p class="muted tiny" style="margin:0">Add a med in Day view first, then come back here for adherence trends.</p></div>';
+      bindRangeBar(box, 'meds', renderMeds);
+      return;
+    }
+    var total = medDoseCount(list);
+    var r = rangeSpan(rs.mode, rs.anchor);
+    var agg = rangeAgg(r.from, r.to, function (l) { return total ? pctOf(medTakenCount(l || {}, list), total) : 0; });
+    var fullDays = agg.perDay.filter(function (p) { return p.v >= 100; }).length;
+    box.innerHTML = rangeBarHtml('meds') +
+      '<div class="card hero-row' + (agg.avg >= 100 ? ' goal-hit' : '') + '">' +
+        ringMini(agg.avg, 'var(--body-c)', 92, '<b>' + Math.round(agg.avg) + '%</b>') +
+        '<div class="hero-meta"><div class="metric-big"><b>' + Math.round(agg.avg) + '%</b> <span class="muted">avg adherence</span></div>' +
+        '<div class="muted tiny">' + fullDays + ' of ' + agg.logged + ' days — all doses taken</div></div></div>' +
+      '<div class="card"><div class="eyebrow">Adherence per day</div>' + rangeBarChart(agg.perDay, 'var(--body-c)', '%') + '</div>';
+    bindRangeBar(box, 'meds', renderMeds);
   }
 
   /* ----- Money / Subs / Savings / Tasks / Goals (generic list apps) ----- */
@@ -4959,16 +5203,26 @@
 
   // Renders synchronously from state.money.dashboard (already fetched by moneyGetState /
   // cached) — no separate network call, so switching to Overview is instant.
+  // A Day/Week/Month range picker lets you view any period; only "this month" uses the
+  // preloaded dashboard (with its budget guard-rail) — other periods fetch moneyDashboard
+  // fresh (cached per range) since the guard-rail is inherently month-scoped.
+  if (!state.moneyRangeCache) state.moneyRangeCache = {};
   function moneyRenderOverview() {
     var box = $('#money-overview'); if (!box) return;
+    var rs = rangeState('money');
+    var isCurrentMonth = rs.mode === 'month' && ymOf(rs.anchor) === ymOf(todayStr());
+    if (rs.mode === 'day' || rs.mode === 'week' || (rs.mode === 'month' && !isCurrentMonth)) {
+      moneyRenderOverviewRange(box, rs);
+      return;
+    }
     var d = state.money.dashboard;
-    if (!d) { box.innerHTML = '<p class="muted tiny">Loading…</p>'; return; }
+    if (!d) { box.innerHTML = rangeBarHtml('money') + '<p class="muted tiny">Loading…</p>'; return; }
     var s = state.money.status || d.status || {};
     var level = s.level || 'none';
     var groups = { need: 0, want: 0, saving: 0 };
     if (d.byKind) { groups.need = d.byKind.need; groups.want = d.byKind.want; groups.saving = d.byKind.saving; }
     var totalKind = (groups.need + groups.want + groups.saving) || 1;
-    box.innerHTML =
+    box.innerHTML = rangeBarHtml('money') +
       '<div class="card guard-card ' + GUARD_CLASS[level] + '">' +
         '<div class="guard-top"><span class="eyebrow">This month</span><span class="guard-chip">' + esc(GUARD_LABEL[level]) + '</span></div>' +
         '<div class="metric-big"><b>' + rupee(s.spent) + '</b> <span class="muted">' + (s.limit ? ('/ ' + rupee(s.limit)) : 'spent · no budget set') + '</span></div>' +
@@ -4999,7 +5253,49 @@
           return '<div class="list-row"><span>' + esc(m.merchant) + '</span><b>' + rupee(m.total) + '</b></div>';
         }).join('') : '<p class="muted tiny">—</p>'
       ) + '</div>';
+    bindRangeBar(box, 'money', moneyRenderOverview);
     if (s.limit) moneyRenderDiscipline();
+  }
+  // Day / Week / any-other-Month view: fetches moneyDashboard(from,to) fresh (no
+  // preloaded guard-rail card since safe-to-spend-per-day only means something
+  // for the current month), cached per range so flipping back and forth is instant.
+  function moneyRenderOverviewRange(box, rs) {
+    var r = rangeSpan(rs.mode, rs.anchor);
+    var key = r.from + '_' + r.to;
+    box.innerHTML = rangeBarHtml('money') + '<p class="muted tiny">Loading…</p>';
+    bindRangeBar(box, 'money', moneyRenderOverview);
+    var cached = state.moneyRangeCache[key];
+    var go = function (d) {
+      var groups = { need: 0, want: 0, saving: 0 };
+      if (d.byKind) { groups.need = d.byKind.need; groups.want = d.byKind.want; groups.saving = d.byKind.saving; }
+      var totalKind = (groups.need + groups.want + groups.saving) || 1;
+      var label = rs.mode === 'day' ? (rs.anchor === todayStr() ? 'Today' : prettyDate(rs.anchor)) : rangeLabelFor(rs.mode, rs.anchor);
+      box.innerHTML = rangeBarHtml('money') +
+        '<div class="card"><span class="eyebrow">' + esc(label) + '</span>' +
+        '<div class="metric-big" style="margin-top:6px"><b>' + rupee(d.totalSpend) + '</b> <span class="muted">spent · ' + (d.txnCount || 0) + ' txns</span></div></div>' +
+        '<div class="card"><div class="eyebrow">Needs / Wants / Savings</div>' +
+          '<div class="nws-bar"><span class="nws-need" style="width:' + Math.round(groups.need / totalKind * 100) + '%"></span>' +
+          '<span class="nws-want" style="width:' + Math.round(groups.want / totalKind * 100) + '%"></span>' +
+          '<span class="nws-save" style="width:' + Math.round(groups.saving / totalKind * 100) + '%"></span></div>' +
+          '<div class="nws-legend"><span><i class="nws-dot nws-need"></i>Needs ' + rupee(groups.need) + '</span><span><i class="nws-dot nws-want"></i>Wants ' + rupee(groups.want) + '</span><span><i class="nws-dot nws-save"></i>Savings ' + rupee(groups.saving) + '</span></div></div>' +
+        '<div class="card"><div class="eyebrow">Top categories</div>' + (
+          (d.byCategory || []).length ? d.byCategory.slice(0, 6).map(function (c) {
+            var pct = d.totalSpend ? Math.round(c.total / d.totalSpend * 100) : 0;
+            return '<div class="bar-row"><div class="bl"><span>' + c.icon + ' ' + esc(c.name) + '</span><span>' + rupee(c.total) + '</span></div><div class="bar"><span style="width:' + pct + '%;background:' + c.color + '"></span></div></div>';
+          }).join('') : '<p class="muted tiny">No spending in this period.</p>'
+        ) + '</div>' +
+        '<div class="card"><div class="eyebrow">Top merchants</div>' + (
+          (d.topMerchants || []).length ? d.topMerchants.map(function (m) {
+            return '<div class="list-row"><span>' + esc(m.merchant) + '</span><b>' + rupee(m.total) + '</b></div>';
+          }).join('') : '<p class="muted tiny">—</p>'
+        ) + '</div>';
+      bindRangeBar(box, 'money', moneyRenderOverview);
+    };
+    if (cached) { go(cached); return; }
+    api('moneyDashboard', { from: r.from, to: r.to }).then(function (d) {
+      state.moneyRangeCache[key] = d;
+      go(d);
+    }).catch(function (e) { box.innerHTML = rangeBarHtml('money') + '<p class="muted tiny">' + esc(e.message) + '</p>'; bindRangeBar(box, 'money', moneyRenderOverview); });
   }
   // Last-7-days under/over daily-budget dots on the Money overview.
   function moneyRenderDiscipline() {
@@ -5026,6 +5322,7 @@
   // the Overview breakdown catches up without blocking the UI on a network call.
   function moneyRefreshSilently() {
     delete moneyMonthCache[ymOf(todayStr())]; // txns changed — recompute daily wins & Life Score
+    state.moneyRangeCache = {}; // and any custom Day/Week/Month range views
     moneyInit().then(function () { if (state.money.tab === 'overview') moneyRenderOverview(); }).catch(function () {});
   }
 
