@@ -4659,15 +4659,43 @@
     });
   }
 
-  /* ================= Gym Log (Body) ================= */
+  /* ================= Gym Log (Body) =================
+     Hevy/Strong-style per-set logging. Entry shape: { n, sets: [{r, w}, …] }.
+     Legacy entries ({ n, sets: 3, reps: 10, kg: 40 }) are normalized on read. */
   var GYM_PRESETS = ['Bench Press', 'Squat', 'Deadlift', 'Overhead Press', 'Barbell Row', 'Pull-ups', 'Lat Pulldown', 'Bicep Curl', 'Leg Press', 'Shoulder Press', 'Dips', 'Lunges'];
   function gymOf(d) { var m = metricsOf(d); if (!m.gym) m.gym = []; return m.gym; }
+  function gymExercises() { return (state.profile && state.profile.gymExercises) || []; }
+  function gymSetsOf(e) {
+    if (Array.isArray(e.sets)) return e.sets;
+    var out = [], n = Math.max(1, Number(e.sets) || 1);
+    for (var i = 0; i < n; i++) out.push({ r: Number(e.reps) || 0, w: Number(e.kg) || 0 });
+    return out;
+  }
+  // Migrate a legacy entry in place so set edits stick.
+  function gymEnsureSets(e) { if (!Array.isArray(e.sets)) { e.sets = gymSetsOf(e); delete e.reps; delete e.kg; } return e.sets; }
+  function gymEntryVol(e) {
+    return gymSetsOf(e).reduce(function (s, x) { return s + (Number(x.r) || 0) * (Number(x.w) || 0); }, 0);
+  }
+  function gymEntryBest(e) {
+    return gymSetsOf(e).reduce(function (m, x) { return Math.max(m, Number(x.w) || 0); }, 0);
+  }
+  function gymVolOf(l) {
+    if (!l || !l.metrics || !l.metrics.gym) return 0;
+    return l.metrics.gym.reduce(function (s, e) { return s + gymEntryVol(e); }, 0);
+  }
+  function gymSetCountOf(l) {
+    if (!l || !l.metrics || !l.metrics.gym) return 0;
+    return l.metrics.gym.reduce(function (s, e) { return s + gymSetsOf(e).length; }, 0);
+  }
   function gymPRs() {
     var prs = {};
     (state.logs || []).forEach(function (l) {
       ((l.metrics && l.metrics.gym) || []).forEach(function (e) {
         var k = String(e.n || '').trim(); if (!k) return;
-        if (!prs[k] || Number(e.kg) > prs[k].kg) prs[k] = { kg: Number(e.kg) || 0, reps: Number(e.reps) || 0, date: l.date };
+        gymSetsOf(e).forEach(function (st) {
+          var w = Number(st.w) || 0;
+          if (!prs[k] || w > prs[k].kg) prs[k] = { kg: w, reps: Number(st.r) || 0, date: l.date };
+        });
       });
     });
     return prs;
@@ -4681,19 +4709,52 @@
     }
     return null;
   }
-  function gymVolOf(l) {
-    if (!l || !l.metrics || !l.metrics.gym) return 0;
-    var v = 0;
-    l.metrics.gym.forEach(function (e) { v += (Number(e.sets) || 0) * (Number(e.reps) || 0) * (Number(e.kg) || 0); });
-    return v;
+  // Most recent logged entry for an exercise before `beforeDate` — powers the
+  // "prev" hints and prefills a newly-added exercise with last session's sets.
+  function gymLastEntry(name, beforeDate) {
+    for (var i = state.logs.length - 1; i >= 0; i--) {
+      var l = state.logs[i];
+      if (l.date >= beforeDate) continue;
+      var hit = ((l.metrics && l.metrics.gym) || []).filter(function (e) { return e.n === name; })[0];
+      if (hit) return hit;
+    }
+    return null;
   }
+  function gymRememberExercise(name) {
+    if (GYM_PRESETS.indexOf(name) >= 0 || gymExercises().indexOf(name) >= 0) return;
+    var p = Object.assign({}, state.profile);
+    p.gymExercises = gymExercises().concat([name]).slice(-40);
+    state.profile = p;
+    api('saveGoals', { profile: p }).catch(function () {});
+  }
+
+  // Rest timer — survives re-renders, chimes when done.
+  var gymRest = { left: 0, tick: null };
+  function gymRestStop() { if (gymRest.tick) { clearInterval(gymRest.tick); gymRest.tick = null; } gymRest.left = 0; }
+  function gymRestStart(sec) {
+    gymRestStop();
+    gymRest.left = sec;
+    gymRest.tick = setInterval(function () {
+      gymRest.left--;
+      var e2 = $('#gym-rest-left');
+      if (e2) e2.textContent = Math.floor(gymRest.left / 60) + ':' + pad(Math.max(0, gymRest.left) % 60);
+      if (gymRest.left <= 0) {
+        gymRestStop();
+        meditChime();
+        toast('Rest over — next set 💪');
+        renderGym();
+      }
+    }, 1000);
+    renderGym();
+  }
+
   function renderGym() {
     var box = $('#gym-app'); if (!box) return;
     var rs = rangeState('gym');
     if (rs.mode !== 'day') { renderGymRange(box, rs); return; }
     var day = appDay();
     var list = gymOf(day);
-    var vol = gymVolOf(day);
+    var vol = gymVolOf(day), setCount = gymSetCountOf(day);
     var weekDays = 0, today = todayStr();
     for (var i = 0; i < 7; i++) {
       var l = logFor(addDays(today, -i));
@@ -4701,76 +4762,147 @@
     }
     var prs = gymPRs();
     var names = Object.keys(prs);
-    var options = GYM_PRESETS.slice();
-    names.forEach(function (n) { if (options.indexOf(n) < 0) options.push(n); });
+    var isToday = appDate() === todayStr();
     var prev = lastGymDay();
+    // Picker chips: your custom exercises first, then presets.
+    var chipNames = gymExercises().slice().reverse().concat(GYM_PRESETS).filter(function (n, i, a) { return a.indexOf(n) === i; }).slice(0, 16);
 
     box.innerHTML = rangeBarHtml('gym') + dayBarHtml() +
       '<div class="card"><div class="gym-stats">' +
         '<div class="js-stat"><b>' + list.length + '</b><span>exercises</span></div>' +
-        '<div class="js-stat"><b>' + (vol ? (vol >= 1000 ? (vol / 1000).toFixed(1) + 't' : vol + 'kg') : '0') + '</b><span>volume</span></div>' +
-        '<div class="js-stat"><b>' + weekDays + '/7</b><span>days this week</span></div>' +
+        '<div class="js-stat"><b>' + setCount + '</b><span>sets</span></div>' +
+        '<div class="js-stat"><b>' + (vol ? (vol >= 1000 ? (vol / 1000).toFixed(1) + 't' : Math.round(vol) + 'kg') : '0') + '</b><span>volume</span></div>' +
+        '<div class="js-stat"><b>' + weekDays + '/7</b><span>this week</span></div>' +
       '</div></div>' +
+      (isToday ?
+        '<div class="card gym-rest">' +
+          (gymRest.left > 0
+            ? '<span class="eyebrow"><span class="walk-dot"></span> Resting</span><b id="gym-rest-left" class="mono">' + Math.floor(gymRest.left / 60) + ':' + pad(gymRest.left % 60) + '</b><button class="btn fr-mini" id="gym-rest-stop">Skip</button>'
+            : '<span class="eyebrow">⏱ Rest timer</span>' + [60, 90, 120].map(function (s) {
+                return '<button class="btn fr-mini" data-rest="' + s + '">' + s + 's</button>';
+              }).join('')) +
+        '</div>' : '') +
+      // Workout — one card per exercise, one row per set
+      (list.length ? list.map(function (e, i) {
+        var sets = gymSetsOf(e);
+        var best = gymEntryBest(e);
+        var pr = prs[e.n] && best >= prs[e.n].kg && best > 0;
+        var last = gymLastEntry(e.n, day.date);
+        var lastSets = last ? gymSetsOf(last) : [];
+        return '<div class="card gx-card">' +
+          '<div class="gx-head"><b>' + esc(e.n) + '</b>' + (pr ? ' <span class="pr-badge">PR 🏅</span>' : '') +
+            '<span class="gx-vol mono">' + Math.round(gymEntryVol(e)) + ' kg</span>' +
+            '<button class="list-del" data-gxdel="' + i + '">✕</button></div>' +
+          '<div class="gx-row gx-lbls"><span>SET</span><span>PREV</span><span>KG</span><span>REPS</span><span></span></div>' +
+          sets.map(function (st, j) {
+            var pv = lastSets[j] ? (lastSets[j].w ? lastSets[j].w + '×' + lastSets[j].r : '—×' + lastSets[j].r) : '—';
+            return '<div class="gx-row">' +
+              '<span class="gx-num mono">' + (j + 1) + '</span>' +
+              '<span class="gx-prev mono">' + pv + '</span>' +
+              '<input class="gx-in" type="number" inputmode="decimal" value="' + (st.w || '') + '" placeholder="0" data-gx="' + i + ':' + j + ':w" />' +
+              '<input class="gx-in" type="number" inputmode="numeric" value="' + (st.r || '') + '" placeholder="0" data-gx="' + i + ':' + j + ':r" />' +
+              '<button class="list-del gx-sdel" data-sdel="' + i + ':' + j + '">✕</button>' +
+            '</div>';
+          }).join('') +
+          '<button class="gx-addset" data-addset="' + i + '">＋ Add set</button>' +
+        '</div>';
+      }).join('') : '<div class="card"><p class="muted tiny" style="margin:0">Nothing logged ' + (isToday ? 'yet — pick an exercise below and hit your first set 💪' : 'on this day.') + '</p></div>') +
+      // Add exercise: tappable chips + inline custom input
       '<div class="card"><div class="eyebrow" style="margin-bottom:8px">Add exercise</div>' +
-        '<select id="gym-name">' + options.map(function (n) { return '<option>' + esc(n) + '</option>'; }).join('') + '<option value="__custom">✏️ Custom…</option></select>' +
-        '<div class="gym-grid">' +
-          '<label>Sets<input id="gym-sets" type="number" inputmode="numeric" value="3" /></label>' +
-          '<label>Reps<input id="gym-reps" type="number" inputmode="numeric" value="10" /></label>' +
-          '<label>Weight kg<input id="gym-kg" type="number" inputmode="decimal" value="" placeholder="0" /></label>' +
-        '</div>' +
-        '<button id="gym-add" class="btn primary block">Add exercise</button>' +
-        (!list.length && prev ? '<button id="gym-copy" class="btn block" style="margin-top:8px">↻ Repeat ' + shortDate(prev.date) + ' workout (' + prev.metrics.gym.length + ' lifts)</button>' : '') +
+        '<div class="gx-chips">' + chipNames.map(function (n) {
+          return '<button type="button" class="starter-chip gx-chip" data-gadd="' + esc(n) + '">' + esc(n) + '</button>';
+        }).join('') + '</div>' +
+        '<div class="add-habit" style="margin:10px 0 0"><input id="gym-custom" placeholder="Your own exercise (e.g. Face Pulls)" maxlength="40" /><button id="gym-custom-add" class="btn">Add</button></div>' +
+        (!list.length && prev ? '<button id="gym-copy" class="btn block" style="margin-top:10px">↻ Repeat ' + shortDate(prev.date) + ' workout (' + prev.metrics.gym.length + ' lifts)</button>' : '') +
       '</div>' +
-      '<div class="card"><div class="eyebrow" style="margin-bottom:4px">' + (appDate() === todayStr() ? 'Today' : prettyDate(appDate())) + '</div><div id="gym-today">' +
-        (list.length ? list.map(function (e, i) {
-          var pr = prs[e.n] && Number(e.kg) >= prs[e.n].kg && Number(e.kg) > 0;
-          return '<div class="list-row"><div><b>' + esc(e.n) + '</b>' + (pr ? ' <span class="pr-badge">PR 🏅</span>' : '') +
-            '<div class="muted tiny">' + e.sets + ' × ' + e.reps + (e.kg ? ' @ ' + e.kg + ' kg' : ' · bodyweight') + '</div></div>' +
-            '<button class="list-del" data-gi="' + i + '">✕</button></div>';
-        }).join('') : '<p class="muted tiny">Nothing logged yet — hit your first set 💪</p>') +
-      '</div></div>' +
-      (names.length ? '<div class="card"><div class="eyebrow" style="margin-bottom:4px">Personal records</div>' +
+      (names.length ? '<div class="card"><div class="eyebrow" style="margin-bottom:4px">Personal records · heaviest set</div>' +
         names.sort(function (a, b) { return prs[b].kg - prs[a].kg; }).slice(0, 8).map(function (n) {
-          return '<div class="list-row"><div><b>' + esc(n) + '</b><div class="muted tiny">' + shortDate(prs[n].date) + '</div></div>' +
+          return '<div class="list-row"><div><b>' + esc(n) + '</b><div class="muted tiny">' + shortDate(prs[n].date) + (prs[n].reps ? ' · ×' + prs[n].reps : '') + '</div></div>' +
             '<span class="mono">' + prs[n].kg + ' kg</span></div>';
         }).join('') + '</div>' : '');
 
-    $('#gym-add').addEventListener('click', function () {
-      var sel = $('#gym-name').value, name = sel;
-      if (sel === '__custom') { name = (prompt('Exercise name:') || '').trim(); if (!name) return; }
-      var entry = {
-        n: name.slice(0, 40),
-        sets: Math.max(1, Number($('#gym-sets').value) || 1),
-        reps: Math.max(1, Number($('#gym-reps').value) || 1),
-        kg: Math.max(0, Number($('#gym-kg').value) || 0)
-      };
-      var prevBest = prs[entry.n] ? prs[entry.n].kg : 0;
-      gymOf(day).push(entry);
-      queueSaveDay(day);
-      if (entry.kg > 0 && entry.kg > prevBest) toast('New PR on ' + entry.n + ' — ' + entry.kg + ' kg! 🏅');
-      renderGym();
-    });
-    var copyBtn = $('#gym-copy');
-    if (copyBtn) copyBtn.addEventListener('click', function () {
-      prev.metrics.gym.forEach(function (e) { gymOf(day).push({ n: e.n, sets: e.sets, reps: e.reps, kg: e.kg }); });
-      queueSaveDay(day); toast('Workout copied — beat it today 🔥'); renderGym();
-    });
     bindRangeBar(box, 'gym', renderGym);
     bindDayBar(box, renderGym);
-    box.querySelectorAll('[data-gi]').forEach(function (b) {
+
+    function addExercise(name) {
+      name = String(name || '').trim().slice(0, 40);
+      if (!name) return;
+      var last = gymLastEntry(name, day.date);
+      var sets = last ? gymSetsOf(last).map(function (s) { return { r: Number(s.r) || 0, w: Number(s.w) || 0 }; }) : [{ r: 10, w: 0 }];
+      gymOf(day).push({ n: name, sets: sets });
+      gymRememberExercise(name);
+      queueSaveDay(day);
+      toast(last ? name + ' added — last session loaded, beat it 🔥' : name + ' added');
+      renderGym();
+    }
+    box.querySelectorAll('[data-gadd]').forEach(function (b) {
+      b.addEventListener('click', function () { addExercise(b.getAttribute('data-gadd')); });
+    });
+    $('#gym-custom-add').addEventListener('click', function () { addExercise($('#gym-custom').value); });
+    $('#gym-custom').addEventListener('keydown', function (e) { if (e.key === 'Enter') addExercise(this.value); });
+
+    // Per-set weight/rep edits — save on change (blur), PR toast when beaten.
+    box.querySelectorAll('[data-gx]').forEach(function (inp) {
+      inp.addEventListener('change', function () {
+        var pk = inp.getAttribute('data-gx').split(':');
+        var e = list[Number(pk[0])]; if (!e) return;
+        var sets = gymEnsureSets(e);
+        var st = sets[Number(pk[1])]; if (!st) return;
+        var v = Math.max(0, Number(inp.value) || 0);
+        var prevBest = prs[e.n] ? prs[e.n].kg : 0;
+        if (pk[2] === 'w') st.w = v; else st.r = v;
+        queueSaveDay(day);
+        if (pk[2] === 'w' && v > 0 && v > prevBest) toast('New PR on ' + e.n + ' — ' + v + ' kg! 🏅');
+        renderGym();
+      });
+    });
+    box.querySelectorAll('[data-addset]').forEach(function (b) {
       b.addEventListener('click', function () {
-        gymOf(day).splice(Number(b.getAttribute('data-gi')), 1);
+        var e = list[Number(b.getAttribute('data-addset'))]; if (!e) return;
+        var sets = gymEnsureSets(e);
+        var lastSet = sets[sets.length - 1] || { r: 10, w: 0 };
+        sets.push({ r: Number(lastSet.r) || 0, w: Number(lastSet.w) || 0 });
         queueSaveDay(day); renderGym();
       });
+    });
+    box.querySelectorAll('[data-sdel]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var pk = b.getAttribute('data-sdel').split(':');
+        var e = list[Number(pk[0])]; if (!e) return;
+        var sets = gymEnsureSets(e);
+        sets.splice(Number(pk[1]), 1);
+        if (!sets.length) list.splice(Number(pk[0]), 1);
+        queueSaveDay(day); renderGym();
+      });
+    });
+    box.querySelectorAll('[data-gxdel]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        list.splice(Number(b.getAttribute('data-gxdel')), 1);
+        queueSaveDay(day); renderGym();
+      });
+    });
+    box.querySelectorAll('[data-rest]').forEach(function (b) {
+      b.addEventListener('click', function () { gymRestStart(Number(b.getAttribute('data-rest'))); });
+    });
+    var rstop = $('#gym-rest-stop');
+    if (rstop) rstop.addEventListener('click', function () { gymRestStop(); renderGym(); });
+    var copyBtn = $('#gym-copy');
+    if (copyBtn) copyBtn.addEventListener('click', function () {
+      prev.metrics.gym.forEach(function (e) {
+        gymOf(day).push({ n: e.n, sets: gymSetsOf(e).map(function (s) { return { r: Number(s.r) || 0, w: Number(s.w) || 0 }; }) });
+      });
+      queueSaveDay(day); toast('Workout copied — beat it today 🔥'); renderGym();
     });
   }
   function renderGymRange(box, rs) {
     var r = rangeSpan(rs.mode, rs.anchor);
     var agg = rangeAgg(r.from, r.to, gymVolOf);
+    var setsAgg = rangeAgg(r.from, r.to, gymSetCountOf);
     var trained = agg.perDay.filter(function (p) { return p.v > 0; }).length;
     box.innerHTML = rangeBarHtml('gym') +
       '<div class="card"><div class="gym-stats">' +
         '<div class="js-stat"><b>' + trained + '/' + agg.days + '</b><span>days trained</span></div>' +
+        '<div class="js-stat"><b>' + Math.round(setsAgg.sum) + '</b><span>total sets</span></div>' +
         '<div class="js-stat"><b>' + (agg.sum >= 1000 ? (agg.sum / 1000).toFixed(1) + 't' : Math.round(agg.sum) + 'kg') + '</b><span>total volume</span></div>' +
         '<div class="js-stat"><b>' + (agg.avg >= 1000 ? (agg.avg / 1000).toFixed(1) + 't' : Math.round(agg.avg) + 'kg') + '</b><span>avg/day</span></div>' +
       '</div></div>' +
