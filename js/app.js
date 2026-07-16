@@ -728,6 +728,9 @@
     });
     if (name !== 'diet' && name !== 'fast') stopFastTimer();
     if (name !== 'breathe') stopBreathe();
+    // A running meditation keeps ticking across views (it chimes + banks itself);
+    // the manifest practice flow, though, resets if you walk away mid-card.
+    if (name !== 'manifest' && manifest.step !== -1) { manifest.step = -1; stopManifestViz(); }
     // Leaving the mini-apps resets day-editing back to today.
     if (name === 'home' || name === 'today' || name === 'library') state.appDate = null;
     if (name === 'home') renderHome();
@@ -747,6 +750,8 @@
     if (name === 'gym') renderGym();
     if (name === 'breathe') renderBreathe();
     if (name === 'detox') renderDetox();
+    if (name === 'meditate') renderMeditate();
+    if (name === 'manifest') renderManifest();
     if (name === 'meds') renderMeds();
     if (name === 'money') renderMoney();
     if (name === 'subs') renderSubs();
@@ -3867,6 +3872,8 @@
     { id: 'journal',   name: 'Journal',   icon: '📓', pillar: 'mind', open: function () { switchView('journal'); } },
     { id: 'reading',   name: 'Reading',   icon: '📖', pillar: 'mind', open: function () { switchView('reading'); } },
     { id: 'breathe',   name: 'Breathe',   icon: '🫁', pillar: 'mind', open: function () { switchView('breathe'); } },
+    { id: 'meditate',  name: 'Meditate',  icon: '🧘', pillar: 'mind', open: function () { switchView('meditate'); } },
+    { id: 'manifest',  name: 'Manifest',  icon: '✨', pillar: 'mind', open: function () { switchView('manifest'); } },
     { id: 'detox',     name: 'Detox',     icon: '📵', pillar: 'mind', open: function () { switchView('detox'); } },
     { id: 'money',     name: 'Money',     icon: '💸', pillar: 'money', open: function () { switchView('money'); } },
     { id: 'subs',      name: 'Subs',      icon: '🔁', pillar: 'money', open: function () { switchView('subs'); } },
@@ -4954,6 +4961,310 @@
         '<div class="muted tiny">' + hits + ' of ' + agg.logged + ' days hit ' + goal + ' min · ' + Math.round(agg.sum) + ' min total</div></div></div>' +
       '<div class="card"><div class="eyebrow">Offline minutes per day</div>' + rangeBarChart(agg.perDay, 'var(--mind-c)', 'm') + '</div>';
     bindRangeBar(box, 'detox', renderDetox);
+  }
+
+  /* ================= Meditate — timer + minutes bank (Mind) ================= */
+  var medit = { running: false, paused: false, mins: 10, leftMs: 0, lastTick: 0, tick: null };
+  function meditStreak() {
+    var d = todayStr();
+    var l = logFor(d);
+    if (!l || !l.metrics || !Number(l.metrics.meditMin)) d = addDays(d, -1);
+    var s = 0;
+    while (true) {
+      var lg = logFor(d);
+      if (!lg || !lg.metrics || !Number(lg.metrics.meditMin)) break;
+      s++; d = addDays(d, -1);
+    }
+    return s;
+  }
+  // Soft two-tone chime via Web Audio — no asset needed; silently skipped if blocked.
+  function meditChime() {
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext; if (!Ctx) return;
+      var ctx = new Ctx();
+      [523.25, 659.25].forEach(function (freq, i) {
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine'; o.frequency.value = freq;
+        o.connect(g); g.connect(ctx.destination);
+        var t = ctx.currentTime + i * 0.35;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.25, t + 0.05);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+        o.start(t); o.stop(t + 1.5);
+      });
+    } catch (e) {}
+  }
+  function stopMeditation(bank, silent) {
+    if (medit.tick) { clearInterval(medit.tick); medit.tick = null; }
+    if (!medit.running) return;
+    var doneMs = medit.mins * 60000 - medit.leftMs;
+    medit.running = false; medit.paused = false;
+    if (bank) {
+      var mins = Math.max(0, Math.round(doneMs / 60000));
+      if (mins >= 1) {
+        var m = metricsOf(state.today);
+        m.meditMin = (Number(m.meditMin) || 0) + mins;
+        queueSave();
+        toast('+' + mins + ' min of stillness banked 🧘✨');
+      } else toast('Under a minute — not banked.');
+    }
+    if (!silent) renderMeditate();
+  }
+  function startMeditation() {
+    medit.running = true; medit.paused = false;
+    medit.leftMs = medit.mins * 60000;
+    medit.lastTick = Date.now();
+    medit.tick = setInterval(function () {
+      if (!medit.running || medit.paused) { medit.lastTick = Date.now(); return; }
+      var now = Date.now();
+      medit.leftMs -= now - medit.lastTick;
+      medit.lastTick = now;
+      if (medit.leftMs <= 0) {
+        medit.leftMs = 0;
+        meditChime();
+        stopMeditation(true);
+        return;
+      }
+      meditUpdateLive();
+    }, 500);
+    renderMeditate();
+  }
+  function meditUpdateLive() {
+    var elT = $('#mdt-left'); if (!elT) return;
+    var s = Math.max(0, Math.ceil(medit.leftMs / 1000));
+    elT.textContent = Math.floor(s / 60) + ':' + pad(s % 60);
+    var ring = $('#mdt-ring');
+    if (ring) {
+      var circ = 2 * Math.PI * 52;
+      var frac = 1 - medit.leftMs / (medit.mins * 60000);
+      ring.style.strokeDashoffset = circ * (1 - frac);
+    }
+  }
+  function renderMeditate() {
+    var box = $('#meditate-app'); if (!box) return;
+    var goal = Number(state.profile && state.profile.meditGoal) || 10;
+    var rs = rangeState('meditate');
+    if (rs.mode !== 'day') { renderMeditateRange(box, rs, goal); return; }
+    var day = appDay(), m = metricsOf(day);
+    var doneMin = Number(m.meditMin) || 0;
+    var isToday = appDate() === todayStr();
+    var pct = pctOf(doneMin, goal);
+
+    if (medit.running && isToday) {
+      var sLeft = Math.max(0, Math.ceil(medit.leftMs / 1000));
+      box.innerHTML =
+        '<div class="card medit-card live">' +
+          '<div class="mdt-stage"><svg viewBox="0 0 120 120" class="ring"><circle class="ring-bg" cx="60" cy="60" r="52"></circle>' +
+          '<circle id="mdt-ring" class="ring-fg mdt-fg" cx="60" cy="60" r="52"></circle></svg>' +
+          '<div class="mdt-center"><div id="mdt-left" class="mdt-left mono">' + Math.floor(sLeft / 60) + ':' + pad(sLeft % 60) + '</div>' +
+          '<div class="muted tiny">' + (medit.paused ? 'paused' : 'remaining') + '</div></div></div>' +
+          '<p class="muted tiny center" style="margin:4px 0 12px">' + (medit.paused ? 'Take your time.' : 'Eyes closed. Follow the breath 🌊') + '</p>' +
+          '<div class="row-2"><button id="mdt-pause" class="btn">' + (medit.paused ? '▶ Resume' : '⏸ Pause') + '</button>' +
+          '<button id="mdt-end" class="btn primary">End &amp; bank</button></div>' +
+        '</div>';
+      $('#mdt-pause').addEventListener('click', function () { medit.paused = !medit.paused; renderMeditate(); });
+      $('#mdt-end').addEventListener('click', function () { stopMeditation(true); });
+      meditUpdateLive();
+      return;
+    }
+
+    box.innerHTML = rangeBarHtml('meditate') + dayBarHtml() +
+      '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
+        ringMini(pct, 'var(--mind-c)', 92, '<b>' + pct + '%</b>') +
+        '<div class="hero-meta"><div class="metric-big"><b>' + doneMin + '</b> <span class="muted">min today</span></div>' +
+        '<div class="muted tiny">goal <button class="inline-edit" id="mdt-goal-btn">' + goal + ' min</button> / day · 🔥 ' + meditStreak() + '-day streak</div></div></div>' +
+      (isToday
+        ? '<div class="card medit-card"><div class="eyebrow">Start a sit</div>' +
+          '<div class="seg" id="mdt-mins" style="margin:10px 0">' + [5, 10, 15, 20].map(function (n) {
+            return '<button data-mm="' + n + '"' + (n === medit.mins ? ' class="active"' : '') + '>' + n + ' min</button>';
+          }).join('') + '</div>' +
+          '<button id="mdt-start" class="btn primary block">🧘 Begin</button>' +
+          '<p class="muted tiny center" style="margin:10px 0 0">A soft chime rings when time is up.</p></div>'
+        : '<div class="card"><div class="eyebrow">Edit ' + prettyDate(appDate()) + '</div>' +
+          '<div class="manual-grid" style="margin-top:8px"><label>Minutes meditated<input id="mdt-past" type="number" inputmode="numeric" value="' + (doneMin || '') + '" /></label></div>' +
+          '<button id="mdt-past-save" class="btn primary block">Save</button></div>') +
+      '<div class="card"><div class="eyebrow">Minutes · last 7 days</div><div id="mdt-trend"></div></div>';
+    bindRangeBar(box, 'meditate', renderMeditate);
+    bindDayBar(box, renderMeditate);
+    $('#mdt-goal-btn').addEventListener('click', function () {
+      var x = prompt('Daily meditation goal (minutes):', goal); if (x == null) return;
+      saveProfileKey('meditGoal', Math.max(1, Number(x) || 10), renderMeditate);
+    });
+    if (isToday) {
+      $('#mdt-mins').addEventListener('click', function (e) {
+        var b = e.target.closest('[data-mm]'); if (!b) return;
+        medit.mins = Number(b.getAttribute('data-mm')); renderMeditate();
+      });
+      $('#mdt-start').addEventListener('click', startMeditation);
+    } else {
+      $('#mdt-past-save').addEventListener('click', function () {
+        m.meditMin = Math.max(0, Number($('#mdt-past').value) || 0);
+        queueSaveDay(day); toast('Saved ✓'); renderMeditate();
+      });
+    }
+    metricTrend('meditMin', '#mdt-trend', 'm');
+  }
+  function renderMeditateRange(box, rs, goal) {
+    var r = rangeSpan(rs.mode, rs.anchor);
+    var agg = rangeAgg(r.from, r.to, function (l) { return l && l.metrics ? Number(l.metrics.meditMin) || 0 : 0; });
+    var hits = agg.perDay.filter(function (p) { return p.v >= goal; }).length;
+    var pct = pctOf(agg.avg, goal);
+    box.innerHTML = rangeBarHtml('meditate') +
+      '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
+        ringMini(pct, 'var(--mind-c)', 92, '<b>' + Math.round(agg.avg) + '</b>') +
+        '<div class="hero-meta"><div class="metric-big"><b>' + Math.round(agg.avg) + ' min</b> <span class="muted">avg/day</span></div>' +
+        '<div class="muted tiny">' + hits + ' of ' + agg.logged + ' days hit ' + goal + ' min · ' + Math.round(agg.sum) + ' min total</div></div></div>' +
+      '<div class="card"><div class="eyebrow">Minutes per day</div>' + rangeBarChart(agg.perDay, 'var(--mind-c)', 'm') + '</div>';
+    bindRangeBar(box, 'meditate', renderMeditate);
+  }
+
+  /* ================= Manifest — affirmations + visualization (Mind) ================= */
+  var AFFIRM_STARTERS = [
+    'I am disciplined and consistent', 'Money flows to me with ease',
+    'I am becoming my strongest self', 'I attract the right people and opportunities',
+    'My body is healthy and full of energy', 'Everything is always working out for me'
+  ];
+  function affirmations() { return (state.profile && state.profile.affirmations) || []; }
+  function manifestStreak() {
+    var d = todayStr();
+    var l = logFor(d);
+    if (!l || !l.metrics || !l.metrics.manifested) d = addDays(d, -1);
+    var s = 0;
+    while (true) {
+      var lg = logFor(d);
+      if (!lg || !lg.metrics || !lg.metrics.manifested) break;
+      s++; d = addDays(d, -1);
+    }
+    return s;
+  }
+  var manifest = { step: -1, vizLeft: 0, vizTick: null };  // step: -1 idle, 0..n-1 affirmation cards, 'viz'
+  function stopManifestViz() { if (manifest.vizTick) { clearInterval(manifest.vizTick); manifest.vizTick = null; } }
+  function manifestFinish(day) {
+    stopManifestViz();
+    manifest.step = -1;
+    var m = metricsOf(day);
+    m.manifested = 1;
+    queueSaveDay(day);
+    toast('Practice complete — it’s already yours ✨');
+    renderManifest();
+  }
+  function renderManifest() {
+    var box = $('#manifest-app'); if (!box) return;
+    var list = affirmations();
+    var day = appDay(), m = metricsOf(day);
+    var isToday = appDate() === todayStr();
+    var rs = rangeState('manifest');
+
+    // Mid-practice flow (affirmation cards → 68s visualization)
+    if (manifest.step !== -1 && isToday) {
+      if (manifest.step === 'viz') {
+        box.innerHTML =
+          '<div class="card manifest-card live">' +
+            '<div class="eyebrow">Visualise · 68 seconds</div>' +
+            '<div class="mf-viz mono" id="mf-viz">' + manifest.vizLeft + '</div>' +
+            '<p class="muted tiny center" style="margin:0 0 14px">Close your eyes. See the life you’re building — already real, already yours.</p>' +
+            '<button id="mf-done" class="btn primary block">Done ✨</button>' +
+          '</div>';
+        $('#mf-done').addEventListener('click', function () { manifestFinish(day); });
+        if (!manifest.vizTick) {
+          manifest.vizTick = setInterval(function () {
+            manifest.vizLeft--;
+            var e2 = $('#mf-viz');
+            if (e2) e2.textContent = Math.max(0, manifest.vizLeft);
+            if (manifest.vizLeft <= 0) manifestFinish(day);
+          }, 1000);
+        }
+        return;
+      }
+      var a = list[manifest.step];
+      box.innerHTML =
+        '<div class="card manifest-card live">' +
+          '<div class="eyebrow">Affirmation ' + (manifest.step + 1) + ' / ' + list.length + '</div>' +
+          '<div class="mf-text">“' + esc(a) + '”</div>' +
+          '<p class="muted tiny center" style="margin:0 0 14px">Say it out loud — or in your head — like you mean it.</p>' +
+          '<button id="mf-next" class="btn primary block">' + (manifest.step + 1 < list.length ? 'Next ›' : 'Visualise →') + '</button>' +
+          '<button id="mf-quit" class="link-btn" style="margin-top:8px">Exit practice</button>' +
+        '</div>';
+      $('#mf-next').addEventListener('click', function () {
+        if (manifest.step + 1 < list.length) { manifest.step++; renderManifest(); }
+        else { manifest.step = 'viz'; manifest.vizLeft = 68; renderManifest(); }
+      });
+      $('#mf-quit').addEventListener('click', function () { manifest.step = -1; stopManifestViz(); renderManifest(); });
+      return;
+    }
+
+    if (rs.mode !== 'day') { renderManifestRange(box, rs); return; }
+
+    var practiced = !!m.manifested;
+    var html = rangeBarHtml('manifest') + dayBarHtml() +
+      '<div class="card hero-row' + (practiced ? ' goal-hit' : '') + '">' +
+        ringMini(practiced ? 100 : 0, 'var(--mind-c)', 92, practiced ? '<b>✓</b>' : '<b>—</b>') +
+        '<div class="hero-meta"><div class="metric-big"><b>' + (practiced ? 'Practiced ✨' : 'Not yet') + '</b></div>' +
+        '<div class="muted tiny">🔥 ' + manifestStreak() + '-day streak · ' + list.length + ' affirmation' + (list.length === 1 ? '' : 's') + '</div></div></div>';
+
+    if (isToday) {
+      html += list.length
+        ? '<button id="mf-start" class="btn primary block" style="margin-bottom:14px">✨ Practice now (' + list.length + ' + 68s visualise)</button>'
+        : '';
+    } else {
+      html += '<div class="card"><label class="fx-toggle"><input type="checkbox" id="mf-past"' + (practiced ? ' checked' : '') + ' /> Practiced on ' + prettyDate(appDate()) + '</label></div>';
+    }
+
+    // Affirmation manager
+    html += '<div class="card"><div class="eyebrow" style="margin-bottom:6px">My affirmations</div>' +
+      (list.length ? list.map(function (a, i) {
+        return '<div class="list-row"><span class="mf-item">“' + esc(a) + '”</span><button class="list-del" data-afrm="' + i + '">✕</button></div>';
+      }).join('') : '<p class="muted tiny" style="margin:0 0 10px">Write affirmations in the present tense, as if already true. Start with one of these:</p>' +
+        '<div class="starter-chips" style="margin-bottom:4px">' + AFFIRM_STARTERS.map(function (s) {
+          return '<button type="button" class="starter-chip" data-astart="' + esc(s) + '">' + esc(s) + '</button>';
+        }).join('') + '</div>') +
+      '<div class="add-habit" style="margin:10px 0 0"><input id="mf-new" placeholder="e.g. I am unstoppable" maxlength="120" /><button id="mf-add" class="btn">Add</button></div></div>';
+
+    // Practiced-days calendar (doubles as date picker)
+    html += '<div class="card"><h3>Practice calendar</h3><p class="muted tiny" style="margin:0 0 8px">Tap a day to view or edit it.</p><div id="mf-cal"></div></div>';
+
+    box.innerHTML = html;
+    bindRangeBar(box, 'manifest', renderManifest);
+    bindDayBar(box, renderManifest);
+    var st = $('#mf-start');
+    if (st) st.addEventListener('click', function () { manifest.step = 0; renderManifest(); });
+    var pastCb = $('#mf-past');
+    if (pastCb) pastCb.addEventListener('change', function () {
+      m.manifested = this.checked ? 1 : 0;
+      queueSaveDay(day); renderManifest();
+    });
+    $('#mf-add').addEventListener('click', function () {
+      var v = $('#mf-new').value.trim(); if (!v) return;
+      saveProfileKey('affirmations', affirmations().concat([v.slice(0, 120)]), renderManifest);
+    });
+    box.querySelectorAll('[data-astart]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        saveProfileKey('affirmations', affirmations().concat([b.getAttribute('data-astart')]), renderManifest);
+      });
+    });
+    box.querySelectorAll('[data-afrm]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var i = Number(b.getAttribute('data-afrm'));
+        saveProfileKey('affirmations', affirmations().filter(function (_, j) { return j !== i; }), renderManifest);
+      });
+    });
+    var cal = $('#mf-cal');
+    if (cal) buildDayPicker(cal, ymOf(appDate()), renderManifest, function (date) {
+      var l = logFor(date);
+      return l && l.metrics && l.metrics.manifested ? 'var(--mind-c)' : null;
+    });
+  }
+  function renderManifestRange(box, rs) {
+    var r = rangeSpan(rs.mode, rs.anchor);
+    var agg = rangeAgg(r.from, r.to, function (l) { return l && l.metrics && l.metrics.manifested ? 1 : 0; });
+    var pct = pctOf(agg.hits, agg.days);
+    box.innerHTML = rangeBarHtml('manifest') +
+      '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
+        ringMini(pct, 'var(--mind-c)', 92, '<b>' + pct + '%</b>') +
+        '<div class="hero-meta"><div class="metric-big"><b>' + agg.hits + ' of ' + agg.days + '</b> <span class="muted">days practiced</span></div>' +
+        '<div class="muted tiny">' + rangeLabelFor(rs.mode, rs.anchor) + '</div></div></div>' +
+      '<div class="card"><div class="eyebrow">Practice per day</div>' + rangeBarChart(agg.perDay, 'var(--mind-c)') + '</div>';
+    bindRangeBar(box, 'manifest', renderManifest);
   }
 
   /* ================= Meds — medicines & supplements (Body) ================= */
