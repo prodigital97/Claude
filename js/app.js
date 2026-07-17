@@ -4451,12 +4451,28 @@
     { k: 'neck',    label: 'Neck',   unit: 'cm', dec: 0, downGood: true }
   ];
   function bodyMetricDef(k) { return BODY_METRICS.filter(function (x) { return x.k === k; })[0] || BODY_METRICS[0]; }
-  // All logged points for a metric, oldest → newest.
+  // Body fat for a day: manual reading wins; otherwise auto-computed with the
+  // U.S. Navy formula from that day's tape measurements + profile height/sex.
+  function bodyfatOf(l) {
+    if (!l || !l.metrics) return 0;
+    var v = Number(l.metrics.bodyfat);
+    if (v) return v;
+    var est = navyBodyFat(
+      (state.profile && state.profile.sex) || '',
+      Number(state.profile && state.profile.heightCm) || 0,
+      Number(l.metrics.neck) || 0,
+      Number(l.metrics.waist) || 0,
+      Number(l.metrics.hips) || 0
+    );
+    return est && est > 0 && est < 75 ? Math.round(est * 10) / 10 : 0;
+  }
+  // All logged points for a metric, oldest → newest. Body fat auto-fills from
+  // measurements on days without a manual reading, so the trend "just works".
   function metricSeries(key) {
     var today = todayStr(), out = [];
     (state.logs || []).forEach(function (l) {
       if (l.date > today) return;
-      var v = l.metrics && Number(l.metrics[key]);
+      var v = key === 'bodyfat' ? bodyfatOf(l) : (l.metrics && Number(l.metrics[key]));
       if (v) out.push({ date: l.date, v: v });
     });
     return out;
@@ -4562,7 +4578,9 @@
     var neckV = Number(m.neck) || (lastMetric('neck') || {}).v || 0;
     var waistV = Number(m.waist) || (lastMetric('waist') || {}).v || 0;
     var hipV = Number(m.hips) || (lastMetric('hips') || {}).v || 0;
-    var manualBf = m.bodyfat || (lastMetric('bodyfat') || {}).v || 0;
+    // Manual reading for THIS day wins; otherwise the Navy estimate kicks in
+    // (metricSeries already auto-computes past days from their measurements).
+    var manualBf = Number(m.bodyfat) || 0;
     var autoBf = manualBf ? null : navyBodyFat(sex, heightCm, neckV, waistV, hipV);
 
     // Selected hero metric (chips at top switch it).
@@ -4622,7 +4640,8 @@
       '<div class="card"><div class="eyebrow" style="margin-bottom:8px">Log this day</div>' +
         '<div class="manual-grid">' +
         '<label>Weight (kg)<input id="bd-w" type="number" inputmode="decimal" value="' + (m.weight || '') + '" /></label>' +
-        '<label>Body fat (%) <span class="muted tiny">optional</span><input id="bd-bf" type="number" inputmode="decimal" value="' + (m.bodyfat || '') + '" placeholder="' + (autoBf ? autoBf.toFixed(1) + ' est.' : '') + '" /></label>' +
+        '<label>Body fat (%) <span class="muted tiny">auto if blank</span><input id="bd-bf" type="number" inputmode="decimal" value="' + (m.bodyfat || '') + '" placeholder="' + (autoBf ? autoBf.toFixed(1) : 'auto') + '" />' +
+        '<span id="bd-bf-hint" class="muted tiny bf-hint"></span></label>' +
         '<label>Neck (cm)<input id="bd-neck" type="number" inputmode="decimal" value="' + (m.neck || '') + '" /></label>' +
         '<label>Waist (cm)<input id="bd-waist" type="number" inputmode="decimal" value="' + (m.waist || '') + '" /></label>' +
         '<label>Chest (cm)<input id="bd-chest" type="number" inputmode="decimal" value="' + (m.chest || '') + '" /></label>' +
@@ -4644,6 +4663,28 @@
         window.scrollTo(0, 0);
       });
     });
+    // Live Navy estimate while typing — updates the moment the inputs allow it.
+    function bfLive() {
+      var hint = $('#bd-bf-hint'); if (!hint) return;
+      if (Number($('#bd-bf').value)) { hint.textContent = 'Using your manual reading — clear it to auto-calculate.'; return; }
+      var sx = $('#bd-sex').value;
+      var est = navyBodyFat(sx,
+        Number($('#bd-height').value) || 0,
+        Number($('#bd-neck').value) || 0,
+        Number($('#bd-waist').value) || 0,
+        Number($('#bd-hips').value) || 0);
+      if (est && est > 0 && est < 75) {
+        hint.textContent = '≈ ' + est.toFixed(1) + '% auto (US Navy) — used automatically when left blank';
+        $('#bd-bf').placeholder = est.toFixed(1);
+      } else {
+        hint.textContent = 'Auto-calculates from sex, height, neck, waist' + (sx === 'female' ? ' & hips' : '') + ' — fill those in.';
+      }
+    }
+    ['#bd-bf', '#bd-neck', '#bd-waist', '#bd-hips', '#bd-height'].forEach(function (s) {
+      var e2 = $(s); if (e2) e2.addEventListener('input', bfLive);
+    });
+    $('#bd-sex').addEventListener('change', bfLive);
+    bfLive();
     $('#bd-save').addEventListener('click', function () {
       m.weight = Number($('#bd-w').value) || 0; m.waist = Number($('#bd-waist').value) || 0; m.bodyfat = Number($('#bd-bf').value) || 0;
       m.neck = Number($('#bd-neck').value) || 0;
