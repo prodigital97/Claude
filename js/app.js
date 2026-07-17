@@ -459,6 +459,7 @@
     if (action === 'respondFriend') return { status: 'friend' };
     if (action === 'removeFriend') return { status: 'removed' };
     if (action === 'coachChat') return { reply: 'The AI coach needs the online backend (Gemini) — it isn’t available in demo mode.' };
+    if (action === 'parseScreenTime') throw new Error('Screen Time analysis needs the online backend (Gemini) — not available in demo mode.');
     if (action === 'listGet') { return { items: ((d.lists && d.lists[me.username] && d.lists[me.username][p.kind]) || []).slice() }; }
     if (action === 'listAdd') {
       d.lists = d.lists || {}; d.lists[me.username] = d.lists[me.username] || {};
@@ -3779,6 +3780,13 @@
       return '<div class="stat"><div class="num">' + c[1] + '</div><div class="lbl">' + c[0] + '</div></div>';
     }).join('');
 
+    var KIND_LABEL = { food: '🥗 Food scans', money: '💰 Money scans', screentime: '📱 Screen Time', coach: '💬 Coach / Penny' };
+    $('#admin-scan-bykind').innerHTML = (d.byKind || []).length
+      ? d.byKind.map(function (k) {
+          return '<div class="admin-row"><span>' + esc(KIND_LABEL[k.kind] || k.kind) + '</span><span class="amono">' + k.scans + ' · ' + inr(k.costInr) + (k.monthInr ? ' · ' + inr(k.monthInr) + '/mo' : '') + '</span></div>';
+        }).join('')
+      : '<p class="muted tiny">No scans yet.</p>';
+
     $('#admin-scan-byuser').innerHTML = (d.byUser || []).length
       ? d.byUser.map(function (u) {
           return '<div class="admin-row"><span>' + esc(u.username) + '</span><span class="amono">' + u.scans + ' · ' + inr(u.costInr) + '</span></div>';
@@ -4416,11 +4424,13 @@
     var q = Number(m.sleepQ) || 0;
     var note = !mins ? 'Log last night to see your trend.'
       : mins >= goalH * 60 ? 'Fully charged 🔋' : mins >= goalH * 60 * 0.8 ? 'Decent — a little short.' : 'Running on fumes — sleep earlier tonight 😴';
+    var win = (m.bedtime && m.waketime) ? '<div class="muted tiny" style="margin-top:2px">🌙 ' + esc(hhmm12(m.bedtime)) + ' → ☀️ ' + esc(hhmm12(m.waketime)) + (m.sleepSrc === 'screentime' ? ' · from Screen Time' : '') + '</div>' : '';
     box.innerHTML = rangeBarHtml('sleep') + dayBarHtml() +
       '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
         ringMini(pct, 'var(--mind-c)', 92, '<b>' + (mins ? Math.floor(mins / 60) + 'h' + (mins % 60 ? (mins % 60) + '' : '') : '—') + '</b>') +
         '<div class="hero-meta"><div class="metric-big"><b>' + (mins ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : 'No log yet') + '</b></div>' +
-        '<div class="muted tiny">goal <button class="inline-edit" id="sleep-goal-btn">' + goalH + 'h</button> · ' + note + '</div></div></div>' +
+        '<div class="muted tiny">goal <button class="inline-edit" id="sleep-goal-btn">' + goalH + 'h</button> · ' + note + '</div>' + win + '</div></div>' +
+      '<button id="sl-screentime" class="btn block st-btn">📱 Auto-detect sleep from Screen Time</button>' +
       '<div class="card"><div class="manual-grid"><label>Hours<input id="sl-h" type="number" inputmode="numeric" value="' + (mins ? Math.floor(mins / 60) : '') + '" /></label>' +
       '<label>Minutes<input id="sl-m" type="number" inputmode="numeric" value="' + (mins ? mins % 60 : '') + '" /></label></div>' +
       '<div class="eyebrow" style="margin:6px 0 6px">Sleep quality</div>' +
@@ -4433,6 +4443,7 @@
       var x = prompt('Sleep goal (hours):', goalH); if (x == null) return;
       saveProfileKey('sleepGoal', Math.min(14, Math.max(4, Number(x) || 8)), renderSleep);
     });
+    $('#sl-screentime').addEventListener('click', function () { openScreenTimeUpload(renderSleep); });
     bindRangeBar(box, 'sleep', renderSleep);
     bindDayBar(box, renderSleep);
     box.querySelectorAll('[data-star]').forEach(function (b) {
@@ -4465,6 +4476,120 @@
         '<div class="muted tiny">' + hits + ' of ' + agg.logged + ' nights hit ' + goalH + 'h' + (qAgg.logged ? ' · ' + qAgg.avg.toFixed(1) + '★ avg quality' : '') + '</div></div></div>' +
       '<div class="card"><div class="eyebrow">Sleep hours per night</div>' + rangeBarChart(agg.perDay.map(function (p) { return { date: p.date, v: p.v / 60 }; }), 'var(--mind-c)', 'h', 1) + '</div>';
     bindRangeBar(box, 'sleep', renderSleep);
+  }
+
+  /* ================= Screen Time → sleep + phone usage =================
+     Upload iOS/Android usage screenshots; Gemini reads total usage, top apps,
+     and infers the overnight sleep window from the hourly chart. */
+  function hmDur(min) {
+    min = Math.round(Number(min) || 0);
+    var h = Math.floor(min / 60), m = min % 60;
+    return h ? (h + 'h' + (m ? ' ' + m + 'm' : '')) : (m + 'm');
+  }
+  function hhmm12(s) {
+    var p = String(s || '').split(':'); if (p.length < 2) return s || '';
+    var h = Number(p[0]), m = p[1];
+    var ap = h >= 12 ? 'PM' : 'AM'; var h12 = h % 12; if (h12 === 0) h12 = 12;
+    return h12 + ':' + m + ' ' + ap;
+  }
+  var stFileInput = null;
+  function openScreenTimeUpload(afterApply) {
+    state.stAfterApply = afterApply || null;
+    if (!stFileInput) {
+      stFileInput = document.createElement('input');
+      stFileInput.type = 'file'; stFileInput.accept = 'image/*'; stFileInput.multiple = true;
+      stFileInput.id = 'st-file'; stFileInput.style.display = 'none';
+      document.body.appendChild(stFileInput);
+      stFileInput.addEventListener('change', function () {
+        var files = Array.prototype.slice.call(this.files || []);
+        this.value = '';
+        if (files.length) stAnalyse(files);
+      });
+    }
+    // Intro screen inside the modal.
+    $('#st-body').innerHTML =
+      '<p class="muted tiny" style="margin:0 0 12px">Open <b>Settings → Screen Time → See All Activity</b> (or Android <b>Digital Wellbeing</b>), switch to the <b>Day</b> view, and screenshot each day. Upload up to 7 — the AI reads your total usage, top apps, and works out when you slept from the quiet overnight hours.</p>' +
+      '<button id="st-pick" class="btn primary block">🖼️ Choose screenshots</button>' +
+      '<p class="muted tiny center" style="margin-top:10px">Uses the AI scanner (Gemini). Logged under “Screen Time” in the API costs.</p>';
+    show('#st-modal');
+    $('#st-pick').addEventListener('click', function () { stFileInput.click(); });
+    if (!openScreenTimeUpload.bound) {
+      openScreenTimeUpload.bound = true;
+      $('#st-close').addEventListener('click', function () { hide('#st-modal'); });
+      $('#st-modal').addEventListener('click', function (e) { if (e.target.id === 'st-modal') hide('#st-modal'); });
+    }
+  }
+  function stAnalyse(files) {
+    $('#st-body').innerHTML = '<p class="muted tiny center" style="padding:20px 0">📱 Analysing ' + files.length + ' screenshot' + (files.length === 1 ? '' : 's') + '… this can take a few seconds.</p>';
+    Promise.all(files.slice(0, 7).map(compressImage)).then(function (b64s) {
+      return api('parseScreenTime', { images: b64s, mime: 'image/jpeg', todayIso: todayStr() });
+    }).then(function (res) {
+      stRenderResults((res && res.days) || []);
+    }).catch(function (e) {
+      $('#st-body').innerHTML = '<p class="muted tiny center" style="padding:16px 0">' + esc(e.message || 'Analysis failed.') + '</p>' +
+        '<button id="st-retry" class="btn block">Try again</button>';
+      $('#st-retry').addEventListener('click', function () { openScreenTimeUpload(state.stAfterApply); });
+    });
+  }
+  function stRenderResults(days) {
+    state.stDays = days;
+    if (!days.length) {
+      $('#st-body').innerHTML = '<p class="muted tiny center" style="padding:16px 0">Couldn’t read those as Screen Time screenshots. Try the <b>Day</b> view with the hourly chart visible.</p>' +
+        '<button id="st-retry" class="btn block">Try again</button>';
+      $('#st-retry').addEventListener('click', function () { openScreenTimeUpload(state.stAfterApply); });
+      return;
+    }
+    var html = days.map(function (d, i) {
+      var conf = d.sleepConfidence >= 0.66 ? 'high' : d.sleepConfidence >= 0.33 ? 'medium' : 'low';
+      var apps = (d.topApps || []).slice(0, 3).map(function (a) { return esc(a.name) + ' ' + hmDur(a.minutes); }).join(' · ');
+      return '<div class="card st-day">' +
+        '<div class="st-day-head"><b>' + (d.date ? esc(prettyDate(d.date)) : 'Unknown day') + '</b>' +
+          '<span class="mono">📱 ' + hmDur(d.totalMinutes) + '</span></div>' +
+        (d.sleepMinutes
+          ? '<div class="st-sleep"><span class="st-sleep-main">😴 ' + hmDur(d.sleepMinutes) + ' sleep</span>' +
+            '<span class="muted tiny">' + esc(hhmm12(d.sleepStart)) + ' → ' + esc(hhmm12(d.sleepEnd)) + '</span>' +
+            '<span class="st-conf st-' + conf + '">' + conf + ' confidence</span></div>'
+          : '<p class="muted tiny" style="margin:6px 0">No clear sleep window detected in the chart.</p>') +
+        (apps ? '<div class="muted tiny" style="margin-top:6px">Top: ' + apps + '</div>' : '') +
+        '<button class="btn block st-apply" data-stapply="' + i + '"' + (d.date ? '' : ' disabled') + ' style="margin-top:10px">Apply to ' + (d.date ? shortDate(d.date) : 'day') + '</button>' +
+      '</div>';
+    }).join('');
+    var applicable = days.filter(function (d) { return d.date; }).length;
+    $('#st-body').innerHTML =
+      '<p class="muted tiny" style="margin:0 0 10px">Review, then apply. Sleep goes to the <b>Sleep</b> app, phone usage to <b>Detox</b>.</p>' +
+      html +
+      (applicable > 1 ? '<button id="st-apply-all" class="btn primary block">✓ Apply all ' + applicable + ' days</button>' : '');
+    $('#st-body').querySelectorAll('[data-stapply]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        stApplyDay(state.stDays[Number(b.getAttribute('data-stapply'))]);
+        b.textContent = 'Applied ✓'; b.disabled = true;
+      });
+    });
+    var all = $('#st-apply-all');
+    if (all) all.addEventListener('click', function () {
+      var n = 0;
+      state.stDays.forEach(function (d) { if (d.date) { stApplyDay(d); n++; } });
+      toast(n + ' day' + (n === 1 ? '' : 's') + ' applied ✓');
+      hide('#st-modal');
+      if (state.stAfterApply) state.stAfterApply();
+    });
+  }
+  function stApplyDay(dd) {
+    if (!dd || !dd.date) return;
+    var d = logFor(dd.date);
+    if (!d) { d = emptyDay(dd.date); state.logs.push(d); state.logs.sort(function (a, b) { return a.date < b.date ? -1 : 1; }); }
+    var m = d.metrics || (d.metrics = {});
+    if (dd.totalMinutes) m.screenMin = dd.totalMinutes;
+    if (dd.topApps && dd.topApps.length) m.screenApps = dd.topApps.slice(0, 4);
+    if (dd.categories && dd.categories.length) m.screenCats = dd.categories.slice(0, 6);
+    if (dd.sleepMinutes) {
+      m.sleepMin = dd.sleepMinutes; m.bedtime = dd.sleepStart; m.waketime = dd.sleepEnd; m.sleepSrc = 'screentime';
+    }
+    d.completed = goalMet(d);
+    upsertLocal(d);
+    api('saveDay', { day: Object.assign({}, d) }).catch(function () {});
+    if (!$('#view-sleep').classList.contains('hidden')) renderSleep();
+    if (!$('#view-detox').classList.contains('hidden')) renderDetox();
   }
 
   /* ----- Body metric engine: series, trend, chart ----- */
@@ -5225,11 +5350,23 @@
     var isToday = appDate() === todayStr();
     var startedAt = isToday ? (Number(localStorage.getItem(detoxKey())) || 0) : 0;
     var pct = pctOf(total, goal);
+    var screenMin = Number(m.screenMin) || 0;
+    var screenApps = m.screenApps || [];
     box.innerHTML = rangeBarHtml('detox') + dayBarHtml() +
       '<div class="card hero-row' + (pct >= 100 ? ' goal-hit' : '') + '">' +
         ringMini(pct, 'var(--mind-c)', 92, '<b>' + pct + '%</b>') +
         '<div class="hero-meta"><div class="metric-big"><b>' + total + '</b> <span class="muted">min offline</span></div>' +
         '<div class="muted tiny">goal <button class="inline-edit" id="dx-goal-btn">' + goal + ' min</button> / day' + (pct >= 100 ? ' · unplugged 🏆' : '') + '</div></div></div>' +
+      // Phone usage (from Screen Time)
+      '<div class="card dx-phone">' +
+        (screenMin
+          ? '<div class="dx-phone-head"><span class="eyebrow">📱 Phone usage</span><b class="mono">' + hmDur(screenMin) + '</b></div>' +
+            (screenApps.length ? '<div class="muted tiny" style="margin-top:6px">Top: ' + screenApps.slice(0, 3).map(function (a) { return esc(a.name) + ' ' + hmDur(a.minutes); }).join(' · ') + '</div>' : '') +
+            '<button id="dx-screentime" class="btn block st-btn" style="margin-top:10px">📱 Update from Screen Time</button>'
+          : '<div class="eyebrow">📱 Track phone usage</div>' +
+            '<p class="muted tiny" style="margin:8px 0 10px">Upload your Screen Time screenshots — the AI logs your total phone usage and top apps here, and detects your sleep for the Sleep app.</p>' +
+            '<button id="dx-screentime" class="btn primary block">📱 Analyse Screen Time</button>') +
+      '</div>' +
       (isToday
         ? '<div class="card detox-card' + (startedAt ? ' active' : '') + '">' +
           (startedAt
@@ -5246,6 +5383,8 @@
       '<div class="card"><div class="eyebrow">Offline minutes · last 7 days</div><div id="detox-trend"></div></div>';
     bindRangeBar(box, 'detox', renderDetox);
     bindDayBar(box, renderDetox);
+    var stBtn = $('#dx-screentime');
+    if (stBtn) stBtn.addEventListener('click', function () { openScreenTimeUpload(renderDetox); });
     $('#dx-goal-btn').addEventListener('click', function () {
       var x = prompt('Daily phone-free goal (minutes):', goal); if (x == null) return;
       saveProfileKey('detoxGoal', Math.max(10, Number(x) || 60), renderDetox);

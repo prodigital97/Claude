@@ -39,7 +39,9 @@ var CUSTOM_HEADERS = ['id', 'name', 'kcal', 'protein', 'carbs', 'fat', 'sugar', 
 // Admin dashboard: usernames listed here get access to /admin actions.
 var ADMIN_USERS = ['pronoy'];
 var SCAN_SHEET = 'ScanLog';
-var SCAN_HEADERS = ['id', 'at', 'username', 'name', 'model', 'images', 'promptTokens', 'outputTokens', 'totalTokens', 'costUsd', 'costInr'];
+// 'kind' appended at the end so older rows keep their column positions
+// (food | money | screentime) — lets the admin dashboard split costs by type.
+var SCAN_HEADERS = ['id', 'at', 'username', 'name', 'model', 'images', 'promptTokens', 'outputTokens', 'totalTokens', 'costUsd', 'costInr', 'kind'];
 // Friend graph: one row per directed request; status pending | accepted.
 var FRIEND_SHEET = 'Friends';
 var FRIEND_HEADERS = ['id', 'requester', 'addressee', 'status', 'createdAt', 'updatedAt'];
@@ -119,6 +121,7 @@ function doPost(e) {
       case 'addCustomFood':  data = handleAddCustomFood(body);  break;
       case 'foodSearch':     data = handleFoodSearch(body);     break;
       case 'scanLabel':      data = handleScanLabel(body);      break;
+      case 'parseScreenTime':data = handleParseScreenTime(body); break;
       case 'coachChat':      data = handleCoachChat(body);      break;
       case 'adminScans':      data = handleAdminScans(body);      break;
       case 'adminUsers':      data = handleAdminUsers(body);      break;
@@ -824,12 +827,12 @@ function handleScanLabel(body) {
     addedSugar: per100(p.addedSugar), saturatedFat: per100(p.saturatedFat), transFat: per100(p.transFat),
     fiber: per100(p.fiber), sodium: per100(p.sodium, true), cholesterol: per100(p.cholesterol, true), calcium: per100(p.calcium, true), iron: per100(p.iron)
   };
-  try { logScan(body, usedModel, imgs.length, usage, result.name); } catch (e) { /* logging must never break a scan */ }
+  try { logScan(body, usedModel, imgs.length, usage, result.name, 'food'); } catch (e) { /* logging must never break a scan */ }
   return result;
 }
 
 /* Record one scan in the ScanLog sheet with its token usage and estimated cost. */
-function logScan(body, model, imageCount, usage, name) {
+function logScan(body, model, imageCount, usage, name, kind) {
   var promptTok = usage ? (Number(usage.promptTokenCount) || 0) : 0;
   var outTok = usage ? (Number(usage.candidatesTokenCount) || 0) : 0;
   var totalTok = usage ? (Number(usage.totalTokenCount) || (promptTok + outTok)) : 0;
@@ -841,8 +844,73 @@ function logScan(body, model, imageCount, usage, name) {
   sheet.appendRow([
     Utilities.getUuid(), new Date().toISOString(), normalizeUsername(body.username), String(name || ''),
     model, imageCount, promptTok, outTok, totalTok,
-    Math.round(costUsd * 1e6) / 1e6, Math.round(costInr * 1000) / 1000
+    Math.round(costUsd * 1e6) / 1e6, Math.round(costInr * 1000) / 1000, String(kind || 'food')
   ]);
+}
+
+/* ---------------- Screen Time analysis (sleep + phone usage) ----------------
+ * Reads iOS/Android "Screen Time" / "Digital Wellbeing" day screenshots and
+ * infers, per day: total phone usage, category + top-app breakdown, and the
+ * overnight SLEEP window from the long low-usage stretch in the hourly chart. */
+function handleParseScreenTime(body) {
+  authUser(body);
+  var key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!key) throw new Error('AI scanner not set up (missing GEMINI_API_KEY).');
+  var mime = String(body.mime || 'image/jpeg');
+  var imgs = [];
+  if (body.images && body.images.length) { for (var k = 0; k < body.images.length; k++) { if (body.images[k]) imgs.push(String(body.images[k])); } }
+  else if (body.image) imgs.push(String(body.image));
+  if (!imgs.length) throw new Error('No screenshot received.');
+  var todayIso = String(body.todayIso || todayStr());
+
+  var prompt =
+    'You analyse "Screen Time" (iOS) or "Digital Wellbeing" (Android) DAY-view screenshots. ' +
+    'Each screenshot is ONE day. Today\'s date is ' + todayIso + ' — use it to resolve relative labels ' +
+    '("Today", "Yesterday") and to infer the correct year for dates like "17 July".\n\n' +
+    'For EACH screenshot, read:\n' +
+    '- "date": the day shown, as YYYY-MM-DD.\n' +
+    '- "totalMinutes": total screen time that day, converted to minutes (e.g. "9h 3m" = 543).\n' +
+    '- "categories": array of {"name","minutes"} from the category totals (Social, Entertainment, Productivity & Finance, Creativity, etc.).\n' +
+    '- "topApps": array of {"name","minutes"} from the "Most Used" list.\n' +
+    '- SLEEP from the HOURLY usage bar chart (x-axis 12 AM, 6 AM, 12 PM, 6 PM). ' +
+    'Sleep is the single LONGEST continuous overnight stretch (roughly between 9 PM and 11 AM) where the hourly bars are empty or near-zero. ' +
+    'Return "sleepStart" and "sleepEnd" as 24h "HH:MM" (sleepStart is the evening the person fell asleep, sleepEnd the morning they woke), ' +
+    '"sleepMinutes" as the duration in minutes, and "sleepConfidence" 0..1 (lower if the overnight bars are noisy or the chart is unclear). ' +
+    'If the chart is missing or unreadable, set sleep fields to 0/empty and sleepConfidence 0.\n\n' +
+    'Return ONLY JSON (no markdown): {"days":[{"date":"YYYY-MM-DD","totalMinutes":number,' +
+    '"categories":[{"name":string,"minutes":number}],"topApps":[{"name":string,"minutes":number}],' +
+    '"sleepStart":"HH:MM","sleepEnd":"HH:MM","sleepMinutes":number,"sleepConfidence":number,"note":string}]}.';
+
+  var parts = [{ text: prompt }];
+  for (var j = 0; j < imgs.length; j++) parts.push({ inline_data: { mime_type: mime, data: imgs[j] } });
+  var payload = {
+    contents: [{ parts: parts }],
+    generationConfig: { temperature: 0, responseMimeType: 'application/json', maxOutputTokens: 1600, thinkingConfig: { thinkingBudget: 0 } }
+  };
+  // Screenshots need the stronger vision model; fall back if unavailable.
+  var res = geminiGenerate(key, payload, ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest']);
+  var parsed;
+  try { parsed = JSON.parse(res.text); }
+  catch (e) { var m = res.text.match(/\{[\s\S]*\}/); parsed = m ? JSON.parse(m[0]) : { days: [] }; }
+
+  var days = (parsed.days || []).map(function (d) {
+    function toMin(v) { return Math.max(0, Math.round(Number(v) || 0)); }
+    var cats = (d.categories || []).filter(function (c) { return c && c.name; })
+      .map(function (c) { return { name: String(c.name).slice(0, 40), minutes: toMin(c.minutes) }; });
+    var apps = (d.topApps || []).filter(function (a) { return a && a.name; })
+      .map(function (a) { return { name: String(a.name).slice(0, 40), minutes: toMin(a.minutes) }; });
+    var date = formatDate(String(d.date || ''));
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) date = '';
+    return {
+      date: date, totalMinutes: toMin(d.totalMinutes), categories: cats, topApps: apps,
+      sleepStart: String(d.sleepStart || ''), sleepEnd: String(d.sleepEnd || ''),
+      sleepMinutes: toMin(d.sleepMinutes), sleepConfidence: Math.max(0, Math.min(1, Number(d.sleepConfidence) || 0)),
+      note: String(d.note || '').slice(0, 200)
+    };
+  }).filter(function (d) { return d.date || d.totalMinutes; });
+
+  try { logScan(body, res.model, imgs.length, res.usage, '📱 Screen Time (' + days.length + ' day' + (days.length === 1 ? '' : 's') + ')', 'screentime'); } catch (e) {}
+  return { days: days };
 }
 
 /* ---------------- Admin dashboard ---------------- */
@@ -859,7 +927,7 @@ function handleAdminScans(body) {
   var idx = colIndex(SCAN_HEADERS);
   var monthPrefix = new Date().toISOString().slice(0, 7);   // YYYY-MM
   var totalInr = 0, totalUsd = 0, monthInr = 0, count = 0, tokens = 0;
-  var byUser = {}, byModel = {}, recent = [];
+  var byUser = {}, byModel = {}, byKind = {}, recent = [];
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
     if (!r[idx.at]) continue;
@@ -873,9 +941,13 @@ function handleAdminScans(body) {
     var m = String(r[idx.model] || '?');
     if (!byModel[m]) byModel[m] = { model: m, scans: 0, costInr: 0 };
     byModel[m].scans++; byModel[m].costInr += inr;
+    var kind = String(r[idx.kind] || 'food') || 'food';
+    if (!byKind[kind]) byKind[kind] = { kind: kind, scans: 0, costInr: 0, monthInr: 0 };
+    byKind[kind].scans++; byKind[kind].costInr += inr;
+    if (String(r[idx.at]).slice(0, 7) === monthPrefix) byKind[kind].monthInr += inr;
     recent.push({
       at: String(r[idx.at]), username: u, name: String(r[idx.name] || ''),
-      model: m, images: Number(r[idx.images]) || 1,
+      model: m, images: Number(r[idx.images]) || 1, kind: kind,
       tokens: Number(r[idx.totalTokens]) || 0, costInr: Math.round(inr * 1000) / 1000
     });
   }
@@ -888,7 +960,7 @@ function handleAdminScans(body) {
     monthCostInr: Math.round(monthInr * 100) / 100,
     avgCostInr: count ? Math.round((totalInr / count) * 1000) / 1000 : 0,
     avgTokens: count ? Math.round(tokens / count) : 0,
-    byUser: arr(byUser), byModel: arr(byModel),
+    byUser: arr(byUser), byModel: arr(byModel), byKind: arr(byKind),
     recent: recent.slice(0, 50)
   };
 }
@@ -1063,7 +1135,7 @@ function handleCoachChat(body) {
     generationConfig: { temperature: 0.6, maxOutputTokens: 600, thinkingConfig: { thinkingBudget: 0 } }
   };
   var res = geminiGenerate(key, payload, ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest']);
-  try { logScan(body, res.model, 0, res.usage, '💬 Coach chat'); } catch (e) {}
+  try { logScan(body, res.model, 0, res.usage, '💬 Coach chat', 'coach'); } catch (e) {}
   return { reply: String(res.text || '').trim() };
 }
 
@@ -2229,7 +2301,7 @@ function handleMoneyParseScreenshot(body) {
   var res = geminiGenerate(key, payload, ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest']);
   var parsed = moneySafeJson(res.text);
   var out = moneyMapExtracted(user.username, parsed.transactions || []);
-  try { logScan(body, res.model, imgs.length, res.usage, '💰 Money scan (' + out.length + ')'); } catch (e) {}
+  try { logScan(body, res.model, imgs.length, res.usage, '💰 Money scan (' + out.length + ')', 'money'); } catch (e) {}
   return { transactions: out };
 }
 function handleMoneyParseMessage(body) {
@@ -2249,7 +2321,7 @@ function handleMoneyParseMessage(body) {
   var res = geminiGenerate(key, payload, ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest']);
   var parsed = moneySafeJson(res.text);
   var out = moneyMapExtracted(user.username, parsed.transactions || []);
-  try { logScan(body, res.model, 0, res.usage, '💰 Money SMS (' + out.length + ')'); } catch (e) {}
+  try { logScan(body, res.model, 0, res.usage, '💰 Money SMS (' + out.length + ')', 'money'); } catch (e) {}
   return { transactions: out, source: 'ai' };
 }
 function moneyQuickParseSms(text) {
@@ -2335,7 +2407,7 @@ function handleMoneyCoachChat(body) {
   contents.push({ role: 'user', parts: [{ text: message.slice(0, 2000) }] });
   var payload = { contents: contents, generationConfig: { temperature: 0.6, maxOutputTokens: 700, thinkingConfig: { thinkingBudget: 0 } } };
   var res = geminiGenerate(key, payload, ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest']);
-  try { logScan(body, res.model, 0, res.usage, '💬 Penny (money coach)'); } catch (e) {}
+  try { logScan(body, res.model, 0, res.usage, '💬 Penny (money coach)', 'coach'); } catch (e) {}
   return { reply: String(res.text || '').trim() };
 }
 function moneyBuildCoachContext(username, displayName) {

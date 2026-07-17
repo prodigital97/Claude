@@ -696,6 +696,7 @@
 
         <div id="admin-pane-scans" class="admin-pane">
           <div id="admin-scan-cards" class="stats-grid"></div>
+          <div class="card"><h3>By type</h3><div id="admin-scan-bykind"></div></div>
           <div class="card"><h3>By user</h3><div id="admin-scan-byuser"></div></div>
           <div class="card"><h3>By model</h3><div id="admin-scan-bymodel"></div></div>
           <div class="card"><h3>Recent scans</h3><div id="admin-scan-recent"></div></div>
@@ -784,6 +785,17 @@
         </label>
         <button id="p-add" class="btn primary block">Add to diary</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Screen Time analysis modal (upload iOS/Android usage screenshots → sleep + phone usage) -->
+  <div id="st-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <b>📱 Screen Time analysis</b>
+        <button id="st-close" class="icon-btn">✕</button>
+      </div>
+      <div id="st-body"></div>
     </div>
   </div>
 
