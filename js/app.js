@@ -4701,9 +4701,29 @@
   }
 
   /* ================= Gym Log (Body) =================
-     Hevy/Strong-style per-set logging. Entry shape: { n, sets: [{r, w}, …] }.
-     Legacy entries ({ n, sets: 3, reps: 10, kg: 40 }) are normalized on read. */
-  var GYM_PRESETS = ['Bench Press', 'Squat', 'Deadlift', 'Overhead Press', 'Barbell Row', 'Pull-ups', 'Lat Pulldown', 'Bicep Curl', 'Leg Press', 'Shoulder Press', 'Dips', 'Lunges'];
+     Hevy/Strong-style per-set logging. Entry shape: { n, sets: [{r, w}, …], bw }.
+     `bw` = bodyweight move (track reps, no weight). Legacy entries
+     ({ n, sets: 3, reps: 10, kg: 40 }) are normalized on read. */
+  // Categorised exercise library (like the food database). bw: true = bodyweight.
+  var GYM_LIBRARY = {
+    'Chest':     [['Bench Press'], ['Incline Bench Press'], ['Dumbbell Press'], ['Incline Dumbbell Press'], ['Chest Fly'], ['Cable Fly'], ['Push-ups', 1], ['Dips', 1], ['Machine Chest Press']],
+    'Back':      [['Deadlift'], ['Barbell Row'], ['Pull-ups', 1], ['Chin-ups', 1], ['Lat Pulldown'], ['Seated Row'], ['T-Bar Row'], ['Dumbbell Row'], ['Face Pulls'], ['Back Extension', 1]],
+    'Shoulders': [['Overhead Press'], ['Shoulder Press'], ['Arnold Press'], ['Lateral Raise'], ['Front Raise'], ['Rear Delt Fly'], ['Upright Row'], ['Shrugs']],
+    'Arms':      [['Bicep Curl'], ['Hammer Curl'], ['Preacher Curl'], ['Concentration Curl'], ['Tricep Pushdown'], ['Overhead Tricep Extension'], ['Skull Crushers'], ['Close-grip Bench Press'], ['Cable Curl']],
+    'Legs':      [['Squat'], ['Front Squat'], ['Leg Press'], ['Romanian Deadlift'], ['Lunges'], ['Bulgarian Split Squat'], ['Leg Extension'], ['Leg Curl'], ['Calf Raise'], ['Hip Thrust'], ['Goblet Squat']],
+    'Core':      [['Plank', 1], ['Crunches', 1], ['Sit-ups', 1], ['Leg Raise', 1], ['Russian Twist', 1], ['Cable Crunch'], ['Hanging Knee Raise', 1], ['Mountain Climbers', 1]],
+    'Cardio':    [['Running', 1], ['Cycling', 1], ['Rowing', 1], ['Jump Rope', 1], ['Elliptical', 1], ['Stair Climber', 1], ['Walking', 1], ['Swimming', 1]],
+    'Full Body': [['Clean & Press'], ['Kettlebell Swing'], ['Burpees', 1], ['Thrusters'], ['Farmer Carry'], ['Battle Ropes', 1], ['Box Jumps', 1]]
+  };
+  // Flat lookup: name -> { cat, bw }
+  var GYM_INDEX = (function () {
+    var idx = {};
+    Object.keys(GYM_LIBRARY).forEach(function (cat) {
+      GYM_LIBRARY[cat].forEach(function (row) { idx[row[0]] = { cat: cat, bw: !!row[1] }; });
+    });
+    return idx;
+  })();
+  function gymIsBodyweight(name) { var i = GYM_INDEX[name]; return i ? i.bw : false; }
   function gymOf(d) { var m = metricsOf(d); if (!m.gym) m.gym = []; return m.gym; }
   function gymExercises() { return (state.profile && state.profile.gymExercises) || []; }
   function gymSetsOf(e) {
@@ -4762,11 +4782,29 @@
     return null;
   }
   function gymRememberExercise(name) {
-    if (GYM_PRESETS.indexOf(name) >= 0 || gymExercises().indexOf(name) >= 0) return;
+    if (GYM_INDEX[name] || gymExercises().indexOf(name) >= 0) return;
     var p = Object.assign({}, state.profile);
-    p.gymExercises = gymExercises().concat([name]).slice(-40);
+    p.gymExercises = gymExercises().concat([name]).slice(-60);
     state.profile = p;
     api('saveGoals', { profile: p }).catch(function () {});
+  }
+  // How often each exercise has been logged — powers "recent / frequent".
+  function gymFreq() {
+    var f = {};
+    (state.logs || []).forEach(function (l) {
+      ((l.metrics && l.metrics.gym) || []).forEach(function (e) { f[e.n] = (f[e.n] || 0) + 1; });
+    });
+    return f;
+  }
+  // Total volume label for an exercise, adaptive: weighted -> "1,250 kg vol",
+  // bodyweight (or all sets weightless) -> total reps. Fixes the "0 kg" /
+  // "why 10kg into 10" confusion — volume load only shows when weight is used.
+  function gymEntrySummary(e) {
+    var sets = gymSetsOf(e);
+    var vol = gymEntryVol(e);
+    var reps = sets.reduce(function (s, x) { return s + (Number(x.r) || 0); }, 0);
+    if (vol > 0) return Math.round(vol).toLocaleString() + ' kg vol';
+    return reps + ' rep' + (reps === 1 ? '' : 's');
   }
 
   // Rest timer — survives re-renders, chimes when done.
@@ -4805,10 +4843,14 @@
     var names = Object.keys(prs);
     var isToday = appDate() === todayStr();
     var prev = lastGymDay();
-    // Picker chips: your custom exercises first, then presets.
-    var chipNames = gymExercises().slice().reverse().concat(GYM_PRESETS).filter(function (n, i, a) { return a.indexOf(n) === i; }).slice(0, 16);
+    // Quick-add chips: your most-frequently-logged exercises (not already in today's list).
+    var freq = gymFreq();
+    var inList = {}; list.forEach(function (e) { inList[e.n] = 1; });
+    var recent = Object.keys(freq).filter(function (n) { return !inList[n]; })
+      .sort(function (a, b) { return freq[b] - freq[a]; }).slice(0, 8);
 
     box.innerHTML = rangeBarHtml('gym') + dayBarHtml() +
+      (list.length ? '<button id="gym-done" class="btn primary block gym-done">✓ Save workout</button>' : '') +
       '<div class="card"><div class="gym-stats">' +
         '<div class="js-stat"><b>' + list.length + '</b><span>exercises</span></div>' +
         '<div class="js-stat"><b>' + setCount + '</b><span>sets</span></div>' +
@@ -4831,8 +4873,10 @@
         var last = gymLastEntry(e.n, day.date);
         var lastSets = last ? gymSetsOf(last) : [];
         return '<div class="card gx-card">' +
-          '<div class="gx-head"><b>' + esc(e.n) + '</b>' + (pr ? ' <span class="pr-badge">PR 🏅</span>' : '') +
-            '<span class="gx-vol mono">' + Math.round(gymEntryVol(e)) + ' kg</span>' +
+          '<div class="gx-head">' +
+            '<b class="gx-name" data-gxedit="' + i + '">' + esc(e.n) + '</b>' + (pr ? ' <span class="pr-badge">PR 🏅</span>' : '') +
+            '<span class="gx-vol mono">' + gymEntrySummary(e) + '</span>' +
+            '<button class="icon-mini gx-editbtn" data-gxedit="' + i + '" title="Rename">✎</button>' +
             '<button class="list-del" data-gxdel="' + i + '">✕</button></div>' +
           '<div class="gx-row gx-lbls"><span>SET</span><span>PREV</span><span>KG</span><span>REPS</span><span></span></div>' +
           sets.map(function (st, j) {
@@ -4848,14 +4892,13 @@
           '<button class="gx-addset" data-addset="' + i + '">＋ Add set</button>' +
         '</div>';
       }).join('') : '<div class="card"><p class="muted tiny" style="margin:0">Nothing logged ' + (isToday ? 'yet — pick an exercise below and hit your first set 💪' : 'on this day.') + '</p></div>') +
-      // Add exercise: tappable chips + inline custom input
-      '<div class="card"><div class="eyebrow" style="margin-bottom:8px">Add exercise</div>' +
-        '<div class="gx-chips">' + chipNames.map(function (n) {
+      // Add exercise — opens the searchable library picker (like the food app)
+      '<button id="gym-add-open" class="btn primary block gx-addex">＋ Add exercise</button>' +
+      (recent.length ? '<div class="card"><div class="eyebrow" style="margin-bottom:8px">Quick add · your regulars</div>' +
+        '<div class="gx-chips">' + recent.map(function (n) {
           return '<button type="button" class="starter-chip gx-chip" data-gadd="' + esc(n) + '">' + esc(n) + '</button>';
-        }).join('') + '</div>' +
-        '<div class="add-habit" style="margin:10px 0 0"><input id="gym-custom" placeholder="Your own exercise (e.g. Face Pulls)" maxlength="40" /><button id="gym-custom-add" class="btn">Add</button></div>' +
-        (!list.length && prev ? '<button id="gym-copy" class="btn block" style="margin-top:10px">↻ Repeat ' + shortDate(prev.date) + ' workout (' + prev.metrics.gym.length + ' lifts)</button>' : '') +
-      '</div>' +
+        }).join('') + '</div></div>' : '') +
+      (!list.length && prev ? '<button id="gym-copy" class="btn block" style="margin-bottom:14px">↻ Repeat ' + shortDate(prev.date) + ' workout (' + prev.metrics.gym.length + ' lifts)</button>' : '') +
       (names.length ? '<div class="card"><div class="eyebrow" style="margin-bottom:4px">Personal records · heaviest set</div>' +
         names.sort(function (a, b) { return prs[b].kg - prs[a].kg; }).slice(0, 8).map(function (n) {
           return '<div class="list-row"><div><b>' + esc(n) + '</b><div class="muted tiny">' + shortDate(prs[n].date) + (prs[n].reps ? ' · ×' + prs[n].reps : '') + '</div></div>' +
@@ -4876,11 +4919,28 @@
       toast(last ? name + ' added — last session loaded, beat it 🔥' : name + ' added');
       renderGym();
     }
+    gymAddExercise = addExercise;   // expose so the picker modal can add
     box.querySelectorAll('[data-gadd]').forEach(function (b) {
       b.addEventListener('click', function () { addExercise(b.getAttribute('data-gadd')); });
     });
-    $('#gym-custom-add').addEventListener('click', function () { addExercise($('#gym-custom').value); });
-    $('#gym-custom').addEventListener('keydown', function (e) { if (e.key === 'Enter') addExercise(this.value); });
+    var openBtn = $('#gym-add-open');
+    if (openBtn) openBtn.addEventListener('click', openGymPicker);
+    var doneBtn = $('#gym-done');
+    if (doneBtn) doneBtn.addEventListener('click', function () {
+      queueSaveDay(day); pushToday(false);
+      toast('Workout saved ✓'); window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    // Rename an exercise (tap the name or the pencil).
+    box.querySelectorAll('[data-gxedit]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var e = list[Number(b.getAttribute('data-gxedit'))]; if (!e) return;
+        var v = prompt('Rename exercise:', e.n);
+        if (v == null) return;
+        v = v.trim().slice(0, 40); if (!v) return;
+        e.n = v; gymRememberExercise(v);
+        queueSaveDay(day); renderGym();
+      });
+    });
 
     // Per-set weight/rep edits — save on change (blur), PR toast when beaten.
     box.querySelectorAll('[data-gx]').forEach(function (inp) {
@@ -4949,6 +5009,85 @@
       '</div></div>' +
       '<div class="card"><div class="eyebrow">Volume per day</div>' + rangeBarChart(agg.perDay, 'var(--body-c)', ' kg') + '</div>';
     bindRangeBar(box, 'gym', renderGym);
+  }
+
+  /* ----- Exercise picker modal (searchable library, like the food app) ----- */
+  var gymAddExercise = null;                 // set by renderGym (closes over the active day)
+  var gymPicker = { q: '', cat: 'All' };
+  function openGymPicker() {
+    gymBindPickerOnce();
+    gymPicker.q = ''; gymPicker.cat = 'All';
+    $('#gym-search').value = '';
+    gymRenderPickerCats();
+    gymRenderPickerResults();
+    show('#gym-modal');
+    setTimeout(function () { $('#gym-search').focus(); }, 100);
+  }
+  function gymBindPickerOnce() {
+    if (gymBindPickerOnce.done) return; gymBindPickerOnce.done = true;
+    $('#gym-modal-close').addEventListener('click', function () { hide('#gym-modal'); });
+    $('#gym-modal').addEventListener('click', function (e) { if (e.target.id === 'gym-modal') hide('#gym-modal'); });
+    $('#gym-search').addEventListener('input', function () { gymPicker.q = this.value; gymRenderPickerResults(); });
+    var addCustom = function () {
+      var v = $('#gym-modal-custom').value.trim(); if (!v) return;
+      $('#gym-modal-custom').value = ''; hide('#gym-modal');
+      if (gymAddExercise) gymAddExercise(v);
+    };
+    $('#gym-modal-custom-add').addEventListener('click', addCustom);
+    $('#gym-modal-custom').addEventListener('keydown', function (e) { if (e.key === 'Enter') addCustom(); });
+  }
+  function gymRenderPickerCats() {
+    var cats = ['All'].concat(Object.keys(GYM_LIBRARY));
+    var hasCustom = gymExercises().some(function (n) { return !GYM_INDEX[n]; });
+    if (hasCustom) cats.push('Mine');
+    $('#gym-cats').innerHTML = cats.map(function (c) {
+      return '<button type="button" class="gym-cat' + (c === gymPicker.cat ? ' active' : '') + '" data-gcat="' + esc(c) + '">' + esc(c) + '</button>';
+    }).join('');
+    $('#gym-cats').querySelectorAll('[data-gcat]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        gymPicker.cat = b.getAttribute('data-gcat');
+        gymRenderPickerCats(); gymRenderPickerResults();
+      });
+    });
+  }
+  function gymRenderPickerResults() {
+    var box = $('#gym-results'); if (!box) return;
+    var q = gymPicker.q.toLowerCase().trim();
+    var items = [], freq = gymFreq();
+    var lib = function () {
+      var all = [];
+      Object.keys(GYM_LIBRARY).forEach(function (cat) { GYM_LIBRARY[cat].forEach(function (row) { all.push({ n: row[0], cat: cat, bw: !!row[1] }); }); });
+      gymExercises().forEach(function (n) { if (!GYM_INDEX[n]) all.push({ n: n, cat: 'Mine', bw: false }); });
+      return all;
+    };
+    if (q) {
+      items = lib().filter(function (x) { return x.n.toLowerCase().indexOf(q) >= 0; });
+    } else if (gymPicker.cat === 'Mine') {
+      items = gymExercises().slice().reverse().map(function (n) { return { n: n, cat: GYM_INDEX[n] ? GYM_INDEX[n].cat : 'Custom', bw: gymIsBodyweight(n) }; });
+    } else if (gymPicker.cat === 'All') {
+      var seen = {};
+      Object.keys(freq).sort(function (a, b) { return freq[b] - freq[a]; }).forEach(function (n) {
+        seen[n] = 1; items.push({ n: n, cat: GYM_INDEX[n] ? GYM_INDEX[n].cat : 'Custom', bw: gymIsBodyweight(n), freq: true });
+      });
+      lib().forEach(function (x) { if (!seen[x.n]) items.push(x); });
+    } else {
+      items = (GYM_LIBRARY[gymPicker.cat] || []).map(function (row) { return { n: row[0], cat: gymPicker.cat, bw: !!row[1] }; });
+    }
+    if (!items.length) {
+      box.innerHTML = '<p class="muted tiny" style="padding:14px 4px">No match — add “' + esc(gymPicker.q) + '” as your own exercise below.</p>';
+      return;
+    }
+    box.innerHTML = items.slice(0, 90).map(function (x) {
+      return '<button type="button" class="gym-res" data-gpick="' + esc(x.n) + '">' +
+        '<span class="gr-name">' + esc(x.n) + (x.freq ? ' <span class="gr-star">★</span>' : '') + '</span>' +
+        '<span class="gr-cat">' + esc(x.cat) + (x.bw ? ' · bodyweight' : '') + '</span></button>';
+    }).join('');
+    box.querySelectorAll('[data-gpick]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        hide('#gym-modal');
+        if (gymAddExercise) gymAddExercise(b.getAttribute('data-gpick'));
+      });
+    });
   }
 
   /* ================= Breathe (Mind) ================= */

@@ -786,6 +786,27 @@
     </div>
   </div>
 
+  <!-- Exercise picker modal (Gym Log — search a library or add custom, like food) -->
+  <div id="gym-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <b>Add exercise</b>
+        <button id="gym-modal-close" class="icon-btn">✕</button>
+      </div>
+      <input id="gym-search" placeholder="Search exercise (e.g. bench, squat, plank)" autocapitalize="none" />
+      <div id="gym-cats" class="gym-cats"></div>
+      <div id="gym-results" class="gym-results"></div>
+      <div class="gym-custom-box">
+        <div class="eyebrow" style="margin-bottom:6px">Add your own</div>
+        <div class="add-habit" style="margin:0">
+          <input id="gym-modal-custom" placeholder="e.g. Cable Fly, Farmer Carry" maxlength="40" />
+          <button id="gym-modal-custom-add" class="btn">Add</button>
+        </div>
+        <p class="muted tiny" style="margin:8px 2px 0">Custom exercises are saved to your library for next time.</p>
+      </div>
+    </div>
+  </div>
+
   <!-- Day editor modal (edit any date from Journey) -->
   <div id="day-modal" class="modal hidden">
     <div class="modal-card">
