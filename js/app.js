@@ -19,9 +19,25 @@
     { key: 'reading',   emoji: '📖', title: 'Read 10 pages',    sub: 'Non-fiction / self-help' },
     { key: 'photo',     emoji: '📸', title: 'Progress photo',   sub: 'Snap it today' },
     { key: 'diet',      emoji: '🥗', title: 'Follow your diet', sub: 'No cheat meals' },
-    { key: 'noAlcohol', emoji: '🚫', title: 'No alcohol',       sub: 'Zero, none' }
+    { key: 'noAlcohol', emoji: '🚫', title: 'No alcohol',       sub: 'Zero, none' },
+    // Stored inside the day's `extra` JSON (xkey) so no backend column is needed.
+    { key: 'noCig',     emoji: '🚭', title: 'No cigarettes',    sub: 'Zero, none', xkey: true }
   ];
   var TOTAL_ITEMS = TASKS.length + 1; // + water
+  // Read/write a task's done-state, whether it's a top-level day field or lives
+  // in the day's `extra` bag (xkey tasks like No cigarettes).
+  function taskDone(d, t) { return t.xkey ? !!(d.extra && d.extra[t.key]) : !!d[t.key]; }
+  function taskSetDone(d, t, v) {
+    if (t.xkey) { if (!d.extra) d.extra = {}; d.extra[t.key] = !!v; }
+    else d[t.key] = !!v;
+  }
+  // Counts toward completion. Newly-added xkey tasks were never tracked on old
+  // logs, so an ABSENT flag counts as satisfied — past complete days (and their
+  // streaks) aren't retroactively broken. New days seed the flag explicitly.
+  function taskSat(d, t) {
+    if (t.xkey && (!d.extra || d.extra[t.key] === undefined)) return true;
+    return taskDone(d, t);
+  }
   var ADMIN_USERS = ['pronoy']; // who sees the admin dashboard (backend enforces too)
   function isAdmin() { return !!state.user && ADMIN_USERS.indexOf(String(state.user.username || '').toLowerCase()) >= 0; }
 
@@ -463,12 +479,12 @@
 
   /* ---------------- domain helpers ---------------- */
   function isComplete(d) {
-    return d.workout1 && d.outdoor && d.reading &&
-           d.photo && d.diet && d.noAlcohol && (Number(d.waterMl) >= WATER_GOAL);
+    var ok = TASKS.every(function (t) { return taskSat(d, t); });
+    return ok && (Number(d.waterMl) >= WATER_GOAL);
   }
   function completedCount(d) {
     var c = 0;
-    TASKS.forEach(function (t) { if (d[t.key]) c++; });
+    TASKS.forEach(function (t) { if (taskSat(d, t)) c++; });
     if (Number(d.waterMl) >= WATER_GOAL) c++;
     return c;
   }
@@ -495,7 +511,8 @@
   function emptyDay(date) {
     return { date: date, dayNumber: state.user ? dayNumber(state.user.startDate, date) : 1,
       workout1: false, workout2: false, outdoor: false, waterMl: 0,
-      reading: false, photo: false, diet: false, noAlcohol: false, completed: false, notes: '', extra: {}, mood: 0, gut: 0, biz: {}, metrics: {} };
+      reading: false, photo: false, diet: false, noAlcohol: false, completed: false, notes: '',
+      extra: { noCig: false }, mood: 0, gut: 0, biz: {}, metrics: {} };
   }
   function logFor(date) {
     return state.logs.filter(function (l) { return l.date === date; })[0];
@@ -603,7 +620,11 @@
     $('#sync-state').addEventListener('click', function () {
       loadState().then(renderAll).then(function () { toast('Synced'); });
     });
-    $('#save-day').addEventListener('click', function () { pushToday(true); });
+    $('#save-day').addEventListener('click', function () {
+      var d = appDay();
+      if (d.date === todayStr()) { pushToday(true); }
+      else { queueSaveDay(d); toast('Saved ' + shortDate(d.date) + ' ✓'); }
+    });
     $('#day-notes').addEventListener('input', function () {
       var d = appDay(); d.notes = this.value; queueSaveDay(d);
     });
@@ -791,21 +812,25 @@
   function firstName(n) { return String(n || 'athlete').split(' ')[0]; }
 
   function renderToday() {
-    var d = state.today;
-    $('#today-date').textContent = prettyDate(d.date);
+    var d = appDay();
+    var isToday = appDate() === todayStr();
+    // Date bar on top — navigate to (and edit) any past day, like the mini-apps.
+    var bar = $('#today-daybar');
+    if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderToday); }
+    $('#today-date').textContent = isToday ? prettyDate(d.date) : prettyDate(d.date);
 
     // tasks
     var list = $('#tasklist');
     list.innerHTML = '';
     TASKS.forEach(function (t) {
-      var done = !!d[t.key];
+      var done = taskDone(d, t);
       var row = el('div', 'task' + (done ? ' done' : ''));
       row.innerHTML =
         '<div class="check">✓</div>' +
         '<div class="t-emoji">' + t.emoji + '</div>' +
         '<div class="t-body"><div class="t-title">' + t.title + '</div>' +
         '<div class="t-sub">' + t.sub + '</div></div>';
-      row.addEventListener('click', function () { toggleTask(t.key); });
+      row.addEventListener('click', function () { toggleTask(t); });
       list.appendChild(row);
     });
     // water
@@ -821,6 +846,7 @@
     ring.style.strokeDashoffset = circ * (1 - count / TOTAL_ITEMS);
     ring.style.stroke = met ? 'var(--green)' : 'var(--primary)';
     $('#ring-pct').textContent = pct + '%';
+    var rc = $('#ring-center-label'); if (rc) rc.textContent = isToday ? 'today' : 'day ' + Math.max(1, dayNumber(state.user.startDate, d.date));
 
     var st = $('#today-status');
     if (met) { st.textContent = soft ? 'Goal met! 🎉' : 'Day complete! 🎉'; st.className = 'status-chip done'; }
@@ -1262,10 +1288,11 @@
     return wrap;
   }
 
-  function toggleTask(key) {
-    state.today[key] = !state.today[key];
+  function toggleTask(t) {
+    var d = appDay();
+    taskSetDone(d, t, !taskDone(d, t));
     renderToday();
-    queueSave();
+    queueSaveDay(d);   // routes to queueSave() for today, past-day save otherwise
   }
 
   /* ---------------- Saving ---------------- */
@@ -1881,10 +1908,10 @@
     var list = $('#day-editor-list');
     list.innerHTML = '';
     TASKS.forEach(function (t) {
-      var row = el('div', 'task' + (d[t.key] ? ' done' : ''));
+      var row = el('div', 'task' + (taskDone(d, t) ? ' done' : ''));
       row.innerHTML = '<div class="check">✓</div><div class="t-emoji">' + t.emoji + '</div>' +
         '<div class="t-body"><div class="t-title">' + t.title + '</div><div class="t-sub">' + t.sub + '</div></div>';
-      row.addEventListener('click', function () { d[t.key] = !d[t.key]; renderDayEditorBody(); });
+      row.addEventListener('click', function () { taskSetDone(d, t, !taskDone(d, t)); renderDayEditorBody(); });
       list.appendChild(row);
     });
     // water stepper
@@ -1995,7 +2022,7 @@
     var defs = TASKS.concat([{ key: '__water', title: '💧 Water goal' }]);
     defs.forEach(function (t) {
       var hit = logs.filter(function (l) {
-        return t.key === '__water' ? Number(l.waterMl) >= WATER_GOAL : l[t.key];
+        return t.key === '__water' ? Number(l.waterMl) >= WATER_GOAL : taskDone(l, t);
       }).length;
       var pct = Math.round((hit / elapsed) * 100);
       var row = el('div', 'bar-row');
