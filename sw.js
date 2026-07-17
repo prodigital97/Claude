@@ -1,5 +1,5 @@
 /* Simple offline cache for the app shell. */
-var CACHE = '75hard-v81';
+var CACHE = '75hard-v82';
 var ASSETS = [
   './',
   './index.html',
@@ -8,7 +8,9 @@ var ASSETS = [
   './assets/indian-foods.js',
   './js/app.js',
   './manifest.webmanifest',
-  './assets/icon.svg'
+  './assets/icon.svg',
+  './assets/icon-180.png',
+  './assets/icon-512.png'
 ];
 
 self.addEventListener('install', function (e) {
