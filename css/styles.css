@@ -1194,3 +1194,8 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .st-apply { border-color: color-mix(in srgb, var(--mind-c) 40%, transparent); color: var(--mind-c); }
 .dx-phone-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .dx-phone-head b { font-size: 17px; }
+
+/* Mood — three dimensions */
+.mood-dim { margin-bottom: 14px; }
+.mood-dim-lbl { font-size: 13px; margin: 0 2px 7px; }
+.mood-dim-lbl b { font-weight: 700; }

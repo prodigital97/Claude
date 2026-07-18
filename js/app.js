@@ -864,16 +864,55 @@
     $('#day-notes').value = appDay().notes || '';
   }
 
-  /* ----- Mood / Gut mini-apps: selector + colored month calendar ----- */
+  /* ----- Mood: three dimensions (emotional / mental / physical) -----
+     Emotional stays in d.mood (backward-compatible with Life Score, calendar
+     colours and the Journal); mental & physical ride the day-log metrics. */
+  var MOOD_DIMS = [
+    { key: 'mood',         inMetrics: false, label: 'Emotional', emoji: '❤️', sub: 'how you feel' },
+    { key: 'moodMental',   inMetrics: true,  label: 'Mental',    emoji: '🧠', sub: 'focus & clarity' },
+    { key: 'moodPhysical', inMetrics: true,  label: 'Physical',  emoji: '💪', sub: 'energy & body' }
+  ];
+  function moodDimGet(d, dim) { return dim.inMetrics ? (Number((d.metrics || {})[dim.key]) || 0) : (Number(d[dim.key]) || 0); }
+  function moodDimSet(d, dim, v) { if (dim.inMetrics) { if (!d.metrics) d.metrics = {}; d.metrics[dim.key] = v; } else { d[dim.key] = v; } }
+  function moodAvg(d) {
+    var vals = MOOD_DIMS.map(function (dim) { return moodDimGet(d, dim); }).filter(function (x) { return x > 0; });
+    return vals.length ? vals.reduce(function (a, b) { return a + b; }, 0) / vals.length : 0;
+  }
+  function moodColorAvg(d) { var a = moodAvg(d); return a ? moodColor(Math.round(a)) : null; }
+
+  function renderMoodDimensions(d, sel) {
+    var box = $(sel); if (!box) return;
+    box.innerHTML = MOOD_DIMS.map(function (dim) {
+      var cur = moodDimGet(d, dim);
+      return '<div class="mood-dim"><div class="mood-dim-lbl">' + dim.emoji + ' <b>' + dim.label + '</b> <span class="muted tiny">· ' + dim.sub + '</span></div>' +
+        '<div class="mood-buttons" data-mdim="' + dim.key + '">' + MOODS.map(function (m) {
+          return '<button type="button" class="mood-btn' + (cur === m.v ? ' sel' : '') + '" style="--mc:' + m.color + '" data-mv="' + m.v + '">' +
+            '<span class="mood-emoji">' + m.emoji + '</span><span class="mood-label">' + m.label + '</span></button>';
+        }).join('') + '</div></div>';
+    }).join('');
+    box.querySelectorAll('[data-mdim]').forEach(function (row) {
+      var dim = MOOD_DIMS.filter(function (x) { return x.key === row.getAttribute('data-mdim'); })[0];
+      row.querySelectorAll('[data-mv]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var v = Number(b.getAttribute('data-mv'));
+          moodDimSet(d, dim, moodDimGet(d, dim) === v ? 0 : v);
+          queueSaveDay(d);
+          renderMoodApp();
+          if (!$('#view-journal').classList.contains('hidden') && dim.key === 'mood') renderMood(d, '#journal-mood');
+        });
+      });
+    });
+  }
+
   function renderMoodApp() {
     var bar = $('#mood-daybar');
     if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderMoodApp); }
-    renderMood(appDay(), '#mood-buttons');
+    renderMoodDimensions(appDay(), '#mood-dims');
     var cal = $('#mood-cal');
     if (cal) {
       buildDayPicker(cal, ymOf(appDate()), renderMoodApp, function (date) {
         var l = logFor(date);
-        return l && l.mood ? moodColor(l.mood) : null;
+        return l ? moodColorAvg(l) : null;   // calendar colour = avg of the three
       });
       cal.classList.remove('hidden');
     }
@@ -889,13 +928,22 @@
     box.innerHTML = rangeBarHtml('moodrg');
     if (rs.mode === 'day') { bindRangeBar(box, 'moodrg', renderMoodApp); return; }
     var r = rangeSpan(rs.mode, rs.anchor);
-    var agg = rangeAgg(r.from, r.to, function (l) { return l && l.mood ? Number(l.mood) : null; });
+    // Overall (avg of the three) hero + a per-dimension breakdown.
+    var agg = rangeAgg(r.from, r.to, function (l) { var a = l ? moodAvg(l) : 0; return a > 0 ? a : null; });
     var best = MOODS.filter(function (m) { return m.v === Math.round(agg.avg); })[0];
+    var dimRows = MOOD_DIMS.map(function (dim) {
+      var da = rangeAgg(r.from, r.to, function (l) { var v = l ? moodDimGet(l, dim) : 0; return v > 0 ? v : null; });
+      var w = da.logged ? Math.round(da.avg / 5 * 100) : 0;
+      return '<div class="mr-row"><span class="mr-name">' + dim.emoji + ' ' + dim.label + '</span>' +
+        '<div class="mr-bar"><span style="width:' + w + '%;background:var(--mind-c)"></span></div>' +
+        '<span class="mr-val mono">' + (da.logged ? da.avg.toFixed(1) : '—') + '</span></div>';
+    }).join('');
     box.innerHTML += '<div class="card hero-row">' +
       ringMini(pctOf(agg.avg, 5), best ? best.color : 'var(--mind-c)', 92, '<b>' + (agg.logged ? agg.avg.toFixed(1) : '—') + '</b>') +
       '<div class="hero-meta"><div class="metric-big"><b>' + (agg.logged ? agg.avg.toFixed(1) + '/5 ' + (best ? best.emoji : '') : 'No logs') + '</b></div>' +
-      '<div class="muted tiny">' + agg.logged + ' of ' + agg.days + ' days logged</div></div></div>' +
-      (agg.logged ? '<div class="card"><div class="eyebrow">Mood per day</div>' + rangeBarChart(agg.perDay, 'var(--mind-c)') + '</div>' : '');
+      '<div class="muted tiny">overall · ' + agg.logged + ' of ' + agg.days + ' days logged</div></div></div>' +
+      '<div class="card"><div class="eyebrow" style="margin-bottom:6px">By dimension · avg</div>' + dimRows + '</div>' +
+      (agg.logged ? '<div class="card"><div class="eyebrow">Overall mood per day</div>' + rangeBarChart(agg.perDay, 'var(--mind-c)') + '</div>' : '');
     bindRangeBar(box, 'moodrg', renderMoodApp);
   }
   function renderGutApp() {
@@ -5023,16 +5071,26 @@
         var best = gymEntryBest(e);
         var pr = prs[e.n] && best >= prs[e.n].kg && best > 0;
         var last = gymLastEntry(e.n, day.date);
-        var lastSets = last ? gymSetsOf(last) : [];
+        // PREV = last session's AVERAGE across all its sets (avg weight × avg reps),
+        // shown identically for every row — a single "last time" benchmark.
+        var pv = '—';
+        if (last) {
+          var ls = gymSetsOf(last);
+          if (ls.length) {
+            var sw = 0, sr = 0;
+            ls.forEach(function (s) { sw += Number(s.w) || 0; sr += Number(s.r) || 0; });
+            var aw = Math.round(sw / ls.length), ar = Math.round(sr / ls.length);
+            pv = (aw ? aw : '—') + '×' + ar;
+          }
+        }
         return '<div class="card gx-card">' +
           '<div class="gx-head">' +
             '<b class="gx-name" data-gxedit="' + i + '">' + esc(e.n) + '</b>' + (pr ? ' <span class="pr-badge">PR 🏅</span>' : '') +
             '<span class="gx-vol mono">' + gymEntrySummary(e) + '</span>' +
             '<button class="icon-mini gx-editbtn" data-gxedit="' + i + '" title="Rename">✎</button>' +
             '<button class="list-del" data-gxdel="' + i + '">✕</button></div>' +
-          '<div class="gx-row gx-lbls"><span>SET</span><span>PREV</span><span>KG</span><span>REPS</span><span></span></div>' +
+          '<div class="gx-row gx-lbls"><span>SET</span><span>PREV avg</span><span>KG</span><span>REPS</span><span></span></div>' +
           sets.map(function (st, j) {
-            var pv = lastSets[j] ? (lastSets[j].w ? lastSets[j].w + '×' + lastSets[j].r : '—×' + lastSets[j].r) : '—';
             return '<div class="gx-row">' +
               '<span class="gx-num mono">' + (j + 1) + '</span>' +
               '<span class="gx-prev mono">' + pv + '</span>' +
