@@ -101,14 +101,21 @@
   // for existing users until they explicitly pick a challenge.
   function chMigratedDefault() {
     var start = state.user ? state.user.startDate : todayStr();
-    // Legacy users had profile.mode set — keep their 75 Hard/Soft so nothing
-    // changes for them. Brand-new users start on the gentle Daily Life baseline
-    // instead of being dropped straight into 75 Hard.
-    if (!(state.profile && state.profile.mode)) return chInstantiate(chPreset('dailyLife'), start);
-    var soft = state.profile.mode === 'soft';
-    var def = chInstantiate(chPreset(soft ? 'soft75' : 'hard75'), start);
-    if (soft && state.profile.softTarget) def.pass = Math.min(100, Math.max(20, Number(state.profile.softTarget) || 70));
-    def.water = 4000; // established app default; keeps migrated completion identical
+    // Soft-mode legacy users keep 75 Soft (with their target).
+    if (state.profile && state.profile.mode === 'soft') {
+      var sdef = chInstantiate(chPreset('soft75'), start);
+      if (state.profile.softTarget) sdef.pass = Math.min(100, Math.max(20, Number(state.profile.softTarget) || 70));
+      sdef.water = 4000;
+      return sdef;
+    }
+    // CRITICAL: anyone who has ALREADY been using the app (any logged history,
+    // or an account that predates today) stays on 75 Hard — the original
+    // default. We must never silently move an existing user off their
+    // challenge. Only a genuinely NEW account starts on the Daily Life baseline.
+    var existing = (state.logs && state.logs.length > 0) ||
+      (state.user && state.user.startDate && String(state.user.startDate) < todayStr());
+    var def = chInstantiate(chPreset(existing ? 'hard75' : 'dailyLife'), start);
+    def.water = existing ? 4000 : def.water;   // keep migrated completion identical
     return def;
   }
   function activeCh() {
