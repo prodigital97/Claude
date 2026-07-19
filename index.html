@@ -124,6 +124,7 @@
       <!-- TODAY -->
       <div id="view-today" class="view hidden">
         <div id="today-daybar"></div>
+        <div id="today-banner"></div>
         <div class="hero card">
           <div class="hero-ring">
             <svg viewBox="0 0 120 120" class="ring">
@@ -280,6 +281,12 @@
         <h2 class="view-title">Manifest</h2>
         <p class="muted tiny" style="margin:0 2px 12px">Affirm it, visualise it, become it.</p>
         <div id="manifest-app"></div>
+      </div>
+
+      <!-- CHALLENGES (mini-app, Life) -->
+      <div id="view-challenges" class="view hidden">
+        <h2 class="view-title">Challenges</h2>
+        <div id="challenges-app"></div>
       </div>
 
       <!-- MONEY (mini-app) -->
@@ -639,8 +646,8 @@
         </div>
 
         <div class="card">
-          <h3>Challenge mode</h3>
-          <p class="muted tiny">75 Hard needs all 7 tasks every day. 75 Soft counts a day if you hit your daily target — great for staying consistent even on busy days.</p>
+          <h3>Challenge</h3>
+          <p class="muted tiny" id="mode-current" style="margin-bottom:10px">Active challenge</p>
           <div class="seg" id="mode-seg">
             <button data-mode="hard" class="active" type="button">💪 75 Hard</button>
             <button data-mode="soft" type="button">🌱 75 Soft</button>

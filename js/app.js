@@ -38,6 +38,119 @@
     if (t.xkey && (!d.extra || d.extra[t.key] === undefined)) return true;
     return taskDone(d, t);
   }
+  var TASK_BY_KEY = {}; TASKS.forEach(function (t) { TASK_BY_KEY[t.key] = t; });
+
+  /* ================= Challenge engine =================
+     The active challenge (profile.challenge) is a set of RULES evaluated against
+     data the app already tracks. Rule shapes:
+       { t:'task',   key:'workout1' }                       -> day boolean / extra (noCig)
+       { t:'water' }                                        -> waterMl >= challenge.water
+       { t:'metric', key:'steps', min:8000, label, emoji, app }  -> day metrics[key] >= min
+       { t:'habit',  id:'h_..' }                            -> extra[id] (a custom Habit)
+       { t:'manual', id:'x', label, emoji }                 -> extra['ch_'+id] (own checklist item) */
+  var CH_METRICS = {
+    steps:     { label: 'steps',       emoji: '👟', app: 'steps',    fmt: function (v) { return Number(v).toLocaleString(); } },
+    meditMin:  { label: 'min meditate', emoji: '🧘', app: 'meditate', fmt: function (v) { return v + ' min'; } },
+    detoxMin:  { label: 'min offline', emoji: '📵', app: 'detox',    fmt: function (v) { return v + ' min'; } },
+    sleepMin:  { label: 'min sleep',   emoji: '😴', app: 'sleep',    fmt: function (v) { return v + ' min'; } },
+    breathMin: { label: 'min breathe', emoji: '🫁', app: 'breathe',  fmt: function (v) { return v + ' min'; } }
+  };
+  // Preset library — plain data; a new challenge is one entry here.
+  var CH_PRESETS = [
+    { id: 'hard75', name: '75 Hard', emoji: '🔥', days: 75, reset: 'hard', pass: 'all', water: 4000,
+      desc: 'The original. 6 strict rules, no misses — slip and you restart Day 1.',
+      rules: [{ t: 'task', key: 'workout1' }, { t: 'task', key: 'outdoor' }, { t: 'task', key: 'reading' },
+        { t: 'task', key: 'photo' }, { t: 'task', key: 'diet' }, { t: 'task', key: 'noAlcohol' }, { t: 'task', key: 'noCig' }, { t: 'water' }] },
+    { id: 'soft75', name: '75 Soft', emoji: '🌊', days: 75, reset: 'none', pass: 70, water: 4000,
+      desc: 'Same habits, forgiving. Hit ~70% of the day and keep your streak — no restarts.',
+      rules: [{ t: 'task', key: 'workout1' }, { t: 'task', key: 'outdoor' }, { t: 'task', key: 'reading' },
+        { t: 'task', key: 'photo' }, { t: 'task', key: 'diet' }, { t: 'task', key: 'noAlcohol' }, { t: 'task', key: 'noCig' }, { t: 'water' }] },
+    { id: 'medium75', name: '75 Medium', emoji: '⚖️', days: 75, reset: 'none', pass: 'all', water: 4000,
+      desc: 'The sustainable middle. One workout, clean diet, reading, water — daily, no reset.',
+      rules: [{ t: 'task', key: 'workout1' }, { t: 'task', key: 'diet' }, { t: 'task', key: 'noAlcohol' }, { t: 'task', key: 'reading' }, { t: 'water' }] },
+    { id: 'winterArc', name: 'Winter Arc', emoji: '❄️', days: 90, reset: 'none', pass: 'all', water: 3000,
+      desc: '90 days of locking in — train, meditate, read, unplug. Consistency over perfection.',
+      rules: [{ t: 'task', key: 'workout1' }, { t: 'metric', key: 'meditMin', min: 10 }, { t: 'metric', key: 'detoxMin', min: 60 }, { t: 'task', key: 'reading' }, { t: 'water' }] },
+    { id: 'monkMode', name: 'Monk Mode', emoji: '🧘', days: 30, reset: 'none', pass: 'all', water: 0,
+      desc: '30 days of radical focus. Deep work, meditation, reading, training — distractions cut.',
+      rules: [{ t: 'metric', key: 'detoxMin', min: 120 }, { t: 'metric', key: 'meditMin', min: 10 }, { t: 'task', key: 'reading' }, { t: 'task', key: 'workout1' }, { t: 'manual', id: 'deepwork', label: 'Deep work 2h', emoji: '💼' }] },
+    { id: 'dopamine', name: 'Dopamine Detox', emoji: '📵', days: 14, reset: 'none', pass: 'all', water: 0,
+      desc: '14 days off cheap stimulation — no doomscroll, no junk, real focus and calm.',
+      rules: [{ t: 'metric', key: 'detoxMin', min: 180 }, { t: 'metric', key: 'meditMin', min: 10 }, { t: 'manual', id: 'nosocial', label: 'No social media', emoji: '🙅' }, { t: 'manual', id: 'nojunk', label: 'No junk food', emoji: '🍔' }] }
+  ];
+  function chPreset(id) { return CH_PRESETS.filter(function (p) { return p.id === id; })[0]; }
+  // Deep-clone a preset (or def) into an active run stamped with a start date.
+  function chInstantiate(base, startDate) {
+    var def = JSON.parse(JSON.stringify(base));
+    def.startDate = startDate || todayStr();
+    def.history = base.history || [];
+    return def;
+  }
+  // Legacy migration: synthesize from the old mode/softTarget so nothing changes
+  // for existing users until they explicitly pick a challenge.
+  function chMigratedDefault() {
+    var soft = (state.profile && state.profile.mode) === 'soft';
+    var def = chInstantiate(chPreset(soft ? 'soft75' : 'hard75'), state.user ? state.user.startDate : todayStr());
+    if (soft && state.profile && state.profile.softTarget) def.pass = Math.min(100, Math.max(20, Number(state.profile.softTarget) || 70));
+    def.water = 4000; // established app default; keeps migrated completion identical
+    return def;
+  }
+  function activeCh() {
+    if (state._ch) return state._ch;
+    state._ch = (state.profile && state.profile.challenge) ? state.profile.challenge : chMigratedDefault();
+    return state._ch;
+  }
+  function chStart() { var c = activeCh(); return (c && c.startDate) || (state.user ? state.user.startDate : todayStr()); }
+  function chWaterGoal() { var c = activeCh(); var w = c && Number(c.water); return w > 0 ? w : (CFG.WATER_GOAL_ML || 4000); }
+  function chRules() { var c = activeCh(); return (c && c.rules) || []; }
+  function chHasWater() { return chRules().some(function (r) { return r.t === 'water'; }); }
+  function chDay() { return dayNumber(chStart(), todayStr()); }
+  // Human label/emoji/sub for any rule (drives Today rows + Stats bars).
+  function ruleView(rule) {
+    if (rule.t === 'water') return { emoji: '💧', title: 'Drink ' + litres(chWaterGoal()) + ' L of water', sub: 'Tap a glass each time you drink' };
+    if (rule.t === 'task') { var t = TASK_BY_KEY[rule.key] || {}; return { emoji: t.emoji || '✅', title: t.title || rule.key, sub: t.sub || '' }; }
+    if (rule.t === 'metric') { var m = CH_METRICS[rule.key] || { label: rule.key, emoji: '📊' }; return { emoji: m.emoji, title: rule.label || (rule.min + ' ' + m.label), sub: 'Logged in the ' + (m.app || rule.key) + ' app', app: m.app, metric: true }; }
+    if (rule.t === 'habit') { var h = ((state.profile && state.profile.customTasks) || []).filter(function (x) { return x.id === rule.id; })[0]; return { emoji: '🔗', title: (h && h.name) || 'Habit', sub: 'Custom habit' }; }
+    if (rule.t === 'manual') return { emoji: rule.emoji || '📌', title: rule.label || 'Task', sub: 'Tap when done' };
+    return { emoji: '•', title: '?', sub: '' };
+  }
+  function ruleMet(d, rule) {
+    switch (rule.t) {
+      case 'water':  return (Number(d.waterMl) || 0) >= chWaterGoal();
+      case 'task':   { var t = TASK_BY_KEY[rule.key]; return t ? taskSat(d, t) : false; }
+      case 'metric': return (Number((d.metrics || {})[rule.key]) || 0) >= (Number(rule.min) || 0);
+      case 'habit':  return !!(d.extra && d.extra[rule.id]);
+      case 'manual': return !!(d.extra && d.extra['ch_' + rule.id]);
+    }
+    return false;
+  }
+  function ruleToggle(d, rule) {
+    if (rule.t === 'task') { var t = TASK_BY_KEY[rule.key]; if (t) taskSetDone(d, t, !taskDone(d, t)); }
+    else if (rule.t === 'habit') { if (!d.extra) d.extra = {}; d.extra[rule.id] = !d.extra[rule.id]; }
+    else if (rule.t === 'manual') { if (!d.extra) d.extra = {}; d.extra['ch_' + rule.id] = !d.extra['ch_' + rule.id]; }
+  }
+  function chCount(d) { return chRules().filter(function (r) { return ruleMet(d, r); }).length; }
+  function chAllMet(d) { return chRules().every(function (r) { return ruleMet(d, r); }); }
+  function chNeeded() { var c = activeCh(); return c.pass === 'all' ? chRules().length : Math.max(1, Math.ceil(Number(c.pass) / 100 * chRules().length)); }
+  function chGoalLive(d) { var c = activeCh(); return c.pass === 'all' ? chAllMet(d) : chCount(d) >= chNeeded(); }
+  // Keep the legacy globals in sync so the ~20 existing call sites just work.
+  function syncChallenge() {
+    LEN = Number(activeCh().days) || 0;
+    WATER_GOAL = chWaterGoal();
+    GLASS_COUNT = Math.max(1, Math.round(WATER_GOAL / GLASS));
+    TOTAL_ITEMS = chRules().length || 1;
+  }
+  // Set/replace the active challenge and persist to the profile.
+  function setChallenge(def, cb) {
+    var profile = Object.assign({}, state.profile, { challenge: def });
+    state.profile = profile; state._ch = def; syncChallenge();
+    // Re-evaluate today's completion under the new rules.
+    if (state.today) { state.today.completed = goalMet(state.today); upsertLocal(state.today); }
+    api('saveGoals', { profile: profile }).then(function (data) {
+      if (data && data.profile) { state.profile = data.profile; state._ch = data.profile.challenge || def; syncChallenge(); }
+      if (cb) cb();
+    }).catch(function (e) { toast(e.message); if (cb) cb(); });
+  }
   var ADMIN_USERS = ['pronoy']; // who sees the admin dashboard (backend enforces too)
   function isAdmin() { return !!state.user && ADMIN_USERS.indexOf(String(state.user.username || '').toLowerCase()) >= 0; }
 
@@ -478,25 +591,20 @@
     throw new Error('Unknown action');
   }
 
-  /* ---------------- domain helpers ---------------- */
-  function isComplete(d) {
-    var ok = TASKS.every(function (t) { return taskSat(d, t); });
-    return ok && (Number(d.waterMl) >= WATER_GOAL);
-  }
-  function completedCount(d) {
-    var c = 0;
-    TASKS.forEach(function (t) { if (taskSat(d, t)) c++; });
-    if (Number(d.waterMl) >= WATER_GOAL) c++;
-    return c;
-  }
-  // 75 Hard vs 75 Soft (per-user, stored in profile).
-  function challengeMode() { return (state.profile && state.profile.mode) === 'soft' ? 'soft' : 'hard'; }
-  function softTarget() { var t = Number(state.profile && state.profile.softTarget) || 70; return Math.min(100, Math.max(20, t)); }
-  function softNeeded() { return Math.max(1, Math.ceil(softTarget() / 100 * TOTAL_ITEMS)); }
-  // Does this day count toward streak / "completed days" for the user's chosen mode?
+  /* ---------------- domain helpers (challenge-driven) ---------------- */
+  function isComplete(d) { return chAllMet(d); }
+  function completedCount(d) { return chCount(d); }
+  // Retained for legacy callers (Home tiles, toasts): soft = threshold challenge.
+  function challengeMode() { return activeCh().pass === 'all' ? 'hard' : 'soft'; }
+  function softTarget() { var c = activeCh(); return c.pass === 'all' ? 100 : Number(c.pass) || 70; }
+  function softNeeded() { return chNeeded(); }
+  // Does this day count toward streak / "completed days"?
+  // Days before the active run started keep their stored `completed` flag, so
+  // switching challenges never rewrites history / breaks past streaks.
   function goalMet(d) {
-    if (challengeMode() === 'soft') return completedCount(d) >= softNeeded();
-    return isComplete(d);
+    var start = chStart();
+    if (start && d.date < start) return !!d.completed;
+    return chGoalLive(d);
   }
   function streakOf(logs) {
     // Count consecutive complete days ending today (or yesterday if today's
@@ -585,6 +693,8 @@
       state.logs = dedupeLogs(data.logs || []);
       state.user.currentDay = dayNumber(state.user.startDate, todayStr());
       state.profile = data.profile || {};
+      state._ch = null;          // recompute active challenge from the fresh profile
+      syncChallenge();
       state.activeFast = data.activeFast || null;
       var t = logFor(todayStr());
       state.today = t ? Object.assign(emptyDay(todayStr()), t) : emptyDay(todayStr());
@@ -750,6 +860,7 @@
     });
     if (name !== 'diet' && name !== 'fast') stopFastTimer();
     if (name !== 'breathe') stopBreathe();
+    if (name !== 'challenges') state.chBuilder = null;
     // A running meditation keeps ticking across views (it chimes + banks itself);
     // the manifest practice flow, though, resets if you walk away mid-card.
     if (name !== 'manifest' && manifest.step !== -1) { manifest.step = -1; stopManifestViz(); }
@@ -774,6 +885,7 @@
     if (name === 'detox') renderDetox();
     if (name === 'meditate') renderMeditate();
     if (name === 'manifest') renderManifest();
+    if (name === 'challenges') renderChallenges();
     if (name === 'meds') renderMeds();
     if (name === 'money') renderMoney();
     if (name === 'subs') renderSubs();
@@ -793,20 +905,19 @@
   /* ---------------- Render: header + today ---------------- */
   function renderAll() {
     $('#hdr-name').textContent = firstName(state.user.displayName);
-    var cd = state.user.currentDay;
+    var cd = chDay();                 // day within the active challenge
     var pill = $('.day-pill');
-    if (cd > 2000 || cd < 0) {
-      // Start date is clearly wrong (e.g. the year-2000 bug) — nudge to fix it.
+    pill.onclick = null; pill.style.cursor = '';
+    if (state.user.currentDay > 2000 || state.user.currentDay < 0) {
       pill.innerHTML = '⚠️ Set start date';
       pill.style.cursor = 'pointer';
       pill.onclick = function () { switchView('settings'); };
+    } else if (!LEN) {               // open-ended challenge — just count up
+      pill.innerHTML = 'Day <span id="hdr-day">' + Math.max(1, cd) + '</span>';
     } else if (cd <= LEN) {
       pill.innerHTML = 'Day <span id="hdr-day">' + Math.max(1, cd) + '</span> <span class="muted">/ ' + LEN + '</span>';
-      pill.onclick = null; pill.style.cursor = '';
     } else {
-      // Life mode — the 75 are conquered, the counter keeps climbing.
       pill.innerHTML = 'Day <span id="hdr-day">' + cd + '</span> <span class="muted">🏆</span>';
-      pill.onclick = null; pill.style.cursor = '';
     }
     renderToday();
   }
@@ -818,24 +929,39 @@
     // Date bar on top — navigate to (and edit) any past day, like the mini-apps.
     var bar = $('#today-daybar');
     if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderToday); }
+    // Hard-reset banner (only on today, only for strict challenges after a miss).
+    var banner = $('#today-banner');
+    if (banner) { banner.innerHTML = isToday ? chResetBannerHtml() : ''; bindResetBanner(banner); }
     $('#today-date').textContent = isToday ? prettyDate(d.date) : prettyDate(d.date);
 
-    // tasks
+    // Rules of the active challenge (rendered in order; water gets its widget).
     var list = $('#tasklist');
     list.innerHTML = '';
-    TASKS.forEach(function (t) {
-      var done = taskDone(d, t);
-      var row = el('div', 'task' + (done ? ' done' : ''));
+    chRules().forEach(function (rule) {
+      if (rule.t === 'water') { list.appendChild(renderWater(d)); return; }
+      var v = ruleView(rule);
+      var done = ruleMet(d, rule);
+      var row = el('div', 'task' + (done ? ' done' : '') + (v.metric ? ' task-metric' : ''));
+      var progress = '';
+      if (v.metric) {
+        var cur = Number((d.metrics || {})[rule.key]) || 0;
+        var mfmt = (CH_METRICS[rule.key] && CH_METRICS[rule.key].fmt) || function (x) { return x; };
+        progress = '<div class="t-sub">' + mfmt(cur) + ' / ' + mfmt(rule.min) + ' · tap to open ›</div>';
+      }
       row.innerHTML =
         '<div class="check">✓</div>' +
-        '<div class="t-emoji">' + t.emoji + '</div>' +
-        '<div class="t-body"><div class="t-title">' + t.title + '</div>' +
-        '<div class="t-sub">' + t.sub + '</div></div>';
-      row.addEventListener('click', function () { toggleTask(t); });
+        '<div class="t-emoji">' + v.emoji + '</div>' +
+        '<div class="t-body"><div class="t-title">' + esc(v.title) + '</div>' +
+        (v.metric ? progress : '<div class="t-sub">' + esc(v.sub) + '</div>') + '</div>';
+      row.addEventListener('click', function () {
+        if (v.metric && v.app) { switchView(v.app); return; }   // deep-link, not toggle
+        ruleToggle(d, rule);
+        renderToday();
+        queueSaveDay(d);
+      });
       list.appendChild(row);
     });
-    // water
-    list.appendChild(renderWater(d));
+    if (!chHasWater()) { /* water is optional for this challenge */ }
 
     // ring / status
     var count = completedCount(d);
@@ -847,13 +973,13 @@
     ring.style.strokeDashoffset = circ * (1 - count / TOTAL_ITEMS);
     ring.style.stroke = met ? 'var(--green)' : 'var(--primary)';
     $('#ring-pct').textContent = pct + '%';
-    var rc = $('#ring-center-label'); if (rc) rc.textContent = isToday ? 'today' : 'day ' + Math.max(1, dayNumber(state.user.startDate, d.date));
+    var rc = $('#ring-center-label'); if (rc) rc.textContent = isToday ? 'today' : 'day ' + Math.max(1, dayNumber(chStart(), d.date));
 
     var st = $('#today-status');
     if (met) { st.textContent = soft ? 'Goal met! 🎉' : 'Day complete! 🎉'; st.className = 'status-chip done'; }
     else { st.textContent = count + ' / ' + TOTAL_ITEMS + ' done' + (soft ? ' · need ' + softNeeded() : ''); st.className = 'status-chip pending'; }
 
-    $('#streak-line').textContent = '🔥 ' + streakOf(state.logs) + ' day streak';
+    $('#streak-line').textContent = '🔥 ' + streakOf(state.logs) + ' day streak · ' + activeCh().emoji + ' ' + esc(activeCh().name);
   }
 
   /* ----- Journal (mood check-in + note) ----- */
@@ -2036,8 +2162,8 @@
 
   function renderStatsBody(vals) {
     var logs = state.logs;
-    var curDay = Math.max(1, state.user.currentDay);
-    var start = fmt(parse(state.user.startDate));
+    var curDay = Math.max(1, chDay());
+    var start = fmt(parse(chStart()));
     var today = todayStr();
     // Count complete days only within the challenge window (ignores stray logs).
     var done = logs.filter(function (l) {
@@ -2047,10 +2173,10 @@
     var grid = $('#stats-grid');
     grid.innerHTML = '';
     [
-      ['Current day', curDay <= LEN ? curDay + ' / ' + LEN : curDay],
+      ['Current day', !LEN ? curDay : (curDay <= LEN ? curDay + ' / ' + LEN : curDay)],
       ['Streak', streakOf(logs) + '🔥'],
       ['Days completed', done],
-      [curDay > LEN ? '75 Hard' : 'Days left', curDay > LEN ? 'Done 🏆' : Math.max(0, LEN - curDay)],
+      [(LEN && curDay > LEN) ? activeCh().name : 'Days left', (LEN && curDay > LEN) ? 'Done 🏆' : (LEN ? Math.max(0, LEN - curDay) : '∞')],
       ['Avg fast', vals.avgFast],
       ['Avg calories / day', vals.avgCal],
       ['Avg protein / day', vals.avgProtein || '…'],
@@ -2293,14 +2419,24 @@
     renderThemes();
   }
 
-  /* ----- Challenge mode (75 Hard / 75 Soft) ----- */
+  /* ----- Challenge mode (quick Hard/Soft toggle; full picker in Challenges app) ----- */
   function renderModeCard() {
-    var mode = challengeMode();
-    document.querySelectorAll('#mode-seg [data-mode]').forEach(function (b) {
-      b.classList.toggle('active', b.dataset.mode === mode);
-    });
-    $('#soft-target-wrap').classList.toggle('hidden', mode !== 'soft');
-    $('#soft-target').value = String(softTarget());
+    var c = activeCh();
+    var is75 = c.id === 'hard75' || c.id === 'soft75';
+    var mode = c.pass === 'all' ? 'hard' : 'soft';
+    // Show a live "current challenge" line + link to the full picker.
+    var link = $('#mode-current');
+    if (link) link.innerHTML = 'Active: <b>' + c.emoji + ' ' + esc(c.name) + '</b>' +
+      (LEN ? ' · Day ' + Math.max(1, chDay()) + '/' + LEN : ' · Day ' + Math.max(1, chDay())) +
+      ' — <button class="link-btn" id="mode-open-challenges" type="button" style="display:inline;padding:0">browse all ›</button>';
+    var seg = $('#mode-seg'); if (seg) seg.classList.toggle('hidden', !is75);
+    var stw = $('#soft-target-wrap'); if (stw) stw.classList.toggle('hidden', !is75 || mode !== 'soft');
+    var sb = $('#save-mode'); if (sb) sb.classList.toggle('hidden', !is75);
+    if (is75) {
+      document.querySelectorAll('#mode-seg [data-mode]').forEach(function (b) { b.classList.toggle('active', b.dataset.mode === mode); });
+      if ($('#soft-target')) $('#soft-target').value = String(softTarget());
+    }
+    var ob = $('#mode-open-challenges'); if (ob) ob.addEventListener('click', function () { switchView('challenges'); });
   }
   function pickMode(mode) {
     document.querySelectorAll('#mode-seg [data-mode]').forEach(function (b) {
@@ -2311,13 +2447,13 @@
   function saveMode() {
     var mode = $('#mode-seg [data-mode].active') ? $('#mode-seg [data-mode].active').dataset.mode : 'hard';
     var target = Number($('#soft-target').value) || 70;
-    var profile = Object.assign({}, state.profile, { mode: mode, softTarget: target });
-    state.profile = profile;
-    api('saveGoals', { profile: profile }).then(function (data) {
-      if (data && data.profile) state.profile = data.profile;
-      toast(mode === 'soft' ? 'Switched to 75 Soft (' + softNeeded() + '/' + TOTAL_ITEMS + ' tasks/day) ✓' : 'Switched to 75 Hard ✓');
+    var def = chInstantiate(chPreset(mode === 'soft' ? 'soft75' : 'hard75'), chStart());
+    def.water = 4000;
+    if (mode === 'soft') def.pass = Math.min(100, Math.max(20, target));
+    setChallenge(def, function () {
+      toast(mode === 'soft' ? 'Switched to 75 Soft (' + chNeeded() + '/' + TOTAL_ITEMS + '/day) ✓' : 'Switched to 75 Hard ✓');
       renderAll();
-    }).catch(function (e) { toast(e.message); });
+    });
   }
 
   /* ----- Account: email, username, password ----- */
@@ -3941,6 +4077,7 @@
   /* ---------------- ATLAS home + app library ---------------- */
   var APPS = [
     { id: 'challenge', name: 'Challenge', icon: '🔥', pillar: 'body', open: function () { switchView('today'); } },
+    { id: 'challenges', name: 'Challenges', icon: '🏁', pillar: 'life', open: function () { switchView('challenges'); } },
     { id: 'diet',      name: 'Diet',      icon: '🥗', pillar: 'body', open: function () { switchView('diet'); } },
     { id: 'fast',      name: 'Fast',      icon: '⏳', pillar: 'body', open: function () { switchView('fast'); } },
     { id: 'water',     name: 'Water',     icon: '💧', pillar: 'body', open: function () { switchView('water'); } },
@@ -4001,9 +4138,9 @@
   function renderHome() {
     if (!state.user) return;
     var d = state.today || {};
-    var cd = Math.max(1, state.user.currentDay);
+    var cd = Math.max(1, chDay());
     var chip = $('#home-daychip');
-    if (chip) chip.innerHTML = 'DAY ' + cd + (cd > LEN ? ' 🏆' : '') + ' · ' + streakOf(state.logs) + '🔥';
+    if (chip) chip.innerHTML = 'DAY ' + cd + (LEN && cd > LEN ? ' 🏆' : '') + ' · ' + streakOf(state.logs) + '🔥';
 
     var sc = pillarScores();
     var rings = $('#home-rings');
@@ -4037,7 +4174,9 @@
       var left = TOTAL_ITEMS - completedCount(d);
       var html;
       if (!goalMet(d)) {
-        var dayLine = cd <= LEN ? 'Day ' + cd + ' of ' + LEN : 'Day ' + cd + ' · 75 Hard conquered 🏆';
+        var dayLine = !LEN ? 'Day ' + cd + ' · ' + activeCh().name
+          : cd <= LEN ? 'Day ' + cd + ' of ' + LEN + ' · ' + activeCh().name
+          : 'Day ' + cd + ' · ' + activeCh().name + ' conquered 🏆';
         html = '<span class="eyebrow">Spotlight · Challenge</span>' +
           '<div class="spot-big">' + left + ' task' + (left === 1 ? '' : 's') + ' left today</div>' +
           '<div class="muted tiny">' + dayLine + ' · ' + streakOf(state.logs) + '-day streak</div>' +
@@ -4084,10 +4223,10 @@
     var tiles = $('#home-tiles');
     if (tiles) {
       var t = [
-        ['💧 Water', litres(Number(d.waterMl) || 0) + ' / ' + litres(WATER_GOAL) + ' L'],
+        ['💧 Water', chHasWater() ? litres(Number(d.waterMl) || 0) + ' / ' + litres(WATER_GOAL) + ' L' : '—'],
         ['✓ Tasks', completedCount(d) + ' / ' + TOTAL_ITEMS],
         ['🔥 Streak', streakOf(state.logs) + ' days'],
-        ['⚖ Mode', (challengeMode() === 'soft' ? '75 Soft' : '75 Hard') + (cd > LEN ? ' ✓' : '')]
+        ['🏁 Challenge', activeCh().emoji + ' ' + activeCh().name]
       ];
       tiles.innerHTML = t.map(function (x) {
         return '<div class="htile"><div class="htile-lbl eyebrow">' + x[0] + '</div><div class="htile-val">' + x[1] + '</div></div>';
@@ -5801,6 +5940,219 @@
         '<div class="muted tiny">' + rangeLabelFor(rs.mode, rs.anchor) + '</div></div></div>' +
       '<div class="card"><div class="eyebrow">Practice per day</div>' + rangeBarChart(agg.perDay, 'var(--mind-c)') + '</div>';
     bindRangeBar(box, 'manifest', renderManifest);
+  }
+
+  /* ================= Challenges app (pick / build / track) ================= */
+  // First day (on/after the run start) that failed the challenge — used for the
+  // hard-reset banner and the "perfect run" state.
+  function chFirstFail() {
+    var start = chStart(), today = todayStr();
+    var d = start;
+    while (d < today) {                 // don't judge an unfinished today
+      var l = logFor(d);
+      if (!l || !chGoalLive(l)) return d;
+      d = addDays(d, 1);
+    }
+    return null;
+  }
+  function chAdherence() {
+    var start = chStart(), today = todayStr(), hit = 0, n = 0;
+    for (var d = start; d <= today; d = addDays(d, 1)) {
+      n++; var l = logFor(d); if (l && chGoalLive(l)) hit++;
+    }
+    return { hit: hit, days: n, pct: n ? Math.round(hit / n * 100) : 0 };
+  }
+  // Banner shown on the Today screen for reset:'hard' challenges after a miss.
+  function chResetBannerHtml() {
+    var c = activeCh();
+    if (c.reset !== 'hard') return '';
+    var fail = chFirstFail();
+    if (!fail || fail >= todayStr()) return '';
+    var dn = dayNumber(chStart(), fail);
+    return '<div class="card ch-reset"><div><b>Day ' + dn + ' broke the streak</b>' +
+      '<div class="muted tiny" style="margin-top:2px">' + c.emoji + ' ' + esc(c.name) + ' resets to Day 1 on a miss.</div></div>' +
+      '<div class="row-2" style="margin-top:10px"><button class="btn primary" id="ch-restart">Restart Day 1</button>' +
+      '<button class="btn" id="ch-keepgoing">Keep going</button></div></div>';
+  }
+  function bindResetBanner(scope) {
+    var r = scope.querySelector('#ch-restart');
+    if (r) r.addEventListener('click', function () {
+      if (!confirm('Restart from Day 1? Your attempt is saved to history and the counter goes back to Day 1.')) return;
+      chArchiveRun('reset');
+      var def = chInstantiate(activeCh(), todayStr());
+      setChallenge(def, function () { toast('Fresh start — Day 1 🔁'); renderAll(); });
+    });
+    var k = scope.querySelector('#ch-keepgoing');
+    if (k) k.addEventListener('click', function () {
+      var c = activeCh(); c.reset = 'kept'; setChallenge(c, function () { renderAll(); });
+    });
+  }
+  function chArchiveRun(outcome) {
+    var c = activeCh();
+    var hist = (state.profile.challenge && state.profile.challenge.history) || c.history || [];
+    hist = hist.slice();
+    hist.push({ id: c.id, name: c.name, emoji: c.emoji, days: c.days, startDate: c.startDate, endDate: todayStr(), outcome: outcome, adherence: chAdherence().pct });
+    c.history = hist.slice(-30);
+  }
+
+  function renderChallenges() {
+    var box = $('#challenges-app'); if (!box) return;
+    if (state.chBuilder) { renderChallengeBuilder(box); return; }
+    var c = activeCh(), day = Math.max(1, chDay()), adh = chAdherence();
+    var complete = LEN && day > LEN;
+    var pctToday = pctOf(chCount(state.today || {}), TOTAL_ITEMS);
+    // Active-run card
+    var rulesDots = chRules().map(function (rule) {
+      var v = ruleView(rule);
+      var dots = '';
+      for (var i = 6; i >= 0; i--) {
+        var dte = addDays(todayStr(), -i);
+        var l = dte === todayStr() ? state.today : logFor(dte);
+        dots += '<i class="hdot' + (l && ruleMet(l, rule) ? ' on' : '') + (dte === todayStr() ? ' td' : '') + '"></i>';
+      }
+      return '<div class="ch-rule"><span class="ch-rule-name">' + v.emoji + ' ' + esc(v.title) + '</span><div class="hdots">' + dots + '</div></div>';
+    }).join('');
+    var html =
+      '<div class="card ch-active">' +
+        '<div class="ch-active-top"><div><span class="eyebrow">Active challenge</span>' +
+          '<div class="ch-name">' + c.emoji + ' ' + esc(c.name) + '</div></div>' +
+          ringMini(complete ? 100 : pctToday, 'var(--life-c)', 74, '<b>' + (complete ? '🏆' : 'D' + day) + '</b>') +
+        '</div>' +
+        '<div class="ch-meta">' + (LEN ? 'Day ' + day + ' / ' + LEN : 'Day ' + day + ' · open-ended') +
+          ' · ' + adh.hit + '/' + adh.days + ' days (' + adh.pct + '%)' +
+          ' · ' + (c.reset === 'hard' ? 'resets on miss' : 'no reset') + '</div>' +
+        '<div class="ch-rules">' + rulesDots + '</div>' +
+        (complete ? '<div class="ch-done">🏆 Challenge complete — ' + adh.pct + '% adherence. Legend.</div>' : '') +
+        '<div class="row-2" style="margin-top:12px"><button class="btn" id="ch-restart2">↻ Restart</button>' +
+          '<button class="btn danger" id="ch-end">End challenge</button></div>' +
+      '</div>' +
+      '<div class="lib-head" style="margin:18px 0 12px"><div><span class="eyebrow">Choose a challenge</span></div>' +
+        '<button class="btn link-btn" id="ch-custom-new" type="button" style="margin:0">＋ Custom ›</button></div>' +
+      '<div class="ch-gallery">' + CH_PRESETS.map(function (p) {
+        var active = p.id === c.id;
+        return '<button type="button" class="ch-card' + (active ? ' active' : '') + '" data-preset="' + p.id + '">' +
+          '<div class="ch-card-top"><span class="ch-emoji">' + p.emoji + '</span>' +
+            '<span class="ch-days">' + p.days + 'd · ' + (p.reset === 'hard' ? 'strict' : 'flex') + '</span></div>' +
+          '<div class="ch-card-name">' + esc(p.name) + '</div>' +
+          '<div class="ch-card-desc">' + esc(p.desc) + '</div>' +
+          (active ? '<div class="ch-card-active">● Active</div>' : '') + '</button>';
+      }).join('') + '</div>';
+    // History
+    var hist = (c.history || []).slice().reverse();
+    if (hist.length) {
+      html += '<div class="card" style="margin-top:6px"><div class="eyebrow" style="margin-bottom:6px">Past runs</div>' +
+        hist.map(function (h) {
+          return '<div class="list-row"><div><b>' + (h.emoji || '') + ' ' + esc(h.name) + '</b>' +
+            '<div class="muted tiny">' + shortDate(h.startDate) + '–' + shortDate(h.endDate) + ' · ' + (h.outcome === 'reset' ? 'reset' : h.outcome === 'completed' ? 'completed 🏆' : 'ended') + '</div></div>' +
+            '<span class="mono">' + (h.adherence != null ? h.adherence + '%' : '') + '</span></div>';
+        }).join('') + '</div>';
+    }
+    box.innerHTML = html;
+
+    box.querySelectorAll('[data-preset]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var p = chPreset(b.getAttribute('data-preset'));
+        if (p.id === c.id) { toast('Already on ' + p.name); return; }
+        if (!confirm('Start ' + p.emoji + ' ' + p.name + '? Your current run is saved to history and Day 1 begins today.')) return;
+        chArchiveRun('switched');
+        setChallenge(chInstantiate(p, todayStr()), function () { toast(p.emoji + ' ' + p.name + ' — Day 1! Go.'); renderAll(); renderChallenges(); });
+      });
+    });
+    $('#ch-custom-new').addEventListener('click', function () { chStartBuilder(); });
+    $('#ch-restart2').addEventListener('click', function () {
+      if (!confirm('Restart this challenge from Day 1? The current run is archived.')) return;
+      chArchiveRun('reset');
+      setChallenge(chInstantiate(c, todayStr()), function () { toast('Restarted — Day 1 🔁'); renderAll(); renderChallenges(); });
+    });
+    $('#ch-end').addEventListener('click', function () {
+      if (!confirm('End this challenge and go to free mode (75 Hard)?')) return;
+      chArchiveRun('ended');
+      setChallenge(chInstantiate(chPreset('hard75'), todayStr()), function () { toast('Challenge ended.'); renderAll(); renderChallenges(); });
+    });
+  }
+
+  /* ----- Custom challenge builder ----- */
+  function chStartBuilder() {
+    state.chBuilder = { name: '', emoji: '🏁', days: 30, reset: 'none', pass: 'all', water: 4000, hasWater: true,
+      tasks: {}, metrics: {}, habits: {}, manual: [] };
+    renderChallenges();
+  }
+  function renderChallengeBuilder(box) {
+    var B = state.chBuilder;
+    var habits = (state.profile && state.profile.customTasks) || [];
+    box.innerHTML =
+      '<button class="btn link-btn" id="cb-back">‹ Back</button>' +
+      '<div class="card"><div class="manual-grid">' +
+        '<label>Name<input id="cb-name" value="' + esc(B.name) + '" placeholder="e.g. My Arc" maxlength="30" /></label>' +
+        '<label>Emoji<input id="cb-emoji" value="' + esc(B.emoji) + '" maxlength="2" /></label>' +
+      '</div>' +
+      '<div class="eyebrow" style="margin:6px 0 6px">Length</div>' +
+      '<div class="seg" id="cb-days">' + [21, 30, 66, 75, 90, 0].map(function (n) {
+        return '<button type="button" data-cbd="' + n + '"' + (n === B.days ? ' class="active"' : '') + '>' + (n === 0 ? '∞' : n) + '</button>';
+      }).join('') + '</div>' +
+      '<div class="eyebrow" style="margin:10px 0 6px">On a missed day</div>' +
+      '<div class="seg" id="cb-reset">' +
+        '<button type="button" data-cbr="none"' + (B.reset === 'none' ? ' class="active"' : '') + '>Keep going</button>' +
+        '<button type="button" data-cbr="hard"' + (B.reset === 'hard' ? ' class="active"' : '') + '>Reset to Day 1</button>' +
+      '</div></div>' +
+      '<div class="card"><div class="eyebrow" style="margin-bottom:8px">Daily rules — pick what counts</div>' +
+        '<div class="cb-sec">Core tasks</div>' +
+        TASKS.map(function (t) { return cbCheck('task_' + t.key, t.emoji + ' ' + t.title, !!B.tasks[t.key]); }).join('') +
+        '<label class="cb-check"><input type="checkbox" id="cb-water"' + (B.hasWater ? ' checked' : '') + ' /> 💧 Water goal ' +
+          '<input id="cb-water-ml" class="cb-inline" type="number" inputmode="numeric" value="' + (B.water || 4000) + '" /> ml</label>' +
+        '<div class="cb-sec">Metrics (from your apps)</div>' +
+        Object.keys(CH_METRICS).map(function (k) {
+          var m = CH_METRICS[k], on = !!B.metrics[k];
+          return '<label class="cb-check"><input type="checkbox" data-cbm="' + k + '"' + (on ? ' checked' : '') + ' /> ' + m.emoji + ' ' + m.label +
+            ' ≥ <input class="cb-inline" type="number" inputmode="numeric" data-cbmin="' + k + '" value="' + (B.metrics[k] || (k === 'steps' ? 8000 : 10)) + '" /></label>';
+        }).join('') +
+        (habits.length ? '<div class="cb-sec">Your habits</div>' + habits.map(function (h) { return cbCheck('habit_' + h.id, '🔗 ' + h.name, !!B.habits[h.id]); }).join('') : '') +
+        '<div class="cb-sec">Your own items</div>' +
+        (B.manual.map(function (mm, i) { return '<div class="list-row"><span>📌 ' + esc(mm) + '</span><button class="list-del" data-cbmanrm="' + i + '">✕</button></div>'; }).join('')) +
+        '<div class="add-habit" style="margin-top:8px"><input id="cb-manual" placeholder="e.g. Deep work 2h" maxlength="30" /><button id="cb-manual-add" class="btn">Add</button></div>' +
+      '</div>' +
+      '<button id="cb-start" class="btn primary block">Start challenge</button>';
+
+    function cbCheck(id, label, on) { return '<label class="cb-check"><input type="checkbox" data-cbt="' + id + '"' + (on ? ' checked' : '') + ' /> ' + esc(label) + '</label>'; }
+
+    $('#cb-back').addEventListener('click', function () { state.chBuilder = null; renderChallenges(); });
+    var sync = function () {
+      B.name = $('#cb-name').value; B.emoji = $('#cb-emoji').value || '🏁';
+      B.hasWater = $('#cb-water').checked; B.water = Number($('#cb-water-ml').value) || 4000;
+      B.manual = B.manual; // unchanged here
+      // tasks & habits
+      B.tasks = {}; B.habits = {};
+      box.querySelectorAll('[data-cbt]').forEach(function (c) {
+        if (!c.checked) return;
+        var id = c.getAttribute('data-cbt');
+        if (id.indexOf('task_') === 0) B.tasks[id.slice(5)] = true;
+        else if (id.indexOf('habit_') === 0) B.habits[id.slice(6)] = true;
+      });
+      B.metrics = {};
+      box.querySelectorAll('[data-cbm]').forEach(function (c) {
+        if (c.checked) B.metrics[c.getAttribute('data-cbm')] = Number(box.querySelector('[data-cbmin="' + c.getAttribute('data-cbm') + '"]').value) || 10;
+      });
+    };
+    box.querySelectorAll('#cb-days [data-cbd]').forEach(function (b) { b.addEventListener('click', function () { sync(); B.days = Number(b.getAttribute('data-cbd')); renderChallenges(); }); });
+    box.querySelectorAll('#cb-reset [data-cbr]').forEach(function (b) { b.addEventListener('click', function () { sync(); B.reset = b.getAttribute('data-cbr'); renderChallenges(); }); });
+    $('#cb-manual-add').addEventListener('click', function () { sync(); var v = $('#cb-manual').value.trim(); if (v) { B.manual.push(v.slice(0, 30)); renderChallenges(); } });
+    box.querySelectorAll('[data-cbmanrm]').forEach(function (b) { b.addEventListener('click', function () { sync(); B.manual.splice(Number(b.getAttribute('data-cbmanrm')), 1); renderChallenges(); }); });
+    $('#cb-start').addEventListener('click', function () {
+      sync();
+      var rules = [];
+      TASKS.forEach(function (t) { if (B.tasks[t.key]) rules.push({ t: 'task', key: t.key }); });
+      Object.keys(B.metrics).forEach(function (k) { rules.push({ t: 'metric', key: k, min: B.metrics[k] }); });
+      (habits).forEach(function (h) { if (B.habits[h.id]) rules.push({ t: 'habit', id: h.id }); });
+      B.manual.forEach(function (label, i) { rules.push({ t: 'manual', id: 'm' + i + '_' + Date.now().toString(36), label: label, emoji: '📌' }); });
+      if (B.hasWater) rules.push({ t: 'water' });
+      if (!rules.length) { toast('Pick at least one daily rule'); return; }
+      var def = { id: 'custom', name: B.name.trim() || 'My Challenge', emoji: B.emoji || '🏁',
+        days: Number(B.days) || 0, reset: B.reset, pass: 'all', water: B.hasWater ? B.water : 0,
+        rules: rules, startDate: todayStr(), history: (activeCh().history || []) };
+      chArchiveRun('switched');
+      state.chBuilder = null;
+      setChallenge(def, function () { toast(def.emoji + ' ' + def.name + ' — Day 1! 🏁'); renderAll(); renderChallenges(); });
+    });
   }
 
   /* ================= Meds — medicines & supplements (Body) ================= */
