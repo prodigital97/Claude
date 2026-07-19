@@ -873,6 +873,7 @@
     if (name === 'water') renderWaterApp();
     if (name === 'fast') renderFasting();
     if (name === 'mood') renderMoodApp();
+    if (name === 'us') renderUsApp();
     if (name === 'gut') renderGutApp();
     if (name === 'habits') renderHabitsApp();
     if (name === 'work') renderWorkApp();
@@ -1111,6 +1112,241 @@
     if (cbox) cbox.textContent = logged
       ? label + ': ' + GUT.filter(function (g) { return counts[g.v]; }).map(function (g) { return g.label + ' ' + counts[g.v]; }).join(' · ')
       : 'No gut logs yet in this range.';
+  }
+
+  /* ----- Us — relationship check-ins (Life pillar) -----
+     Daily fields live in d.extra.rel (zero-redeploy, same pattern as habits/mood).
+     Partner info + the reflection diary live in profile (profile.relationship /
+     profile.relDiary), synced via the existing saveGoals round-trip — no backend
+     changes needed. The reflection diary is deliberately NOT scored/XP'd: honest
+     conflict journalling shouldn't feel like something to game. */
+  var REL_LANGS = [
+    { key: 'words', emoji: '💬', label: 'Words' },
+    { key: 'acts',  emoji: '🤝', label: 'Acts' },
+    { key: 'gifts', emoji: '🎁', label: 'Gifts' },
+    { key: 'time',  emoji: '⏳', label: 'Time' },
+    { key: 'touch', emoji: '🤗', label: 'Touch' }
+  ];
+  var REL_SCORES = [
+    { v: 5, label: 'Close',   emoji: '🥰' },
+    { v: 4, label: 'Good',    emoji: '😊' },
+    { v: 3, label: 'Okay',    emoji: '😐' },
+    { v: 2, label: 'Distant', emoji: '😕' },
+    { v: 1, label: 'Rough',   emoji: '💔' }
+  ];
+  function relOf(d) { return (d.extra && d.extra.rel) || {}; }
+  function relPatch(d, patch) {
+    if (!d.extra) d.extra = {};
+    d.extra.rel = Object.assign({ langs: {} }, relOf(d), patch);
+  }
+  function relScoreColor(v) {
+    return v >= 5 ? '#ff4d8d' : v >= 4 ? '#ff86ae' : v >= 3 ? '#ffb7cc' : v >= 2 ? '#b98a97' : '#7d5560';
+  }
+  function relInfo() { return (state.profile && state.profile.relationship) || {}; }
+  function relDiary() { return (state.profile && state.profile.relDiary) || []; }
+  // Days until the next occurrence of a 'YYYY-MM-DD' anniversary/birthday (0 = today).
+  function daysUntilAnniversary(dateStr) {
+    if (!dateStr || dateStr.length < 10) return null;
+    var mmdd = dateStr.slice(5);
+    var today = todayStr(), y = Number(today.slice(0, 4));
+    var next = y + '-' + mmdd;
+    if (next < today) next = (y + 1) + '-' + mmdd;
+    return dayNumber(today, next) - 1;
+  }
+  function relCountdowns() {
+    var info = relInfo(), out = [];
+    if (info.anniversary) out.push({ label: (info.partnerName ? info.partnerName + ' · ' : '') + 'Anniversary', emoji: '💍', days: daysUntilAnniversary(info.anniversary) });
+    if (info.partnerBirthday) out.push({ label: (info.partnerName || 'Partner') + '’s birthday', emoji: '🎂', days: daysUntilAnniversary(info.partnerBirthday) });
+    return out.filter(function (x) { return x.days != null; }).sort(function (a, b) { return a.days - b.days; });
+  }
+
+  function renderUsApp() {
+    var bar = $('#us-daybar');
+    if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderUsApp); }
+    renderRelDates();
+    renderRelCheckin(appDay());
+    renderRelRange();
+    var cal = $('#us-cal');
+    if (cal) {
+      buildDayPicker(cal, ymOf(appDate()), renderUsApp, function (date) {
+        var l = logFor(date), r = l ? relOf(l) : null;
+        return r && r.score ? relScoreColor(r.score) : null;
+      });
+    }
+    var leg = $('#us-legend');
+    if (leg) leg.innerHTML = REL_SCORES.map(function (s) {
+      return '<span class="gt-key"><i style="background:' + relScoreColor(s.v) + '"></i>' + s.emoji + ' ' + s.label + '</span>';
+    }).join('');
+    renderRelDiary();
+  }
+
+  function renderRelDates() {
+    var box = $('#us-dates'); if (!box) return;
+    var info = relInfo();
+    var cds = relCountdowns();
+    box.innerHTML =
+      '<div class="rel-dates-head"><span class="eyebrow">💞 ' + (info.partnerName ? esc(info.partnerName) : 'Your partner') + '</span>' +
+        '<button class="icon-btn" id="rel-edit-dates" type="button">✎</button></div>' +
+      (cds.length ? '<div class="rel-cds">' + cds.map(function (c) {
+        return '<span class="rel-cd">' + c.emoji + ' <b>' + (c.days === 0 ? 'Today!' : c.days + 'd') + '</b> ' + esc(c.label) + '</span>';
+      }).join('') + '</div>' : '<p class="muted tiny" style="margin:4px 0 0">Add your anniversary &amp; their birthday to see countdowns here and on Home.</p>') +
+      '<div id="rel-dates-form" class="hidden">' +
+        '<label>Partner’s name<input type="text" id="rel-name" value="' + esc(info.partnerName || '') + '" placeholder="e.g. Alex" /></label>' +
+        '<label>Anniversary<input type="date" id="rel-anniv" value="' + esc(info.anniversary || '') + '" /></label>' +
+        '<label>Their birthday<input type="date" id="rel-bday" value="' + esc(info.partnerBirthday || '') + '" /></label>' +
+        '<button class="btn primary block" id="rel-save-dates" type="button">Save</button>' +
+      '</div>';
+    box.querySelector('#rel-edit-dates').addEventListener('click', function () { box.querySelector('#rel-dates-form').classList.toggle('hidden'); });
+    box.querySelector('#rel-save-dates').addEventListener('click', function () {
+      var profile = Object.assign({}, state.profile, { relationship: {
+        partnerName: box.querySelector('#rel-name').value.trim(),
+        anniversary: box.querySelector('#rel-anniv').value,
+        partnerBirthday: box.querySelector('#rel-bday').value
+      } });
+      state.profile = profile;
+      renderRelDates();
+      if (!$('#view-home').classList.contains('hidden')) renderHome();
+      api('saveGoals', { profile: profile }).then(function (data) { if (data && data.profile) state.profile = data.profile; toast('Saved'); }).catch(function (e) { toast(e.message); });
+    });
+  }
+
+  function renderRelCheckin(d) {
+    var box = $('#us-checkin'); if (!box) return;
+    var r = relOf(d);
+    box.innerHTML =
+      '<div class="card">' +
+        '<div class="rel-score-lbl">How connected did you feel today?</div>' +
+        '<div class="mood-buttons" id="rel-score-btns">' + REL_SCORES.map(function (s) {
+          return '<button type="button" class="mood-btn' + (r.score === s.v ? ' sel' : '') + '" style="--mc:' + relScoreColor(s.v) + '" data-rv="' + s.v + '">' +
+            '<span class="mood-emoji">' + s.emoji + '</span><span class="mood-label">' + s.label + '</span></button>';
+        }).join('') + '</div>' +
+        '<label class="rel-qt-row"><input type="checkbox" id="rel-qt"' + (r.qt ? ' checked' : '') + ' /> We spent real quality time together today</label>' +
+        '<div class="rel-lang-lbl">Love languages you expressed today</div>' +
+        '<div class="rel-langs">' + REL_LANGS.map(function (l) {
+          var on = !!(r.langs && r.langs[l.key]);
+          return '<button type="button" class="rel-lang-chip' + (on ? ' on' : '') + '" data-lk="' + l.key + '">' + l.emoji + ' ' + l.label + '</button>';
+        }).join('') + '</div>' +
+        '<label>One thing you appreciated about them today<textarea id="rel-note" rows="2" placeholder="e.g. They made me laugh when I was stressed about work.">' + esc(r.note || '') + '</textarea></label>' +
+      '</div>';
+    box.querySelectorAll('#rel-score-btns [data-rv]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var v = Number(b.getAttribute('data-rv'));
+        var before = dayXp(d).total;
+        relPatch(d, { score: relOf(d).score === v ? 0 : v });
+        var delta = dayXp(d).total - before;
+        renderRelCheckin(d);
+        queueSaveDay(d);
+        gamifyAfterToggle(delta);
+      });
+    });
+    box.querySelector('#rel-qt').addEventListener('change', function () {
+      var before = dayXp(d).total;
+      relPatch(d, { qt: this.checked });
+      var delta = dayXp(d).total - before;
+      queueSaveDay(d);
+      gamifyAfterToggle(delta);
+    });
+    box.querySelectorAll('.rel-lang-chip').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        var key = chip.getAttribute('data-lk');
+        var langs = Object.assign({}, relOf(d).langs);
+        langs[key] = !langs[key];
+        var before = dayXp(d).total;
+        relPatch(d, { langs: langs });
+        var delta = dayXp(d).total - before;
+        chip.classList.toggle('on');
+        queueSaveDay(d);
+        gamifyAfterToggle(delta);
+      });
+    });
+    var noteEl = box.querySelector('#rel-note'), noteTimer;
+    noteEl.addEventListener('input', function () {
+      clearTimeout(noteTimer);
+      var val = noteEl.value;
+      noteTimer = setTimeout(function () {
+        var before = dayXp(d).total;
+        relPatch(d, { note: val });
+        var delta = dayXp(d).total - before;
+        queueSaveDay(d);
+        gamifyAfterToggle(delta);
+      }, 500);
+    });
+  }
+
+  function renderRelRange() {
+    var box = $('#us-range'); if (!box) return;
+    var rs = rangeState('usrg');
+    box.innerHTML = rangeBarHtml('usrg');
+    if (rs.mode === 'day') { bindRangeBar(box, 'usrg', renderUsApp); return; }
+    var r = rangeSpan(rs.mode, rs.anchor);
+    var agg = rangeAgg(r.from, r.to, function (l) { var rr = l ? relOf(l) : null; return rr && rr.score ? rr.score : null; });
+    var qtAgg = rangeAgg(r.from, r.to, function (l) { var rr = l ? relOf(l) : null; return rr ? (rr.qt ? 1 : 0) : null; });
+    var best = REL_SCORES.filter(function (s) { return s.v === Math.round(agg.avg); })[0];
+    var langTally = {}; REL_LANGS.forEach(function (l) { langTally[l.key] = 0; });
+    rangeDatesList(r.from, r.to).filter(function (dt) { return dt <= todayStr(); }).forEach(function (dt) {
+      var l = logFor(dt), rr = l ? relOf(l) : null;
+      if (rr && rr.langs) REL_LANGS.forEach(function (lg) { if (rr.langs[lg.key]) langTally[lg.key]++; });
+    });
+    var maxLang = Math.max(1, REL_LANGS.reduce(function (mx, l) { return Math.max(mx, langTally[l.key]); }, 0));
+    var langRows = REL_LANGS.map(function (l) {
+      var w = Math.round(langTally[l.key] / maxLang * 100);
+      return '<div class="mr-row"><span class="mr-name">' + l.emoji + ' ' + l.label + '</span>' +
+        '<div class="mr-bar"><span style="width:' + w + '%;background:#ff77a8"></span></div>' +
+        '<span class="mr-val mono">' + langTally[l.key] + '</span></div>';
+    }).join('');
+    box.innerHTML += '<div class="card hero-row">' +
+      ringMini(pctOf(agg.avg, 5), best ? relScoreColor(best.v) : '#ff77a8', 92, '<b>' + (agg.logged ? agg.avg.toFixed(1) : '—') + '</b>') +
+      '<div class="hero-meta"><div class="metric-big"><b>' + (agg.logged ? agg.avg.toFixed(1) + '/5 ' + (best ? best.emoji : '') : 'No logs') + '</b></div>' +
+      '<div class="muted tiny">connection · ' + agg.logged + ' of ' + agg.days + ' days logged · quality time ' + qtAgg.hits + '/' + qtAgg.days + ' days</div></div></div>' +
+      '<div class="card"><div class="eyebrow" style="margin-bottom:6px">Love languages expressed</div>' + langRows + '</div>' +
+      (agg.logged ? '<div class="card"><div class="eyebrow">Connection per day</div>' + rangeBarChart(agg.perDay, '#ff77a8') + '</div>' : '');
+    bindRangeBar(box, 'usrg', renderUsApp);
+  }
+
+  function renderRelDiary() {
+    var box = $('#us-diary'); if (!box) return;
+    var entries = relDiary();
+    box.innerHTML =
+      '<h3>Reflection &amp; repair journal</h3>' +
+      '<p class="muted tiny" style="margin:0 0 10px">Private notes after a disagreement — what happened, how you resolved it, what you learned. Not scored — just for you.</p>' +
+      '<div id="rel-diary-list">' + (entries.length ? entries.slice().reverse().map(function (e) {
+        return '<div class="rel-entry" data-id="' + e.id + '">' +
+          '<div class="rel-entry-head"><span class="mono tiny muted">' + shortDate(e.date) + '</span><button class="rel-entry-del" type="button" title="Delete">✕</button></div>' +
+          (e.situation ? '<p><b>What happened:</b> ' + esc(e.situation) + '</p>' : '') +
+          (e.resolution ? '<p><b>How we resolved it:</b> ' + esc(e.resolution) + '</p>' : '') +
+          (e.lesson ? '<p><b>What we learned:</b> ' + esc(e.lesson) + '</p>' : '') +
+        '</div>';
+      }).join('') : '<p class="muted tiny">No entries yet.</p>') + '</div>' +
+      '<button class="btn block" id="rel-diary-add" type="button">+ Add reflection</button>' +
+      '<div id="rel-diary-form" class="hidden">' +
+        '<label>What happened<textarea id="rd-situation" rows="2"></textarea></label>' +
+        '<label>How you resolved it<textarea id="rd-resolution" rows="2"></textarea></label>' +
+        '<label>What you learned<textarea id="rd-lesson" rows="2"></textarea></label>' +
+        '<button class="btn primary block" id="rd-save" type="button">Save entry</button>' +
+      '</div>';
+    box.querySelector('#rel-diary-add').addEventListener('click', function () { box.querySelector('#rel-diary-form').classList.toggle('hidden'); });
+    box.querySelectorAll('.rel-entry-del').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var id = btn.closest('.rel-entry').getAttribute('data-id');
+        if (!confirm('Delete this reflection entry?')) return;
+        saveRelDiary(relDiary().filter(function (e) { return e.id !== id; }));
+      });
+    });
+    box.querySelector('#rd-save').addEventListener('click', function () {
+      var situation = box.querySelector('#rd-situation').value.trim();
+      var resolution = box.querySelector('#rd-resolution').value.trim();
+      var lesson = box.querySelector('#rd-lesson').value.trim();
+      if (!situation && !resolution && !lesson) return;
+      var next = relDiary().slice();
+      next.push({ id: 'rd_' + Date.now().toString(36), date: todayStr(), situation: situation, resolution: resolution, lesson: lesson });
+      saveRelDiary(next);
+    });
+  }
+  function saveRelDiary(entries) {
+    var profile = Object.assign({}, state.profile, { relDiary: entries });
+    state.profile = profile;
+    renderRelDiary();
+    api('saveGoals', { profile: profile }).then(function (data) { if (data && data.profile) state.profile = data.profile; }).catch(function (e) { toast(e.message); });
   }
 
   /* ----- Mood meter (does NOT affect 75 Hard completion) ----- */
@@ -1846,6 +2082,12 @@
     ((state.profile && state.profile.customTasks) || []).forEach(function (h) { if (d.extra && d.extra[h.id]) life += 8; });
     businesses().forEach(function (b) { var e = (d.biz || {})[b.id] || {}; if ((Number(e.m) || 0) > 0 || (Number(e.t) || 0) > 0) life += 10; });
     if (m.detoxMin) life += Math.min(15, Math.round(Number(m.detoxMin) / 10));
+    // Relationship check-in (Us). The connection score itself earns nothing —
+    // only concrete actions do — so there's no incentive to inflate the rating.
+    var rel = relOf(d);
+    if (rel.qt) life += 10;
+    if (rel.note && String(rel.note).trim()) life += 8;
+    if (rel.langs) REL_LANGS.forEach(function (l) { if (rel.langs[l.key]) life += 4; });
     var bonus = goalMet(d) ? XP_PERFECT : 0;   // perfect-day reward
     return { body: body, mind: mind, life: life, bonus: bonus, total: body + mind + life + bonus };
   }
@@ -4190,6 +4432,7 @@
     { id: 'money',     name: 'Money',     icon: '💸', pillar: 'money', open: function () { switchView('money'); } },
     { id: 'subs',      name: 'Subs',      icon: '🔁', pillar: 'money', open: function () { switchView('subs'); } },
     { id: 'savings',   name: 'Savings',   icon: '🐷', pillar: 'money', open: function () { switchView('savings'); } },
+    { id: 'us',        name: 'Us',        icon: '💞', pillar: 'life', open: function () { switchView('us'); } },
     { id: 'habits',    name: 'Habits',    icon: '🔗', pillar: 'life', open: function () { switchView('habits'); } },
     { id: 'work',      name: 'Work',      icon: '💼', pillar: 'life', open: function () { switchView('work'); } },
     { id: 'tasks',     name: 'Tasks',     icon: '✅', pillar: 'life', open: function () { switchView('tasks'); } },
@@ -4316,6 +4559,21 @@
           '<button class="btn primary block spot-cta" data-qa="coach">Ask Coach</button>';
       }
       spot.innerHTML = html;
+    }
+
+    // Relationship countdown — a small persistent nudge once dates are set.
+    var relBox = $('#home-rel');
+    if (relBox) {
+      var cds = relCountdowns();
+      if (!cds.length) relBox.classList.add('hidden');
+      else {
+        relBox.classList.remove('hidden');
+        var near = cds[0];
+        relBox.innerHTML = '<span class="eyebrow">💞 ' + esc(relInfo().partnerName || 'Us') + '</span>' +
+          '<div class="rel-home-cd">' + near.emoji + ' <b>' + (near.days === 0 ? 'Today!' : near.days + ' days') + '</b> — ' + esc(near.label) + '</div>' +
+          (cds[1] ? '<div class="muted tiny">' + cds[1].emoji + ' ' + cds[1].days + 'd — ' + esc(cds[1].label) + '</div>' : '');
+        relBox.onclick = function () { switchView('us'); };
+      }
     }
 
     // Life Score card — this month's game grade

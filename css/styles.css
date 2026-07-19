@@ -1277,3 +1277,25 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .water-card.jar-dry .jar { filter: grayscale(.7) brightness(.82); transition: filter .4s ease; }
 .water-card.jar-dry .jar-glass { stroke: #4a4f57; }
 .water-card.jar-dry .jar-note { color: #d98c5f; }
+
+/* ================= Us — relationship check-ins ================= */
+.rel-dates-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.rel-cds { display: flex; flex-wrap: wrap; gap: 8px; }
+.rel-cd { font-size: 12px; background: var(--bg-soft); border: 1px solid var(--line); border-radius: 99px; padding: 5px 10px; }
+#rel-dates-form { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.rel-score-lbl, .rel-lang-lbl { font-size: 13px; font-weight: 700; margin: 2px 0 8px; }
+.rel-lang-lbl { margin-top: 14px; }
+.rel-qt-row { flex-direction: row !important; align-items: center; gap: 8px; font-size: 13px; color: var(--text); font-weight: 600; margin-top: 14px; }
+.rel-qt-row input { width: auto; transform: scale(1.15); }
+.rel-langs { display: flex; flex-wrap: wrap; gap: 8px; }
+.rel-lang-chip { border: 1px solid var(--line); background: var(--bg-soft); color: var(--muted); border-radius: 99px; padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.rel-lang-chip.on { border-color: #ff77a8; background: color-mix(in srgb, #ff77a8 20%, var(--card)); color: var(--text); }
+.rel-entry { border-top: 1px solid var(--line); padding: 10px 0; }
+.rel-entry:first-child { border-top: 0; padding-top: 0; }
+.rel-entry-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.rel-entry p { margin: 3px 0; font-size: 13px; line-height: 1.4; }
+.rel-entry-del { border: 0; background: transparent; color: var(--muted); font-size: 13px; padding: 4px 6px; cursor: pointer; }
+#rel-diary-form { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.home-rel { display: block; width: 100%; text-align: left; margin-bottom: 12px; color: var(--text); cursor: pointer;
+  border-color: color-mix(in srgb, #ff77a8 35%, var(--line)); }
+.rel-home-cd { font-size: 14px; font-weight: 700; margin-top: 4px; }
