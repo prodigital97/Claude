@@ -1235,14 +1235,14 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
   border-radius: 16px; padding: 12px 14px; margin-bottom: 12px; cursor: pointer; color: var(--text);
   position: relative; overflow: hidden; }
 .level-card::before { content: ""; position: absolute; inset: 0; opacity: .10;
-  background: linear-gradient(90deg, #ff7a45, #ffb347); pointer-events: none; }
+  background: linear-gradient(90deg, var(--primary), var(--primary-2)); pointer-events: none; }
 .lv-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; position: relative; }
-.lv-badge { font: 800 12px/1 system-ui, sans-serif; letter-spacing: .06em; color: #0a0b0e;
-  background: linear-gradient(90deg, #ff7a45, #ffb347); padding: 5px 9px; border-radius: 8px; }
+.lv-badge { font: 800 12px/1 system-ui, sans-serif; letter-spacing: .06em; color: var(--on-primary);
+  background: linear-gradient(90deg, var(--primary), var(--primary-2)); padding: 5px 9px; border-radius: 8px; }
 .lv-xp { font-size: 12px; color: var(--muted); }
-.lv-bar { position: relative; height: 8px; border-radius: 99px; background: rgba(255,255,255,.09); overflow: hidden; }
+.lv-bar { position: relative; height: 8px; border-radius: 99px; background: rgba(128,128,128,.18); overflow: hidden; }
 .lv-bar span { position: absolute; inset: 0 auto 0 0; border-radius: 99px;
-  background: linear-gradient(90deg, #ff7a45, #ffb347); transition: width .5s ease; }
+  background: linear-gradient(90deg, var(--primary), var(--primary-2)); transition: width .5s ease; }
 .lv-sub { margin-top: 6px; position: relative; }
 
 /* Per-pillar skill level badge on each ring */
@@ -1252,7 +1252,7 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 
 /* "+N XP" floater */
 .xp-float { position: fixed; left: 50%; bottom: 42%; transform: translateX(-50%); z-index: 10000;
-  font: 800 22px/1 system-ui, sans-serif; color: #ffb347; text-shadow: 0 2px 10px rgba(0,0,0,.5);
+  font: 800 22px/1 system-ui, sans-serif; color: var(--primary-2); text-shadow: 0 2px 10px rgba(0,0,0,.5);
   pointer-events: none; animation: xpFloat 1.1s cubic-bezier(.2,.7,.3,1) forwards; }
 @keyframes xpFloat {
   0% { opacity: 0; transform: translate(-50%, 12px) scale(.7); }
@@ -1342,3 +1342,12 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .charge-chip .cc-batt { position: relative; width: 22px; height: 10px; border-radius: 3px; border: 1px solid var(--cc, #22c55e); overflow: hidden; }
 .charge-chip .cc-batt > span { position: absolute; inset: 0 auto 0 0; background: var(--cc, #22c55e); }
 .charge-chip.unlimited { color: #22c55e; }
+
+/* ================= Challenge difficulty tiers ================= */
+.ch-tier { margin-bottom: 16px; }
+.ch-tier-head { display: flex; align-items: baseline; gap: 8px; margin: 0 2px 8px; padding-left: 9px; border-left: 3px solid var(--line); }
+.ch-tier-head b { font-size: 14px; letter-spacing: .01em; }
+.ch-tier-head.t-base   { border-left-color: #64748b; }
+.ch-tier-head.t-easy   { border-left-color: #34d399; }
+.ch-tier-head.t-medium { border-left-color: #ffc24b; }
+.ch-tier-head.t-hard   { border-left-color: #fb5570; }

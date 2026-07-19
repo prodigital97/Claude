@@ -55,28 +55,39 @@
     sleepMin:  { label: 'min sleep',   emoji: '😴', app: 'sleep',    fmt: function (v) { return v + ' min'; } },
     breathMin: { label: 'min breathe', emoji: '🫁', app: 'breathe',  fmt: function (v) { return v + ' min'; } }
   };
+  // Difficulty tiers group the challenges in the gallery. 'base' is the gentle,
+  // no-challenge everyday baseline.
+  var CH_TIERS = [
+    { id: 'base',   label: 'Everyday',  sub: 'no challenge — just the basics' },
+    { id: 'easy',   label: 'Easy',      sub: 'ease in · forgiving' },
+    { id: 'medium', label: 'Medium',    sub: 'balanced · sustainable' },
+    { id: 'hard',   label: 'Hard',      sub: 'no excuses' }
+  ];
   // Preset library — plain data; a new challenge is one entry here.
   var CH_PRESETS = [
-    { id: 'hard75', name: '75 Hard', emoji: '🔥', days: 75, reset: 'hard', pass: 'all', water: 4000,
-      desc: 'The original. 6 strict rules, no misses — slip and you restart Day 1.',
-      rules: [{ t: 'task', key: 'workout1' }, { t: 'task', key: 'outdoor' }, { t: 'task', key: 'reading' },
-        { t: 'task', key: 'photo' }, { t: 'task', key: 'diet' }, { t: 'task', key: 'noAlcohol' }, { t: 'task', key: 'noCig' }, { t: 'water' }] },
-    { id: 'soft75', name: '75 Soft', emoji: '🌊', days: 75, reset: 'none', pass: 70, water: 4000,
+    { id: 'dailyLife', name: 'Daily Life', emoji: '🌤️', tier: 'base', days: 0, reset: 'none', pass: 'all', water: 3000,
+      desc: 'Not on a challenge — just the everyday basics. Move, hydrate, read. No streak to break.',
+      rules: [{ t: 'task', key: 'workout1' }, { t: 'task', key: 'reading' }, { t: 'water' }] },
+    { id: 'soft75', name: '75 Soft', emoji: '🌊', tier: 'easy', days: 75, reset: 'none', pass: 70, water: 4000,
       desc: 'Same habits, forgiving. Hit ~70% of the day and keep your streak — no restarts.',
       rules: [{ t: 'task', key: 'workout1' }, { t: 'task', key: 'outdoor' }, { t: 'task', key: 'reading' },
         { t: 'task', key: 'photo' }, { t: 'task', key: 'diet' }, { t: 'task', key: 'noAlcohol' }, { t: 'task', key: 'noCig' }, { t: 'water' }] },
-    { id: 'medium75', name: '75 Medium', emoji: '⚖️', days: 75, reset: 'none', pass: 'all', water: 4000,
+    { id: 'dopamine', name: 'Dopamine Detox', emoji: '📵', tier: 'easy', days: 14, reset: 'none', pass: 'all', water: 0,
+      desc: '14 days off cheap stimulation — no doomscroll, no junk, real focus and calm.',
+      rules: [{ t: 'metric', key: 'detoxMin', min: 180 }, { t: 'metric', key: 'meditMin', min: 10 }, { t: 'manual', id: 'nosocial', label: 'No social media', emoji: '🙅' }, { t: 'manual', id: 'nojunk', label: 'No junk food', emoji: '🍔' }] },
+    { id: 'medium75', name: '75 Medium', emoji: '⚖️', tier: 'medium', days: 75, reset: 'none', pass: 'all', water: 4000,
       desc: 'The sustainable middle. One workout, clean diet, reading, water — daily, no reset.',
       rules: [{ t: 'task', key: 'workout1' }, { t: 'task', key: 'diet' }, { t: 'task', key: 'noAlcohol' }, { t: 'task', key: 'reading' }, { t: 'water' }] },
-    { id: 'winterArc', name: 'Winter Arc', emoji: '❄️', days: 90, reset: 'none', pass: 'all', water: 3000,
+    { id: 'winterArc', name: 'Winter Arc', emoji: '❄️', tier: 'medium', days: 90, reset: 'none', pass: 'all', water: 3000,
       desc: '90 days of locking in — train, meditate, read, unplug. Consistency over perfection.',
       rules: [{ t: 'task', key: 'workout1' }, { t: 'metric', key: 'meditMin', min: 10 }, { t: 'metric', key: 'detoxMin', min: 60 }, { t: 'task', key: 'reading' }, { t: 'water' }] },
-    { id: 'monkMode', name: 'Monk Mode', emoji: '🧘', days: 30, reset: 'none', pass: 'all', water: 0,
+    { id: 'hard75', name: '75 Hard', emoji: '🔥', tier: 'hard', days: 75, reset: 'hard', pass: 'all', water: 4000,
+      desc: 'The original. 6 strict rules, no misses — slip and you restart Day 1.',
+      rules: [{ t: 'task', key: 'workout1' }, { t: 'task', key: 'outdoor' }, { t: 'task', key: 'reading' },
+        { t: 'task', key: 'photo' }, { t: 'task', key: 'diet' }, { t: 'task', key: 'noAlcohol' }, { t: 'task', key: 'noCig' }, { t: 'water' }] },
+    { id: 'monkMode', name: 'Monk Mode', emoji: '🧘', tier: 'hard', days: 30, reset: 'none', pass: 'all', water: 0,
       desc: '30 days of radical focus. Deep work, meditation, reading, training — distractions cut.',
-      rules: [{ t: 'metric', key: 'detoxMin', min: 120 }, { t: 'metric', key: 'meditMin', min: 10 }, { t: 'task', key: 'reading' }, { t: 'task', key: 'workout1' }, { t: 'manual', id: 'deepwork', label: 'Deep work 2h', emoji: '💼' }] },
-    { id: 'dopamine', name: 'Dopamine Detox', emoji: '📵', days: 14, reset: 'none', pass: 'all', water: 0,
-      desc: '14 days off cheap stimulation — no doomscroll, no junk, real focus and calm.',
-      rules: [{ t: 'metric', key: 'detoxMin', min: 180 }, { t: 'metric', key: 'meditMin', min: 10 }, { t: 'manual', id: 'nosocial', label: 'No social media', emoji: '🙅' }, { t: 'manual', id: 'nojunk', label: 'No junk food', emoji: '🍔' }] }
+      rules: [{ t: 'metric', key: 'detoxMin', min: 120 }, { t: 'metric', key: 'meditMin', min: 10 }, { t: 'task', key: 'reading' }, { t: 'task', key: 'workout1' }, { t: 'manual', id: 'deepwork', label: 'Deep work 2h', emoji: '💼' }] }
   ];
   function chPreset(id) { return CH_PRESETS.filter(function (p) { return p.id === id; })[0]; }
   // Deep-clone a preset (or def) into an active run stamped with a start date.
@@ -89,9 +100,14 @@
   // Legacy migration: synthesize from the old mode/softTarget so nothing changes
   // for existing users until they explicitly pick a challenge.
   function chMigratedDefault() {
-    var soft = (state.profile && state.profile.mode) === 'soft';
-    var def = chInstantiate(chPreset(soft ? 'soft75' : 'hard75'), state.user ? state.user.startDate : todayStr());
-    if (soft && state.profile && state.profile.softTarget) def.pass = Math.min(100, Math.max(20, Number(state.profile.softTarget) || 70));
+    var start = state.user ? state.user.startDate : todayStr();
+    // Legacy users had profile.mode set — keep their 75 Hard/Soft so nothing
+    // changes for them. Brand-new users start on the gentle Daily Life baseline
+    // instead of being dropped straight into 75 Hard.
+    if (!(state.profile && state.profile.mode)) return chInstantiate(chPreset('dailyLife'), start);
+    var soft = state.profile.mode === 'soft';
+    var def = chInstantiate(chPreset(soft ? 'soft75' : 'hard75'), start);
+    if (soft && state.profile.softTarget) def.pass = Math.min(100, Math.max(20, Number(state.profile.softTarget) || 70));
     def.water = 4000; // established app default; keeps migrated completion identical
     return def;
   }
@@ -6718,9 +6734,10 @@
       }
       return '<div class="ch-rule"><span class="ch-rule-name">' + v.emoji + ' ' + esc(v.title) + '</span><div class="hdots">' + dots + '</div></div>';
     }).join('');
+    var isBase = c.id === 'dailyLife';   // the everyday baseline, not a challenge
     var html =
       '<div class="card ch-active">' +
-        '<div class="ch-active-top"><div><span class="eyebrow">Active challenge</span>' +
+        '<div class="ch-active-top"><div><span class="eyebrow">' + (isBase ? 'Baseline' : 'Active challenge') + '</span>' +
           '<div class="ch-name">' + c.emoji + ' ' + esc(c.name) + '</div></div>' +
           ringMini(complete ? 100 : pctToday, 'var(--life-c)', 74, '<b>' + (complete ? '🏆' : 'D' + day) + '</b>') +
         '</div>' +
@@ -6729,20 +6746,27 @@
           ' · ' + (c.reset === 'hard' ? 'resets on miss' : 'no reset') + '</div>' +
         '<div class="ch-rules">' + rulesDots + '</div>' +
         (complete ? '<div class="ch-done">🏆 Challenge complete — ' + adh.pct + '% adherence. Legend.</div>' : '') +
-        '<div class="row-2" style="margin-top:12px"><button class="btn" id="ch-restart2">↻ Restart</button>' +
-          '<button class="btn danger" id="ch-end">End challenge</button></div>' +
+        (isBase
+          ? '<div class="muted tiny" style="margin-top:12px">You’re on the everyday baseline — no streak to break. Pick a difficulty below when you’re ready to level up.</div>'
+          : '<div class="row-2" style="margin-top:12px"><button class="btn" id="ch-restart2">↻ Restart</button>' +
+            '<button class="btn danger" id="ch-end">End challenge</button></div>') +
       '</div>' +
-      '<div class="lib-head" style="margin:18px 0 12px"><div><span class="eyebrow">Choose a challenge</span></div>' +
+      '<div class="lib-head" style="margin:18px 0 12px"><div><span class="eyebrow">Choose your mode</span></div>' +
         '<button class="btn link-btn" id="ch-custom-new" type="button" style="margin:0">＋ Custom ›</button></div>' +
-      '<div class="ch-gallery">' + CH_PRESETS.map(function (p) {
-        var active = p.id === c.id;
-        return '<button type="button" class="ch-card' + (active ? ' active' : '') + '" data-preset="' + p.id + '">' +
-          '<div class="ch-card-top"><span class="ch-emoji">' + p.emoji + '</span>' +
-            '<span class="ch-days">' + p.days + 'd · ' + (p.reset === 'hard' ? 'strict' : 'flex') + '</span></div>' +
-          '<div class="ch-card-name">' + esc(p.name) + '</div>' +
-          '<div class="ch-card-desc">' + esc(p.desc) + '</div>' +
-          (active ? '<div class="ch-card-active">● Active</div>' : '') + '</button>';
-      }).join('') + '</div>';
+      CH_TIERS.map(function (tier) {
+        var cards = CH_PRESETS.filter(function (p) { return (p.tier || 'medium') === tier.id; });
+        if (!cards.length) return '';
+        return '<div class="ch-tier"><div class="ch-tier-head t-' + tier.id + '"><b>' + tier.label + '</b><span class="muted tiny">' + tier.sub + '</span></div>' +
+          '<div class="ch-gallery">' + cards.map(function (p) {
+            var active = p.id === c.id;
+            return '<button type="button" class="ch-card' + (active ? ' active' : '') + '" data-preset="' + p.id + '">' +
+              '<div class="ch-card-top"><span class="ch-emoji">' + p.emoji + '</span>' +
+                '<span class="ch-days">' + (p.days ? p.days + 'd · ' + (p.reset === 'hard' ? 'strict' : 'flex') : 'ongoing') + '</span></div>' +
+              '<div class="ch-card-name">' + esc(p.name) + '</div>' +
+              '<div class="ch-card-desc">' + esc(p.desc) + '</div>' +
+              (active ? '<div class="ch-card-active">● Active</div>' : '') + '</button>';
+          }).join('') + '</div></div>';
+      }).join('');
     // History
     var hist = (c.history || []).slice().reverse();
     if (hist.length) {
@@ -6761,19 +6785,22 @@
         if (p.id === c.id) { toast('Already on ' + p.name); return; }
         if (!confirm('Start ' + p.emoji + ' ' + p.name + '? Your current run is saved to history and Day 1 begins today.')) return;
         chArchiveRun('switched');
-        setChallenge(chInstantiate(p, todayStr()), function () { toast(p.emoji + ' ' + p.name + ' — Day 1! Go.'); renderAll(); renderChallenges(); });
+        var startLabel = p.id === 'dailyLife' ? 'Back to Daily Life 🌤️' : p.emoji + ' ' + p.name + ' — Day 1! Go.';
+        setChallenge(chInstantiate(p, todayStr()), function () { toast(startLabel); renderAll(); renderChallenges(); });
       });
     });
     $('#ch-custom-new').addEventListener('click', function () { chStartBuilder(); });
-    $('#ch-restart2').addEventListener('click', function () {
+    var restartBtn = $('#ch-restart2');
+    if (restartBtn) restartBtn.addEventListener('click', function () {
       if (!confirm('Restart this challenge from Day 1? The current run is archived.')) return;
       chArchiveRun('reset');
       setChallenge(chInstantiate(c, todayStr()), function () { toast('Restarted — Day 1 🔁'); renderAll(); renderChallenges(); });
     });
-    $('#ch-end').addEventListener('click', function () {
-      if (!confirm('End this challenge and go to free mode (75 Hard)?')) return;
+    var endBtn = $('#ch-end');
+    if (endBtn) endBtn.addEventListener('click', function () {
+      if (!confirm('End this challenge and return to Daily Life (the everyday baseline)?')) return;
       chArchiveRun('ended');
-      setChallenge(chInstantiate(chPreset('hard75'), todayStr()), function () { toast('Challenge ended.'); renderAll(); renderChallenges(); });
+      setChallenge(chInstantiate(chPreset('dailyLife'), todayStr()), function () { toast('Challenge ended — back to Daily Life 🌤️'); renderAll(); renderChallenges(); });
     });
   }
 

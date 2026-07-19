@@ -1,5 +1,5 @@
 /* Simple offline cache for the app shell. */
-var CACHE = '75hard-v93';
+var CACHE = '75hard-v94';
 var ASSETS = [
   './',
   './index.html',
