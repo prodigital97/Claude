@@ -1,5 +1,5 @@
 /* Simple offline cache for the app shell. */
-var CACHE = 'atlas-v2-lab-v1';
+var CACHE = 'atlas-v2-lab-v2';
 var ASSETS = [
   './',
   './index.html',
