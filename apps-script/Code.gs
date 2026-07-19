@@ -53,6 +53,82 @@ var GEMINI_PRICES = {
   'gemini-flash-latest': { in: 0.30, out: 2.50 }
 };
 
+/* ---- Charge: a per-user monthly budget for the API-cost features ----------
+ * The ONLY place an API-cost cap can actually be enforced is here on the
+ * server, since this script holds the Gemini/FatSecret keys. Every user gets
+ * CHARGE_BASE free each month and earns more by completing days, capped at
+ * CHARGE_MAX. Spend is tracked per user per month in the ChargeLog sheet.
+ * Admins are exempt. Tune the numbers to your real API budget. */
+var CHARGE_SHEET = 'ChargeLog';
+var CHARGE_HEADERS = ['username', 'month', 'spent', 'updatedAt'];
+var CHARGE_BASE = 100;          // free Charge granted at the start of each month
+var CHARGE_EARN_PER_DAY = 6;    // Charge earned for each completed day this month
+var CHARGE_MAX = 300;           // ceiling on a single month's balance
+// Cost of each AI/quota action, keyed by its router action name.
+var CHARGE_ACTIONS = {
+  scanLabel: 5, foodSearch: 1, coachChat: 2, parseScreenTime: 8,
+  moneyParseScreenshot: 5, moneyParseMessage: 2, moneyCoachChat: 2
+};
+function isChargeExempt(username) { return ADMIN_USERS.indexOf(username) >= 0; }
+function chargeMonth() { return todayStr().slice(0, 7); }
+function chargeCompletedDaysThisMonth(username) {
+  var sheet = getSheet(LOGS_SHEET, LOG_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(LOG_HEADERS);
+  var month = chargeMonth(), n = 0;
+  for (var i = 1; i < values.length; i++) {
+    if (normalizeUsername(values[i][idx.username]) !== username) continue;
+    if (formatDate(values[i][idx.date]).slice(0, 7) !== month) continue;
+    if (toBool(values[i][idx.completed])) n++;
+  }
+  return n;
+}
+function chargeSpentRow(username) {
+  var sheet = getSheet(CHARGE_SHEET, CHARGE_HEADERS);
+  var values = sheet.getDataRange().getValues();
+  var idx = colIndex(CHARGE_HEADERS);
+  var month = chargeMonth();
+  for (var i = 1; i < values.length; i++) {
+    if (normalizeUsername(values[i][idx.username]) === username && String(values[i][idx.month]) === month) {
+      return { row: i + 1, spent: Number(values[i][idx.spent]) || 0 };
+    }
+  }
+  return { row: 0, spent: 0 };
+}
+function chargeStateFor(username) {
+  var exempt = isChargeExempt(username);
+  var earned = Math.min(CHARGE_MAX - CHARGE_BASE, chargeCompletedDaysThisMonth(username) * CHARGE_EARN_PER_DAY);
+  if (earned < 0) earned = 0;
+  var spent = chargeSpentRow(username).spent;
+  var cap = Math.min(CHARGE_MAX, CHARGE_BASE + earned);
+  return {
+    month: chargeMonth(), base: CHARGE_BASE, earned: earned, spent: spent, cap: cap,
+    balance: exempt ? 9999 : Math.max(0, cap - spent), max: CHARGE_MAX,
+    earnPerDay: CHARGE_EARN_PER_DAY, costs: CHARGE_ACTIONS, unlimited: exempt
+  };
+}
+function chargeGate(username, cost) {
+  if (isChargeExempt(username)) return;
+  var st = chargeStateFor(username);
+  if (st.balance < cost) {
+    throw new Error('CHARGE_EMPTY|You’re out of Charge. Complete today’s tasks to recharge (+' +
+      CHARGE_EARN_PER_DAY + ' each), or it refills on the 1st.');
+  }
+}
+function chargeSpend(username, cost) {
+  if (isChargeExempt(username)) return;
+  var sheet = getSheet(CHARGE_SHEET, CHARGE_HEADERS);
+  var r = chargeSpentRow(username);
+  var idx = colIndex(CHARGE_HEADERS);
+  if (r.row) {
+    sheet.getRange(r.row, idx.spent + 1).setValue(r.spent + cost);
+    sheet.getRange(r.row, idx.updatedAt + 1).setValue(new Date().toISOString());
+  } else {
+    sheet.appendRow([username, chargeMonth(), cost, new Date().toISOString()]);
+  }
+}
+function handleGetCharge(body) { var u = authUser(body); return chargeStateFor(u.username); }
+
 /* ----------------------------------------------------------------------- *
  *  HTTP entry points
  * ----------------------------------------------------------------------- */
@@ -70,6 +146,13 @@ function doPost(e) {
     }
     var action = body.action || '';
     var data;
+
+    // Charge gate — the server-side API-cost cap. For any metered action we
+    // check the caller has enough Charge BEFORE running it (so an empty user
+    // never triggers a paid API call), then deduct only after it succeeds.
+    var chargeCost = CHARGE_ACTIONS[action];
+    var chargeUser = null;
+    if (chargeCost) { chargeUser = authUser(body).username; chargeGate(chargeUser, chargeCost); }
 
     switch (action) {
       case 'register':   data = handleRegister(body);  break;
@@ -133,10 +216,17 @@ function doPost(e) {
       case 'getFasts':   data = handleGetFasts(body);   break;
       case 'updateFast': data = handleUpdateFast(body); break;
       case 'deleteFast': data = handleDeleteFast(body); break;
+      case 'getCharge':  data = handleGetCharge(body); break;
       default:
         return jsonOutput({ ok: false, error: 'Unknown action: ' + action });
     }
-    return jsonOutput({ ok: true, data: data });
+    // Deduct Charge only now that the metered action has succeeded, and return
+    // the fresh balance in the envelope so the client can update its battery.
+    var chargeState = null;
+    if (chargeCost && chargeUser) {
+      try { chargeSpend(chargeUser, chargeCost); chargeState = chargeStateFor(chargeUser); } catch (e) {}
+    }
+    return jsonOutput({ ok: true, data: data, charge: chargeState });
   } catch (err) {
     return jsonOutput({ ok: false, error: String(err && err.message ? err.message : err) });
   }

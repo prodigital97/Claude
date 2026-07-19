@@ -282,17 +282,24 @@
     payload = payload || {};
     payload.action = action;
     if (state.token) { payload.token = state.token; payload.username = state.username; }
-    if (OFFLINE) return Promise.resolve(offlineApi(action, payload));
-
-    return fetch(CFG.API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight
-      body: JSON.stringify(payload)
-    }).then(function (r) { return r.json(); })
-      .then(function (res) {
-        if (!res.ok) throw new Error(res.error || 'Request failed');
-        return res.data;
-      });
+    // Wrap the offline shim in a real promise so a thrown error (e.g. an
+    // out-of-Charge gate) rejects like the network path instead of throwing sync.
+    var p = OFFLINE
+      ? new Promise(function (resolve) { resolve(offlineApi(action, payload)); })
+      : fetch(CFG.API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight
+          body: JSON.stringify(payload)
+        }).then(function (r) { return r.json(); })
+          .then(function (res) {
+            if (!res.ok) throw new Error(res.error || 'Request failed');
+            if (res.charge) updateCharge(res.charge);   // battery echoed back on metered calls
+            return res.data;
+          });
+    return p.catch(function (err) {
+      if (String(err && err.message).indexOf('CHARGE_EMPTY') === 0) handleChargeEmpty(String(err.message));
+      throw err;
+    });
   }
 
   /* ---------------- Offline backend (localStorage) ---------------- */
@@ -346,6 +353,26 @@
       if (d.users[nn]) throw new Error('That username is already taken.');
       delete d.users[me.username]; me.username = nn; d.users[nn] = me; saveDb(d);
       return { token: me.token, user: pub(me) };
+    }
+
+    // ---- Charge (offline demo): mirrors the server-side budget ----
+    var OFF_COST = { scanLabel: 5, foodSearch: 1, coachChat: 2, parseScreenTime: 8, moneyParseScreenshot: 5, moneyParseMessage: 2, moneyCoachChat: 2 };
+    function offChargeState() {
+      var month = todayStr().slice(0, 7);
+      var completed = userLogs(me.username).filter(function (l) { return String(l.date).slice(0, 7) === month && l.completed; }).length;
+      var earned = Math.min(200, completed * 6);
+      d.charge = d.charge || {};
+      var spent = Number(d.charge[me.username + '|' + month]) || 0;
+      var cap = Math.min(300, 100 + earned);
+      return { month: month, base: 100, earned: earned, spent: spent, cap: cap, balance: Math.max(0, cap - spent), max: 300, earnPerDay: 6, costs: OFF_COST, unlimited: false };
+    }
+    if (action === 'getCharge') return offChargeState();
+    if (OFF_COST[action]) {
+      var cst = OFF_COST[action], stq = offChargeState();
+      if (stq.balance < cst) throw new Error('CHARGE_EMPTY|You’re out of Charge. Complete today’s tasks to recharge (+6 each), or it refills on the 1st.');
+      var ckey = me.username + '|' + stq.month;
+      d.charge = d.charge || {}; d.charge[ckey] = (Number(d.charge[ckey]) || 0) + cst; saveDb(d);
+      setTimeout(function () { updateCharge(offChargeState()); }, 0);
     }
 
     // ---- Money Manager (offline demo mode) ----
@@ -714,6 +741,7 @@
     renderAll();
     switchView('home');
     prefetchStats();   // warm Stats averages in the background
+    refreshCharge();   // load the AI-cost battery
   }
 
   function loadCustomFoods() {
@@ -1938,10 +1966,14 @@
 
   /* ---------------- Saving ---------------- */
   function queueSave() {
+    var wasComplete = !!state.today.completed;
     state.today.completed = goalMet(state.today);
     upsertLocal(state.today);
     clearTimeout(state.saveTimer);
-    state.saveTimer = setTimeout(function () { pushToday(false); }, 700);
+    state.saveTimer = setTimeout(function () {
+      pushToday(false);
+      if (state.today.completed && !wasComplete) refreshCharge();   // a newly-completed day earns Charge
+    }, 700);
   }
   function upsertLocal(day) {
     var i = state.logs.findIndex(function (l) { return l.date === day.date; });
@@ -2370,6 +2402,57 @@
     if (lastXpLevel !== null && lv > lastXpLevel) fireLevelUp(lv);
     lastXpLevel = lv;
     if (!$('#view-home').classList.contains('hidden')) renderHome();
+  }
+
+  /* ================= Charge — the AI-cost battery =================
+     A monthly budget for the API-cost features (food scans, searches, coach
+     chat). The real cap is enforced server-side; this is the battery UI +
+     out-of-Charge handling. Charge refills on the 1st and grows as you complete
+     days, so consistent trackers unlock more AI. */
+  var CHARGE_LABELS = { scanLabel: 'Food scan', foodSearch: 'Food search', coachChat: 'Coach message', parseScreenTime: 'Screen-time scan', moneyParseScreenshot: 'Money scan', moneyParseMessage: 'Money parse', moneyCoachChat: 'Money coach' };
+  function chargeCostOf(action) { return (state.charge && state.charge.costs && state.charge.costs[action]) || 0; }
+  function updateCharge(c) {
+    if (!c) return;
+    state.charge = c;
+    if (!$('#view-home').classList.contains('hidden')) renderChargeCard();
+  }
+  function refreshCharge() {
+    if (!state.token && !OFFLINE) return;
+    api('getCharge', {}).then(updateCharge).catch(function () {});
+  }
+  function chargePct() { var c = state.charge; if (!c || !c.cap) return 0; return Math.max(0, Math.min(100, Math.round(c.balance / c.cap * 100))); }
+  function chargeColor(pct) { return pct <= 15 ? '#ef4444' : pct <= 40 ? '#f59e0b' : '#22c55e'; }
+  // A compact battery pill — reused near AI actions.
+  function chargeChipHtml() {
+    var c = state.charge; if (!c) return '';
+    if (c.unlimited) return '<span class="charge-chip unlimited">🔋 ∞</span>';
+    var pct = chargePct();
+    return '<span class="charge-chip" style="--cc:' + chargeColor(pct) + '"><span class="cc-batt"><span style="width:' + pct + '%"></span></span>' + c.balance + '</span>';
+  }
+  function renderChargeCard() {
+    var box = $('#home-charge'); if (!box) return;
+    var c = state.charge;
+    if (!c) { box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    if (c.unlimited) {
+      box.innerHTML = '<div class="card charge-card"><div class="ch-top"><span class="eyebrow">🔋 Charge</span><span class="ch-bal mono">Unlimited</span></div>' +
+        '<div class="muted tiny">Admin account — AI features aren’t metered for you.</div></div>';
+      return;
+    }
+    var pct = chargePct(), col = chargeColor(pct);
+    box.innerHTML =
+      '<div class="card charge-card"><div class="ch-top">' +
+        '<span class="eyebrow">🔋 Charge · powers AI</span>' +
+        '<span class="ch-bal mono">' + c.balance + ' / ' + c.cap + '</span></div>' +
+        '<div class="ch-batt"><span style="width:' + pct + '%;background:' + col + '"></span></div>' +
+        '<div class="muted tiny ch-sub">Refills on the 1st · +' + c.earnPerDay + ' each day you complete' +
+          (c.balance <= 15 ? ' · <b style="color:' + col + '">running low</b>' : '') + '</div>' +
+      '</div>';
+  }
+  function handleChargeEmpty(msg) {
+    var text = msg.indexOf('|') >= 0 ? msg.split('|')[1] : 'You’re out of Charge for this month.';
+    toast('🔋 ' + text);
+    refreshCharge();
   }
 
   // Month aggregates from the day logs (money is added separately, async).
@@ -4733,6 +4816,7 @@
         '<div class="lv-sub muted tiny">' + li.inLevel + ' / ' + li.span + ' XP to LV ' + (li.level + 1) + '</div>';
       if (lastXpLevel === null) lastXpLevel = li.level;   // seed without firing a burst
     }
+    renderChargeCard();
 
     // Top rings show this MONTH's average score per pillar (same source as the
     // Life Score card below), so they read as a running monthly grade — not just

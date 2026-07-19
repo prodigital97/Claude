@@ -1329,3 +1329,16 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .bal-bar > span { display: block; height: 100%; border-radius: 99px; transition: width .5s ease; }
 .bal-val { width: 30px; flex: none; text-align: right; font-size: 12px; color: var(--muted); }
 .bal-msg { font-size: 13px; line-height: 1.45; margin-top: 8px; }
+
+/* ================= Charge — AI-cost battery ================= */
+.charge-card { border-left: 3px solid #22c55e; }
+.ch-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ch-bal { font-size: 13px; color: var(--muted); }
+.ch-batt { position: relative; height: 12px; border-radius: 99px; background: var(--bg-soft); overflow: hidden; border: 1px solid var(--line); }
+.ch-batt > span { position: absolute; inset: 0 auto 0 0; border-radius: 99px; transition: width .5s ease, background .3s; }
+.ch-sub { margin-top: 8px; }
+/* Compact battery pill for AI action bars */
+.charge-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--muted); }
+.charge-chip .cc-batt { position: relative; width: 22px; height: 10px; border-radius: 3px; border: 1px solid var(--cc, #22c55e); overflow: hidden; }
+.charge-chip .cc-batt > span { position: absolute; inset: 0 auto 0 0; background: var(--cc, #22c55e); }
+.charge-chip.unlimited { color: #22c55e; }
