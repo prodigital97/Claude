@@ -260,15 +260,13 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 /* Water task */
 .water-task { display: block; cursor: default; }
 .water-head { display: flex; align-items: center; gap: 14px; }
-.glasses { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
-.glass {
-  font-size: 30px; line-height: 1; cursor: pointer; user-select: none;
-  filter: grayscale(1); opacity: .35; transition: opacity .15s, transform .1s, filter .15s;
-}
-.glass.full { filter: none; opacity: 1; }
-.glass:active { transform: scale(.82); }
-.water-amount { font-size: 12px; color: var(--muted); margin-top: 10px; text-align: center; }
-.water-amount b { color: #6cc0ff; }
+
+/* Today's compact water widget: quick-add buttons + a small jar on the right */
+.water-task-compact { display: flex; align-items: center; gap: 14px; cursor: default; }
+.wtc-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.wtc-quick .btn { padding: 8px 4px; font-size: 12px; min-width: 0; }
+.wtc-jar { flex: none; }
+.wtc-jar .jar-mini { width: 62px; height: 82px; }
 
 /* mood meter */
 .mood-buttons { display: flex; gap: 6px; margin-bottom: 6px; }

@@ -991,7 +991,7 @@
     var list = $('#tasklist');
     list.innerHTML = '';
     chRules().forEach(function (rule) {
-      if (rule.t === 'water') { list.appendChild(renderWater(d)); return; }
+      if (rule.t === 'water') { list.appendChild(renderWaterCompact(d)); return; }
       var v = ruleView(rule);
       var done = ruleMet(d, rule);
       var row = el('div', 'task' + (done ? ' done' : '') + (v.metric ? ' task-metric' : ''));
@@ -1945,35 +1945,36 @@
     return (ml / 1000).toFixed(1).replace(/\.0$/, '');
   }
 
-  function renderWater(d) {
-    var wrap = el('div', 'task water-task');
-    var ml = Number(d.waterMl) || 0;
+  // Compact water widget for Today — quick-add buttons + a small jar on the
+  // right that fills as you tap (mirrors the big Water-app jar, no glasses).
+  var lastJarPctMini = -1;
+  function renderWaterCompact(d) {
+    var ml = Number(d.waterMl) || 0, pct = pctOf(ml, WATER_GOAL);
     var goalMet = ml >= WATER_GOAL;
+    var prev = lastJarPctMini < 0 ? pct : lastJarPctMini;
+    var wrap = el('div', 'task water-task-compact' + (goalMet ? ' done' : ''));
     wrap.innerHTML =
-      '<div class="water-head">' +
-        '<div class="check"' + (goalMet ? ' style="background:#4aa8ff;border-color:#4aa8ff;color:#04223f"' : '') + '>✓</div>' +
-        '<div class="t-emoji">💧</div>' +
-        '<div class="t-body"><div class="t-title">Drink ' + litres(WATER_GOAL) + ' L of water</div>' +
-        '<div class="t-sub">Tap a glass each time you drink (' + GLASS + ' ml each)</div></div>' +
-      '</div>';
-    var glasses = el('div', 'glasses');
-    var filled = Math.round(ml / GLASS);
-    for (var i = 0; i < GLASS_COUNT; i++) {
-      var g = el('div', 'glass' + (i < filled ? ' full' : ''), '🥛');
-      (function (idx) {
-        g.addEventListener('click', function () {
-          // tapping a glass sets the level to that glass (toggle last one off)
-          var newFilled = (idx + 1 === filled) ? idx : idx + 1;
-          d.waterMl = newFilled * GLASS;
-          afterWaterChange(d);
-        });
-      })(i);
-      glasses.appendChild(g);
-    }
-    wrap.appendChild(glasses);
-    var amt = el('div', 'water-amount');
-    amt.innerHTML = '<b>' + litres(ml) + ' L</b> / ' + litres(WATER_GOAL) + ' L';
-    wrap.appendChild(amt);
+      '<div class="wtc-side">' +
+        '<div class="water-head">' +
+          '<div class="check"' + (goalMet ? ' style="background:#4aa8ff;border-color:#4aa8ff;color:#04223f"' : '') + '>✓</div>' +
+          '<div class="t-emoji">💧</div>' +
+          '<div class="t-body"><div class="t-title">Drink ' + litres(WATER_GOAL) + ' L of water</div>' +
+          '<div class="t-sub"><b>' + litres(ml) + ' L</b> / ' + litres(WATER_GOAL) + ' L · ' + pct + '%</div></div>' +
+        '</div>' +
+        '<div class="water-quick wtc-quick">' +
+          '<button class="btn" data-w="250">+250 ml</button>' +
+          '<button class="btn" data-w="500">+500 ml</button>' +
+          '<button class="btn" data-w="1000">+1 L</button>' +
+          '<button class="btn danger" data-w="-250">−250</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="wtc-jar">' + jarSvgHtml(jarYFor(prev, 90), 'jar-mini', 'jarclip-mini') + '</div>';
+    requestAnimationFrame(function () { requestAnimationFrame(function () {
+      var w = wrap.querySelector('.jar-water');
+      if (w) w.style.transform = 'translateY(' + jarYFor(pct, 90) + 'px)';
+    }); });
+    lastJarPctMini = pct;
+    bindWaterQuick(wrap, d);
     return wrap;
   }
 
@@ -4977,6 +4978,39 @@
     if (ml > 0) return 'Good start — stay on it.';
     return 'First sip of the day?';
   }
+  // Shared jar SVG markup — used by the big Water-app jar and the small Today
+  // jar. clipId must be unique per instance since both can be in the DOM at
+  // once (other views stay mounted, just hidden).
+  function jarYFor(p, h) { return Math.round(h * (1 - p / 100)); } // interior height -> translateY
+  function jarSvgHtml(startY, extraClass, clipId) {
+    return '<svg viewBox="0 0 150 200" class="jar' + (extraClass ? ' ' + extraClass : '') + '" aria-hidden="true">' +
+      '<defs><clipPath id="' + clipId + '"><rect x="25" y="24" width="100" height="150" rx="16"/></clipPath></defs>' +
+      '<rect class="jar-lid" x="43" y="8" width="64" height="12" rx="6"/>' +
+      '<rect class="jar-glass" x="25" y="24" width="100" height="150" rx="16"/>' +
+      '<g clip-path="url(#' + clipId + ')"><g class="jar-water" style="transform:translateY(' + startY + 'px)">' +
+        '<path class="wave w2" d="M0 30 Q 15 22, 30 30 T 60 30 T 90 30 T 120 30 T 150 30 T 180 30 T 210 30 T 240 30 T 270 30 T 300 30 V 240 H 0 Z"/>' +
+        '<path class="wave w1" d="M0 32 Q 12 25, 24 32 T 48 32 T 72 32 T 96 32 T 120 32 T 144 32 T 168 32 T 192 32 T 216 32 T 240 32 T 264 32 T 288 32 V 240 H 0 Z"/>' +
+        '<circle class="bub b1" cx="55" cy="150" r="3"/>' +
+        '<circle class="bub b2" cx="82" cy="165" r="2.4"/>' +
+        '<circle class="bub b3" cx="102" cy="145" r="2"/>' +
+      '</g></g>' +
+      '<rect class="jar-glass-line" x="25" y="24" width="100" height="150" rx="16"/>' +
+      '<line class="jar-tick" x1="112" y1="61" x2="122" y2="61"/>' +
+      '<line class="jar-tick" x1="112" y1="99" x2="122" y2="99"/>' +
+      '<line class="jar-tick" x1="112" y1="136" x2="122" y2="136"/>' +
+    '</svg>';
+  }
+  function waterQuickAdd(d, v) {
+    var was = Number(d.waterMl) || 0;
+    d.waterMl = Math.max(0, Math.min(WATER_GOAL * 3, was + v));
+    if (was < WATER_GOAL && d.waterMl >= WATER_GOAL) toast('4 L done — goal smashed! 💧👑');
+    afterWaterChange(d);
+  }
+  function bindWaterQuick(scope, d) {
+    scope.querySelectorAll('[data-w]').forEach(function (b) {
+      b.addEventListener('click', function () { waterQuickAdd(d, Number(b.getAttribute('data-w'))); });
+    });
+  }
   function renderWaterApp() {
     var box = $('#water-app'); if (!box) return;
     var rs = rangeState('water');
@@ -4984,7 +5018,6 @@
     var d = appDay();
     var ml = Number(d.waterMl) || 0, pct = pctOf(ml, WATER_GOAL);
     var prev = lastJarPct < 0 ? pct : lastJarPct;
-    var yFor = function (p) { return Math.round(150 * (1 - p / 100)); }; // interior height
     box.innerHTML = rangeBarHtml('water') + dayBarHtml();
     bindRangeBar(box, 'water', renderWaterApp);
     bindDayBar(box, renderWaterApp);
@@ -4994,22 +5027,7 @@
     var card = el('div', 'card water-card' + (pct >= 100 ? ' full' : '') + (pct >= 20 ? ' has-water' : '') + (dry ? ' jar-dry' : ''));
     card.innerHTML =
       '<div class="jar-wrap">' +
-        '<svg viewBox="0 0 150 200" class="jar" aria-hidden="true">' +
-          '<defs><clipPath id="jarclip"><rect x="25" y="24" width="100" height="150" rx="16"/></clipPath></defs>' +
-          '<rect class="jar-lid" x="43" y="8" width="64" height="12" rx="6"/>' +
-          '<rect class="jar-glass" x="25" y="24" width="100" height="150" rx="16"/>' +
-          '<g clip-path="url(#jarclip)"><g class="jar-water" style="transform:translateY(' + yFor(prev) + 'px)">' +
-            '<path class="wave w2" d="M0 30 Q 15 22, 30 30 T 60 30 T 90 30 T 120 30 T 150 30 T 180 30 T 210 30 T 240 30 T 270 30 T 300 30 V 240 H 0 Z"/>' +
-            '<path class="wave w1" d="M0 32 Q 12 25, 24 32 T 48 32 T 72 32 T 96 32 T 120 32 T 144 32 T 168 32 T 192 32 T 216 32 T 240 32 T 264 32 T 288 32 V 240 H 0 Z"/>' +
-            '<circle class="bub b1" cx="55" cy="150" r="3"/>' +
-            '<circle class="bub b2" cx="82" cy="165" r="2.4"/>' +
-            '<circle class="bub b3" cx="102" cy="145" r="2"/>' +
-          '</g></g>' +
-          '<rect class="jar-glass-line" x="25" y="24" width="100" height="150" rx="16"/>' +
-          '<line class="jar-tick" x1="112" y1="61" x2="122" y2="61"/>' +
-          '<line class="jar-tick" x1="112" y1="99" x2="122" y2="99"/>' +
-          '<line class="jar-tick" x1="112" y1="136" x2="122" y2="136"/>' +
-        '</svg>' +
+        jarSvgHtml(jarYFor(prev, 150), '', 'jarclip-main') +
         '<div class="jar-side">' +
           '<div class="water-big"><b>' + litres(ml) + '</b> <span class="muted">/ ' + litres(WATER_GOAL) + ' L</span></div>' +
           '<div class="jar-pct mono">' + pct + '%</div>' +
@@ -5023,22 +5041,13 @@
         '<button class="btn danger" data-w="-250">−250</button>' +
       '</div>';
     box.appendChild(card);
-    box.appendChild(renderWater(d));
     // Two rAFs so the browser paints the previous level first, then glides.
     requestAnimationFrame(function () { requestAnimationFrame(function () {
       var w = card.querySelector('.jar-water');
-      if (w) w.style.transform = 'translateY(' + yFor(pct) + 'px)';
+      if (w) w.style.transform = 'translateY(' + jarYFor(pct, 150) + 'px)';
     }); });
     lastJarPct = pct;
-    card.querySelectorAll('[data-w]').forEach(function (b) {
-      b.addEventListener('click', function () {
-        var v = Number(b.getAttribute('data-w'));
-        var was = Number(d.waterMl) || 0;
-        d.waterMl = Math.max(0, Math.min(WATER_GOAL * 3, was + v));
-        if (was < WATER_GOAL && d.waterMl >= WATER_GOAL) toast('4 L done — goal smashed! 💧👑');
-        afterWaterChange(d);
-      });
-    });
+    bindWaterQuick(card, d);
   }
   function renderWaterRange(box, rs) {
     var r = rangeSpan(rs.mode, rs.anchor);
