@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1600" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sep" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3c2e1d"/>
+      <stop offset="0.5" stop-color="#2c2116"/>
+      <stop offset="1" stop-color="#1f1810"/>
+    </linearGradient>
+    <radialGradient id="vig" cx="0.5" cy="0.38" r="0.85">
+      <stop offset="0.5" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.55"/>
+    </radialGradient>
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.06"/></feComponentTransfer>
+    </filter>
+    <pattern id="lattice" width="84" height="84" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <path d="M42 0 V84 M0 42 H84" stroke="#c8a86a" stroke-opacity="0.05" stroke-width="1.4"/>
+      <circle cx="42" cy="42" r="2.2" fill="#c8a86a" fill-opacity="0.07"/>
+    </pattern>
+  </defs>
+
+  <rect width="1000" height="1600" fill="url(#sep)"/>
+  <rect width="1000" height="1600" fill="url(#lattice)"/>
+  <rect width="1000" height="1600" filter="url(#grain)" opacity="0.55"/>
+  <rect width="1000" height="1600" fill="url(#vig)"/>
+
+  <!-- gold corner flourishes -->
+  <g stroke="#c8a86a" stroke-opacity="0.28" fill="none" stroke-width="3" stroke-linecap="round">
+    <path d="M70 150 C 140 70, 250 70, 300 150 C 250 110, 165 116, 130 175"/>
+    <path d="M930 150 C 860 70, 750 70, 700 150 C 750 110, 835 116, 870 175"/>
+    <path d="M70 1450 C 140 1530, 250 1530, 300 1450 C 250 1490, 165 1484, 130 1425"/>
+    <path d="M930 1450 C 860 1530, 750 1530, 700 1450 C 750 1490, 835 1484, 870 1425"/>
+  </g>
+  <!-- faint central laurel ring -->
+  <circle cx="500" cy="760" r="250" fill="none" stroke="#c8a86a" stroke-opacity="0.06" stroke-width="2"/>
+  <circle cx="500" cy="760" r="210" fill="none" stroke="#c8a86a" stroke-opacity="0.05" stroke-width="1.5"/>
+</svg>

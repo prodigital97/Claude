@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0b0e" />
+  <meta name="description" content="ATLAS — your life as apps. Challenge, diet, money, habits & more." />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="ATLAS" />
+  <title>ATLAS Lab (v2)</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/icon-180.png" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <!-- Sandbox marker — this is the experimental v2 build, not the live app. -->
+  <div id="v2-lab-badge" style="position:fixed;top:0;left:0;right:0;z-index:9999;pointer-events:none;text-align:center;font:600 10px/1.6 system-ui,sans-serif;letter-spacing:.14em;color:#0a0b0e;background:linear-gradient(90deg,#ff7a45,#ffb347);text-transform:uppercase;">v2 · sandbox — experimental build</div>
+  <!-- Splash / loading -->
+  <div id="splash" class="splash">
+    <div class="splash-logo">A</div>
+    <div class="splash-text">ATLAS</div>
+  </div>
+
+  <!-- ===================== AUTH ===================== -->
+  <section id="auth-screen" class="screen auth hidden">
+    <div class="auth-card">
+      <div class="brand">
+        <div class="brand-badge">A</div>
+        <h1>ATLAS</h1>
+        <p class="muted">Your life, as apps. Challenge, diet, money &amp; more.</p>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-authtab="login">Log in</button>
+        <button class="tab" data-authtab="register">Sign up</button>
+      </div>
+
+      <form id="login-form" class="auth-form">
+        <label>Username
+          <input name="username" autocomplete="username" autocapitalize="none" required />
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="current-password" required />
+        </label>
+        <button class="btn primary block" type="submit">Log in</button>
+        <p class="muted tiny center" style="margin-top:10px">Forgot your password? Ask the admin to reset it for you.</p>
+      </form>
+
+      <form id="register-form" class="auth-form hidden">
+        <label>Display name
+          <input name="displayName" autocomplete="name" placeholder="e.g. Pronoy" required />
+        </label>
+        <label>Username
+          <input name="username" autocomplete="username" autocapitalize="none" placeholder="lowercase, no spaces" required />
+        </label>
+        <label>Email <span class="muted tiny">(optional)</span>
+          <input name="email" type="email" autocomplete="email" autocapitalize="none" placeholder="you@example.com" />
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="new-password" required />
+        </label>
+        <label>Start date
+          <input name="startDate" type="date" required />
+        </label>
+        <button class="btn primary block" type="submit">Start my 75 Hard</button>
+      </form>
+
+      <p id="auth-msg" class="form-msg"></p>
+      <p class="muted tiny offline-note hidden">⚠️ Backend not configured — running in local demo mode.</p>
+    </div>
+  </section>
+
+  <!-- ===================== APP ===================== -->
+  <section id="app-screen" class="screen app hidden">
+    <header class="app-header">
+      <div>
+        <div class="hello muted">Let's go, <span id="hdr-name">athlete</span></div>
+        <div class="day-pill">Day <span id="hdr-day">1</span> <span class="muted">/ 75</span></div>
+      </div>
+      <button id="sync-state" class="icon-btn" title="Refresh">⟳</button>
+    </header>
+
+    <main id="views">
+      <!-- HOME (ATLAS 2b) -->
+      <div id="view-home" class="view">
+        <div class="atlas-hero">
+          <div class="atlas-brand">
+            <span class="eyebrow">Pocket OS</span>
+            <div class="atlas-word">ATLAS</div>
+          </div>
+          <div id="home-daychip" class="daychip mono"></div>
+        </div>
+        <div id="home-rings-cap" class="rings-cap eyebrow"></div>
+        <div id="home-rings" class="pillar-rings"></div>
+        <div id="home-brief" class="brief-card"></div>
+        <div id="home-spotlight" class="spotlight-card"></div>
+        <button id="home-score" class="card month-report home-score" type="button"></button>
+        <div id="home-tiles" class="home-tiles"></div>
+        <div class="home-actions">
+          <button class="qa" data-qa="water">💧 +250 ml</button>
+          <button class="qa" data-qa="scan">📷 Scan food</button>
+          <button class="qa" data-qa="coach">✨ Ask Coach</button>
+        </div>
+
+        <div class="home-journey">
+          <div class="lib-head" style="margin:20px 0 12px">
+            <div><span class="eyebrow">Journey</span><h2 class="view-title" style="margin:2px 0 0">This month</h2></div>
+            <button id="home-journey-open" class="btn link-btn" type="button">Open ›</button>
+          </div>
+          <div id="home-calendar" class="calendar-grid month"></div>
+        </div>
+      </div>
+
+      <!-- APP LIBRARY (ATLAS 2a) -->
+      <div id="view-library" class="view hidden">
+        <div class="lib-head">
+          <div><span class="eyebrow">Library</span><h2 class="view-title" style="margin:2px 0 0">Your apps</h2></div>
+          <span id="lib-count" class="mono tiny muted"></span>
+        </div>
+        <div id="library-groups"></div>
+      </div>
+
+      <!-- TODAY -->
+      <div id="view-today" class="view hidden">
+        <div id="today-daybar"></div>
+        <div id="today-banner"></div>
+        <div class="hero card">
+          <div class="hero-ring">
+            <svg viewBox="0 0 120 120" class="ring">
+              <circle class="ring-bg" cx="60" cy="60" r="52"></circle>
+              <circle id="ring-fg" class="ring-fg" cx="60" cy="60" r="52"></circle>
+            </svg>
+            <div class="ring-center">
+              <div id="ring-pct" class="ring-pct">0%</div>
+              <div class="muted tiny" id="ring-center-label">today</div>
+            </div>
+          </div>
+          <div class="hero-meta">
+            <div id="today-date" class="today-date">Today</div>
+            <div id="today-status" class="status-chip pending">In progress</div>
+            <div class="muted tiny" id="streak-line">🔥 0 day streak</div>
+          </div>
+        </div>
+
+        <div id="tasklist" class="tasklist"></div>
+
+        <button id="save-day" class="btn primary block save-day">Save today</button>
+        <p class="muted tiny center">Your progress saves automatically as you tap. The button just forces a sync.</p>
+      </div>
+
+      <!-- WATER (mini-app, shared with Challenge) -->
+      <div id="view-water" class="view hidden">
+        <h2 class="view-title">Water</h2>
+        <div id="water-app"></div>
+      </div>
+
+      <!-- FAST (mini-app) -->
+      <div id="view-fast" class="view hidden">
+        <h2 class="view-title">Fasting</h2>
+        <div id="fasting"></div>
+      </div>
+
+      <!-- MOOD (mini-app, Body) -->
+      <div id="view-mood" class="view hidden">
+        <h2 class="view-title">Mood</h2>
+        <div id="mood-daybar"></div>
+        <p class="muted tiny" style="margin:0 2px 12px">How are you — across all three?</p>
+        <div id="mood-dims"></div>
+        <div id="mood-range"></div>
+        <div class="card"><h3>Mood calendar</h3><p class="muted tiny" style="margin:0 0 8px">Tap a day to view or edit it.</p><div id="mood-cal"></div><div id="mood-legend" class="gt-legend"></div></div>
+      </div>
+
+      <!-- GUT (mini-app, Body) -->
+      <div id="view-gut" class="view hidden">
+        <h2 class="view-title">Gut health</h2>
+        <div id="gut-daybar"></div>
+        <p class="muted tiny" style="margin:0 2px 12px">How did your gut do?</p>
+        <div id="gut-buttons" class="mood-buttons wrap"></div>
+        <div id="gut-range"></div>
+        <div class="card"><h3>Gut calendar</h3><p class="muted tiny" style="margin:0 0 8px">Tap a day to view or edit it.</p><div id="gut-cal"></div><div id="gut-legend" class="gt-legend"></div><p id="gut-counts" class="muted tiny" style="margin:10px 0 0"></p></div>
+      </div>
+
+      <!-- HABITS (mini-app) -->
+      <div id="view-habits" class="view hidden">
+        <h2 class="view-title">Habits</h2>
+        <div id="habits-daybar"></div>
+        <p class="muted tiny" style="margin:0 2px 12px">Daily habits you want to keep — not part of 75 Hard.</p>
+        <div id="extra-tasks" class="tasklist"></div>
+        <div class="add-habit">
+          <input id="new-habit" placeholder="Add a habit (e.g. Meditate 10 min)" maxlength="40" />
+          <button id="add-habit-btn" class="btn">Add</button>
+        </div>
+      </div>
+
+      <!-- WORK (mini-app) -->
+      <div id="view-work" class="view hidden">
+        <h2 class="view-title">Work log</h2>
+        <div id="work-daybar"></div>
+        <p class="muted tiny" style="margin:0 2px 12px">Time &amp; tasks per business.</p>
+        <div id="biz-list"></div>
+      </div>
+
+      <!-- JOURNAL (mini-app, Mind) -->
+      <div id="view-journal" class="view hidden">
+        <h2 class="view-title">Journal</h2>
+        <div id="journal-daybar"></div>
+        <p class="muted tiny" style="margin:0 2px 10px">A quick end-of-day check-in.</p>
+        <div class="eyebrow" style="margin:6px 2px">Mood</div>
+        <div id="journal-mood" class="mood-buttons"></div>
+        <label class="notes-field card" style="margin-top:12px">
+          <span class="muted tiny">Journal entry</span>
+          <textarea id="day-notes" rows="4" placeholder="How was today? What happened, how did it feel?"></textarea>
+        </label>
+      </div>
+
+      <!-- READING (mini-app, Mind) -->
+      <div id="view-reading" class="view hidden">
+        <h2 class="view-title">Reading</h2>
+        <div id="reading-app"></div>
+      </div>
+
+      <!-- STEPS (mini-app, Body) -->
+      <div id="view-steps" class="view hidden">
+        <h2 class="view-title">Steps</h2>
+        <p class="muted tiny" style="margin:0 2px 12px">Log today's steps from your watch (Boult / Health).</p>
+        <div id="steps-app"></div>
+      </div>
+
+      <!-- SLEEP (mini-app, Body) -->
+      <div id="view-sleep" class="view hidden">
+        <h2 class="view-title">Sleep</h2>
+        <p class="muted tiny" style="margin:0 2px 12px">Log last night's sleep.</p>
+        <div id="sleep-app"></div>
+      </div>
+
+      <!-- BODY (mini-app, Body) -->
+      <div id="view-body" class="view hidden">
+        <h2 class="view-title">Body</h2>
+        <p class="muted tiny" style="margin:0 2px 12px">Weight trend &amp; measurements.</p>
+        <div id="body-app"></div>
+      </div>
+
+      <!-- GYM LOG (mini-app, Body) -->
+      <div id="view-gym" class="view hidden">
+        <h2 class="view-title">Gym Log</h2>
+        <p class="muted tiny" style="margin:0 2px 12px">Log today's lifts — sets × reps × weight.</p>
+        <div id="gym-app"></div>
+      </div>
+
+      <!-- BREATHE (mini-app, Mind) -->
+      <div id="view-breathe" class="view hidden">
+        <h2 class="view-title">Breathe</h2>
+        <p class="muted tiny" style="margin:0 2px 12px">Guided breathing — follow the circle.</p>
+        <div id="breathe-app"></div>
+      </div>
+
+      <!-- DETOX (mini-app, Mind) -->
+      <div id="view-detox" class="view hidden">
+        <h2 class="view-title">Digital Detox</h2>
+        <p class="muted tiny" style="margin:0 2px 12px">Put the phone down. Time your phone-free blocks.</p>
+        <div id="detox-app"></div>
+      </div>
+
+      <!-- MEDS (mini-app, Body) -->
+      <div id="view-meds" class="view hidden">
+        <h2 class="view-title">Meds</h2>
+        <p class="muted tiny" style="margin:0 2px 12px">Medicines &amp; supplements — tap a dose to mark it taken.</p>
+        <div id="meds-app"></div>
+      </div>
+
+      <!-- MEDITATE (mini-app, Mind) -->
+      <div id="view-meditate" class="view hidden">
+        <h2 class="view-title">Meditate</h2>
+        <p class="muted tiny" style="margin:0 2px 12px">Sit. Breathe. Watch the thoughts pass.</p>
+        <div id="meditate-app"></div>
+      </div>
+
+      <!-- MANIFEST (mini-app, Mind) -->
+      <div id="view-manifest" class="view hidden">
+        <h2 class="view-title">Manifest</h2>
+        <p class="muted tiny" style="margin:0 2px 12px">Affirm it, visualise it, become it.</p>
+        <div id="manifest-app"></div>
+      </div>
+
+      <!-- CHALLENGES (mini-app, Life) -->
+      <div id="view-challenges" class="view hidden">
+        <h2 class="view-title">Challenges</h2>
+        <div id="challenges-app"></div>
+      </div>
+
+      <!-- MONEY (mini-app) -->
+      <div id="view-money" class="view hidden">
+        <div class="lib-head" style="margin-bottom:12px">
+          <div><span class="eyebrow">Money</span><h2 class="view-title" style="margin:2px 0 0">Money Manager</h2></div>
+          <button id="money-ask-penny" class="btn" type="button">💰 Ask Penny</button>
+        </div>
+        <div class="seg money-tabs" id="money-tabs">
+          <button data-mtab="overview" class="active">📊 Overview</button>
+          <button data-mtab="add">➕ Add</button>
+          <button data-mtab="history">🧾 History</button>
+          <button data-mtab="accounts">🏦 Accounts</button>
+          <button data-mtab="categories">🏷️ Categories</button>
+          <button data-mtab="budget">🎯 Budget</button>
+        </div>
+        <div id="money-pane-overview" class="money-pane"><div id="money-overview"></div></div>
+        <div id="money-pane-add" class="money-pane hidden"><div id="money-add"></div></div>
+        <div id="money-pane-history" class="money-pane hidden"><div id="money-history"></div></div>
+        <div id="money-pane-accounts" class="money-pane hidden"><div id="money-accounts"></div></div>
+        <div id="money-pane-categories" class="money-pane hidden"><div id="money-categories"></div></div>
+        <div id="money-pane-budget" class="money-pane hidden"><div id="money-budget"></div></div>
+      </div>
+      <!-- SUBS (mini-app) -->
+      <div id="view-subs" class="view hidden">
+        <h2 class="view-title">Subscriptions</h2>
+        <div id="subs-app"></div>
+      </div>
+      <!-- SAVINGS (mini-app) -->
+      <div id="view-savings" class="view hidden">
+        <h2 class="view-title">Savings</h2>
+        <div id="savings-app"></div>
+      </div>
+      <!-- TASKS (mini-app) -->
+      <div id="view-tasks" class="view hidden">
+        <h2 class="view-title">Tasks</h2>
+        <div id="tasks-app"></div>
+      </div>
+      <!-- GOALS (mini-app) -->
+      <div id="view-goals" class="view hidden">
+        <h2 class="view-title">Goals · 2026</h2>
+        <div id="goals-app"></div>
+      </div>
+
+      <!-- DIET -->
+      <div id="view-diet" class="view hidden">
+        <h2 class="view-title">Diet &amp; Calories</h2>
+
+        <div class="seg" id="diet-mode">
+          <button data-mode="day" class="active">Day</button>
+          <button data-mode="week">Week</button>
+          <button data-mode="month">Month</button>
+        </div>
+
+        <div class="date-bar">
+          <button id="diet-prev" class="icon-btn">‹</button>
+          <div class="date-bar-mid">
+            <input type="date" id="diet-date" />
+            <span id="diet-date-label" class="muted tiny">Today</span>
+          </div>
+          <button id="diet-next" class="icon-btn">›</button>
+        </div>
+
+        <div class="card diet-summary">
+          <div class="cal-head">
+            <div>
+              <div class="cal-big"><span id="cal-eaten">0</span> <span class="muted">/ <span id="cal-goal">—</span> kcal</span></div>
+              <div class="muted tiny"><span id="cal-sub">— remaining</span></div>
+            </div>
+            <div class="cal-ring-wrap">
+              <svg viewBox="0 0 80 80" class="ring small"><circle class="ring-bg" cx="40" cy="40" r="34"></circle><circle id="cal-ring" class="ring-fg" cx="40" cy="40" r="34"></circle></svg>
+            </div>
+          </div>
+          <div id="macro-bars" class="macro-bars"></div>
+          <p id="goal-hint" class="muted tiny center hidden">Set your calorie goal in <b>Settings → Diet goals</b> for targets.</p>
+        </div>
+
+        <div id="diet-range-extra" class="hidden">
+          <div class="card"><div class="eyebrow">Calories per day</div><div id="diet-range-chart"></div></div>
+        </div>
+
+        <div id="meals"></div>
+      </div>
+
+      <!-- CALENDAR / JOURNEY -->
+      <div id="view-calendar" class="view hidden">
+        <h2 class="view-title">Journey</h2>
+        <div class="cal-nav">
+          <button id="cal-prev" class="icon-btn" type="button" aria-label="Previous month">‹</button>
+          <div id="cal-month-label" class="cal-month-label"></div>
+          <button id="cal-next" class="icon-btn" type="button" aria-label="Next month">›</button>
+        </div>
+        <div id="journey-summary" class="journey-summary"></div>
+        <div id="calendar-grid" class="calendar-grid month"></div>
+        <p class="muted tiny" style="margin:10px 2px 8px">Tap any day up to today to add or fix that day’s entries.</p>
+        <div class="legend">
+          <span><i class="dot done"></i> Done</span>
+          <span><i class="dot partial"></i> Partial</span>
+          <span><i class="dot miss"></i> Missed</span>
+          <span><i class="dot today"></i> Today</span>
+          <span><i class="dot future"></i> Upcoming</span>
+        </div>
+        <div id="month-report" class="card month-report"></div>
+      </div>
+
+      <!-- STATS -->
+      <div id="view-stats" class="view hidden">
+        <h2 class="view-title">Your Stats</h2>
+        <div id="stats-grid" class="stats-grid"></div>
+        <div class="card">
+          <h3>Mood — last 14 days</h3>
+          <div id="mood-trend"></div>
+        </div>
+        <div class="card">
+          <h3>Gut health — last 14 days</h3>
+          <div id="gut-trend"></div>
+        </div>
+        <div class="card" id="biz-stats-card">
+          <h3>Business productivity</h3>
+          <div id="biz-stats"></div>
+        </div>
+        <div class="card">
+          <h3>Per-task consistency</h3>
+          <div id="task-bars"></div>
+        </div>
+      </div>
+
+      <!-- COMMUNITY -->
+      <div id="view-board" class="view hidden">
+        <h2 class="view-title">Friends</h2>
+        <div class="seg" id="board-tabs">
+          <button data-btab="feed" class="active">Feed</button>
+          <button data-btab="requests">Requests <span id="req-badge" class="req-badge hidden">0</span></button>
+          <button data-btab="add">Add</button>
+        </div>
+
+        <div id="board-pane-feed" class="board-pane">
+          <p class="muted tiny">You and your friends' progress today — tasks, water &amp; calories.</p>
+          <div id="leaderboard"></div>
+        </div>
+
+        <div id="board-pane-requests" class="board-pane hidden">
+          <h3 class="board-sub">Requests received</h3>
+          <div id="req-incoming"></div>
+          <h3 class="board-sub">Requests sent</h3>
+          <div id="req-outgoing"></div>
+        </div>
+
+        <div id="board-pane-add" class="board-pane hidden">
+          <input id="friend-search" placeholder="Find people by name or username…" autocapitalize="none" />
+          <p class="muted tiny" style="margin:6px 2px">You'll both see each other's progress once they accept.</p>
+          <div id="friend-results"></div>
+        </div>
+      </div>
+
+      <!-- CALCULATORS -->
+      <div id="view-calc" class="view hidden">
+        <h2 class="view-title">Fitness Calculators</h2>
+        <p class="muted tiny" style="margin:0 2px 12px">Metric units. Weight, height, neck, waist &amp; hip auto-fill from your latest <b>Body</b> log — change them there and they update everywhere.</p>
+
+        <div class="card calc-card">
+          <h3>BMI — Body Mass Index</h3>
+          <div class="calc-grid">
+            <label>Height (cm)<input id="bmi-h" type="number" inputmode="decimal" /></label>
+            <label>Weight (kg)<input id="bmi-w" type="number" inputmode="decimal" /></label>
+          </div>
+          <button class="btn block" data-calc="bmi">Calculate</button>
+          <div class="calc-result" id="bmi-out"></div>
+        </div>
+
+        <div class="card calc-card">
+          <h3>Body Fat % <span class="muted tiny">(U.S. Navy)</span></h3>
+          <div class="calc-grid">
+            <label>Sex<select id="bf-sex"><option value="male">Male</option><option value="female">Female</option></select></label>
+            <label>Height (cm)<input id="bf-h" type="number" inputmode="decimal" /></label>
+            <label>Neck (cm)<input id="bf-neck" type="number" inputmode="decimal" /></label>
+            <label>Waist (cm)<input id="bf-waist" type="number" inputmode="decimal" /></label>
+            <label id="bf-hip-wrap" class="hidden">Hip (cm)<input id="bf-hip" type="number" inputmode="decimal" /></label>
+          </div>
+          <button class="btn block" data-calc="bodyfat">Calculate</button>
+          <div class="calc-result" id="bf-out"></div>
+          <p class="muted tiny" style="margin-top:10px">This is a circumference-based estimate, not a scan — it runs high for higher waist-to-height ratios and can be off by several points either way. Track the trend over weeks, not one number.</p>
+        </div>
+
+        <div class="card calc-card">
+          <h3>Calories — BMR &amp; TDEE</h3>
+          <div class="calc-grid">
+            <label>Sex<select id="cal-sex"><option value="male">Male</option><option value="female">Female</option></select></label>
+            <label>Age<input id="cal-age" type="number" inputmode="numeric" /></label>
+            <label>Height (cm)<input id="cal-h" type="number" inputmode="decimal" /></label>
+            <label>Weight (kg)<input id="cal-w" type="number" inputmode="decimal" /></label>
+            <label>Activity<select id="cal-act">
+              <option value="sedentary">Sedentary</option>
+              <option value="light">Lightly active</option>
+              <option value="moderate" selected>Moderately active</option>
+              <option value="active">Very active</option>
+              <option value="athlete">Athlete</option>
+            </select></label>
+            <label>Goal<select id="cal-goal">
+              <option value="lose">Lose weight</option>
+              <option value="maintain" selected>Maintain</option>
+              <option value="gain">Gain muscle</option>
+            </select></label>
+          </div>
+          <button class="btn block" data-calc="calories">Calculate</button>
+          <div class="calc-result" id="cal-out"></div>
+        </div>
+
+        <div class="card calc-card">
+          <h3>Macro Split</h3>
+          <div class="calc-grid">
+            <label>Calories/day<input id="mac-cal" type="number" inputmode="numeric" /></label>
+            <label>Split<select id="mac-split">
+              <option value="balanced">Balanced 30/40/30</option>
+              <option value="highprotein">High protein 40/35/25</option>
+              <option value="lowcarb">Low carb 40/20/40</option>
+              <option value="keto">Keto 30/10/60</option>
+            </select></label>
+          </div>
+          <button class="btn block" data-calc="macros">Calculate</button>
+          <div class="calc-result" id="mac-out"></div>
+        </div>
+
+        <div class="card calc-card">
+          <h3>Ideal Weight</h3>
+          <div class="calc-grid">
+            <label>Sex<select id="iw-sex"><option value="male">Male</option><option value="female">Female</option></select></label>
+            <label>Height (cm)<input id="iw-h" type="number" inputmode="decimal" /></label>
+          </div>
+          <button class="btn block" data-calc="ideal">Calculate</button>
+          <div class="calc-result" id="iw-out"></div>
+        </div>
+
+        <div class="card calc-card">
+          <h3>One-Rep Max <span class="muted tiny">(Epley)</span></h3>
+          <div class="calc-grid">
+            <label>Weight lifted (kg)<input id="orm-w" type="number" inputmode="decimal" /></label>
+            <label>Reps<input id="orm-reps" type="number" inputmode="numeric" /></label>
+          </div>
+          <button class="btn block" data-calc="orm">Calculate</button>
+          <div class="calc-result" id="orm-out"></div>
+        </div>
+
+        <div class="card calc-card">
+          <h3>Daily Water</h3>
+          <div class="calc-grid">
+            <label>Weight (kg)<input id="wtr-w" type="number" inputmode="decimal" /></label>
+          </div>
+          <button class="btn block" data-calc="water">Calculate</button>
+          <div class="calc-result" id="wtr-out"></div>
+        </div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div id="view-settings" class="view hidden">
+        <h2 class="view-title">Settings</h2>
+        <div class="card admin-entry hidden" id="admin-entry">
+          <h3>🛠 Admin dashboard</h3>
+          <p class="muted tiny">Scan costs, user activity and the scanned-food directory.</p>
+          <button id="open-admin" class="btn primary block">Open admin dashboard</button>
+        </div>
+        <div class="card">
+          <label>Display name
+            <input id="set-displayname" />
+          </label>
+          <button id="save-profile" class="btn block">Save name</button>
+        </div>
+
+        <div class="card" id="account-card">
+          <h3>Account</h3>
+
+          <div class="acct-block">
+            <div class="acct-label">Email <span class="muted tiny">(optional)</span></div>
+            <input id="acct-email" type="email" autocapitalize="none" placeholder="you@example.com" />
+            <button id="acct-email-btn" class="btn block">Save email</button>
+          </div>
+
+          <div class="acct-block">
+            <div class="acct-label">Change username</div>
+            <input id="acct-username" autocapitalize="none" placeholder="new username (lowercase)" />
+            <input id="acct-username-pw" type="password" autocomplete="current-password" placeholder="current password" />
+            <button id="acct-username-btn" class="btn block">Change username</button>
+          </div>
+
+          <div class="acct-block">
+            <div class="acct-label">Change password</div>
+            <input id="acct-curpw" type="password" autocomplete="current-password" placeholder="current password" />
+            <input id="acct-newpw" type="password" autocomplete="new-password" placeholder="new password" />
+            <button id="acct-pw-btn" class="btn block">Update password</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Appearance</h3>
+          <p class="muted tiny">Pick a theme — it applies instantly and is remembered on this device.</p>
+          <div id="theme-grid" class="theme-grid"></div>
+        </div>
+        <div class="card">
+          <h3>Tap feedback</h3>
+          <p class="muted tiny">Confirm every tap with a little click and a buzz. Saved on this device.</p>
+          <label class="fx-toggle"><input type="checkbox" id="fx-sound" /> 🔊 Click sound</label>
+          <label class="fx-toggle"><input type="checkbox" id="fx-haptics" /> 📳 Vibration (Android; iPhone has limited support)</label>
+        </div>
+        <div class="card">
+          <h3>Diet goals</h3>
+          <p class="muted tiny">Enter your details to auto-calculate a daily calorie target, or just type your own below.</p>
+          <div class="goal-grid">
+            <label>Sex
+              <select id="g-sex"><option value="male">Male</option><option value="female">Female</option></select>
+            </label>
+            <label>Age
+              <input id="g-age" type="number" inputmode="numeric" placeholder="e.g. 29" />
+            </label>
+            <label>Height (cm)
+              <input id="g-height" type="number" inputmode="numeric" placeholder="e.g. 175" />
+            </label>
+            <label>Weight (kg)
+              <input id="g-weight" type="number" inputmode="decimal" placeholder="e.g. 72" />
+            </label>
+            <label>Activity
+              <select id="g-activity">
+                <option value="sedentary">Sedentary</option>
+                <option value="light">Lightly active</option>
+                <option value="moderate" selected>Moderately active</option>
+                <option value="active">Very active</option>
+                <option value="athlete">Athlete</option>
+              </select>
+            </label>
+            <label>Goal
+              <select id="g-goaltype">
+                <option value="lose">Lose weight</option>
+                <option value="maintain" selected>Maintain</option>
+                <option value="gain">Gain muscle</option>
+              </select>
+            </label>
+          </div>
+          <button id="calc-goals" class="btn block">Calculate for me</button>
+          <div class="goal-targets">
+            <label>Calories<input id="g-cal" type="number" inputmode="numeric" /></label>
+            <label>Protein (g)<input id="g-protein" type="number" inputmode="numeric" /></label>
+            <label>Carbs (g)<input id="g-carbs" type="number" inputmode="numeric" /></label>
+            <label>Fat (g)<input id="g-fat" type="number" inputmode="numeric" /></label>
+            <label>Sugar limit (g)<input id="g-sugar" type="number" inputmode="numeric" /></label>
+            <label>Fibre goal (g)<input id="g-fiber" type="number" inputmode="numeric" /></label>
+          </div>
+          <button id="save-goals" class="btn primary block">Save diet goals</button>
+        </div>
+
+        <div class="card">
+          <h3>My businesses</h3>
+          <p class="muted tiny">Add the businesses/projects you want to track. On the Today screen you'll log time &amp; tasks for each, every day.</p>
+          <div id="biz-settings-list"></div>
+          <div class="add-habit">
+            <input id="new-biz" placeholder="Add a business (e.g. Acme Co)" maxlength="40" />
+            <button id="add-biz-btn" class="btn">Add</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Challenge</h3>
+          <p class="muted tiny" id="mode-current" style="margin-bottom:10px">Active challenge</p>
+          <div class="seg" id="mode-seg">
+            <button data-mode="hard" class="active" type="button">💪 75 Hard</button>
+            <button data-mode="soft" type="button">🌱 75 Soft</button>
+          </div>
+          <div id="soft-target-wrap" class="hidden">
+            <label>Daily target
+              <select id="soft-target">
+                <option value="60">60% (4 of 7 tasks)</option>
+                <option value="70" selected>70% (5 of 7 tasks)</option>
+                <option value="80">80% (6 of 7 tasks)</option>
+              </select>
+            </label>
+          </div>
+          <button id="save-mode" class="btn block">Save challenge mode</button>
+        </div>
+
+        <div class="card">
+          <h3>Challenge start date</h3>
+          <p class="muted tiny">Day 1 of your challenge. Fixing this re-aligns your Journey and day count — it does not delete anything.</p>
+          <input type="date" id="set-startdate" min="2025-01-01" />
+          <button id="save-startdate" class="btn block">Save start date</button>
+        </div>
+
+        <div class="card">
+          <h3>Start over</h3>
+          <p class="muted tiny">Broke a rule? 75 Hard means restarting from Day 1. This resets your start date to today.</p>
+          <button id="reset-challenge" class="btn danger block">I failed — restart from Day 1</button>
+        </div>
+        <div class="card">
+          <div class="muted tiny">Signed in as <strong id="set-username"></strong></div>
+          <button id="logout" class="btn block">Log out</button>
+        </div>
+
+        <div class="card danger-zone">
+          <h3>Delete account</h3>
+          <p class="muted tiny">Permanently delete your account and <strong>all</strong> your data — daily logs, food diary and fasts. This can’t be undone.</p>
+          <input id="del-password" type="password" autocomplete="current-password" placeholder="Enter your password to confirm" />
+          <button id="delete-account" class="btn danger block">Delete my account</button>
+        </div>
+
+        <p class="muted tiny center" id="set-version"></p>
+      </div>
+
+      <!-- ADMIN (Pronoy only) -->
+      <div id="view-admin" class="view hidden">
+        <button id="admin-back" class="btn link-btn">‹ Back to settings</button>
+        <h2 class="view-title">Admin dashboard</h2>
+        <div class="seg" id="admin-tabs">
+          <button data-atab="scans" class="active">Scan costs</button>
+          <button data-atab="users">Users</button>
+          <button data-atab="foods">Scanned foods</button>
+        </div>
+
+        <div id="admin-pane-scans" class="admin-pane">
+          <div id="admin-scan-cards" class="stats-grid"></div>
+          <div class="card"><h3>By type</h3><div id="admin-scan-bykind"></div></div>
+          <div class="card"><h3>By user</h3><div id="admin-scan-byuser"></div></div>
+          <div class="card"><h3>By model</h3><div id="admin-scan-bymodel"></div></div>
+          <div class="card"><h3>Recent scans</h3><div id="admin-scan-recent"></div></div>
+        </div>
+
+        <div id="admin-pane-users" class="admin-pane hidden">
+          <div id="admin-users-list"></div>
+        </div>
+
+        <div id="admin-pane-foods" class="admin-pane hidden">
+          <input id="admin-food-filter" placeholder="Filter scanned foods…" autocapitalize="none" />
+          <p class="muted tiny" style="margin:6px 2px">Edit any value and tap Save. Values are <b>per 100 g / 100 ml</b>.</p>
+          <div id="admin-foods-list"></div>
+        </div>
+      </div>
+    </main>
+
+    <button id="coach-fab" class="coach-fab" title="AI Coach" type="button">💬</button>
+
+    <nav class="bottom-nav">
+      <button class="nav-btn active" data-view="home"><span class="ico">◎</span><span>Home</span></button>
+      <button class="nav-btn" data-view="library"><span class="ico">▦</span><span>Apps</span></button>
+      <button class="nav-btn" data-view="today"><span class="ico">✓</span><span>Today</span></button>
+      <button class="nav-btn" data-view="diet"><span class="ico">🍽️</span><span>Diet</span></button>
+      <button class="nav-btn" data-view="settings"><span class="ico">⚙</span><span>Settings</span></button>
+    </nav>
+  </section>
+
+  <!-- Food search modal -->
+  <div id="food-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <b id="food-modal-title">Add food</b>
+        <button id="food-close" class="icon-btn">✕</button>
+      </div>
+
+      <!-- Step 1: search -->
+      <div id="food-step-search">
+        <input id="food-search" placeholder="Search food (e.g. banana, dal, paneer, oats)" autocapitalize="none" />
+        <div id="food-results" class="food-results"></div>
+        <button id="food-manual-toggle" class="btn block">+ Add a custom food manually</button>
+        <div id="food-manual" class="manual-box hidden">
+          <div class="scan-row">
+            <button id="scan-camera-btn" class="btn" type="button">📷 Take photo</button>
+            <button id="scan-upload-btn" class="btn" type="button">🖼️ Upload image</button>
+          </div>
+          <input type="file" id="scan-camera" accept="image/*" capture="environment" class="hidden" />
+          <input type="file" id="scan-upload" accept="image/*" class="hidden" />
+          <label class="ai-toggle"><input type="checkbox" id="ai-scan" /> ✨ AI high-accuracy (needs Gemini key)</label>
+          <label class="ai-toggle hidden" id="two-img-wrap"><input type="checkbox" id="two-img" /> 📦 Front + back (also reads the product name)</label>
+          <p class="muted tiny hidden" id="ai-hint" style="margin:6px 2px 0">Scan the nutrition panel for exact values, or just the front of pack / type a name below for an AI estimate.</p>
+          <div id="scan-thumbs" class="scan-thumbs"></div>
+          <button id="scan-go-btn" class="btn block hidden" type="button">✨ Scan now</button>
+          <div id="scan-status" class="muted tiny scan-status"></div>
+          <label>Food name<input id="m-name" placeholder="e.g. Amul butter, Maggi noodles" /></label>
+          <button id="ai-name-btn" class="btn block hidden" type="button">✨ AI: look up this product by name</button>
+          <p class="muted tiny">Enter the values printed on the label <b>per 100 g / 100 ml</b> (or scan above). You’ll set how much you actually had on the next step.</p>
+          <div class="manual-grid">
+            <label>Calories /100<input id="m-cal" type="number" inputmode="decimal" /></label>
+            <label>Protein g /100<input id="m-protein" type="number" inputmode="decimal" /></label>
+            <label>Carbs g /100<input id="m-carbs" type="number" inputmode="decimal" /></label>
+            <label>Fat g /100<input id="m-fat" type="number" inputmode="decimal" /></label>
+            <label>Sugar g /100<input id="m-sugar" type="number" inputmode="decimal" /></label>
+            <label>Fibre g /100<input id="m-fiber" type="number" inputmode="decimal" /></label>
+          </div>
+          <button id="m-next" class="btn primary block">Next: set amount</button>
+        </div>
+      </div>
+
+      <!-- Step 2: portion -->
+      <div id="food-step-portion" class="hidden">
+        <button id="food-back" class="btn link-btn">‹ Back to search</button>
+        <div class="portion-name" id="p-name">Food</div>
+        <div class="seg unit-toggle">
+          <button id="unit-serving" class="active" type="button">Serving</button>
+          <button id="unit-grams" type="button">Grams / 100g</button>
+        </div>
+        <label><span id="p-amount-label">Servings</span>
+          <input id="p-grams" type="number" inputmode="decimal" value="1" />
+        </label>
+        <div class="portion-macros" id="p-macros"></div>
+        <label>Meal
+          <select id="p-meal">
+            <option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snacks</option>
+          </select>
+        </label>
+        <button id="p-add" class="btn primary block">Add to diary</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Screen Time analysis modal (upload iOS/Android usage screenshots → sleep + phone usage) -->
+  <div id="st-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <b>📱 Screen Time analysis</b>
+        <button id="st-close" class="icon-btn">✕</button>
+      </div>
+      <div id="st-body"></div>
+    </div>
+  </div>
+
+  <!-- Exercise picker modal (Gym Log — search a library or add custom, like food) -->
+  <div id="gym-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <b>Add exercise</b>
+        <button id="gym-modal-close" class="icon-btn">✕</button>
+      </div>
+      <input id="gym-search" placeholder="Search exercise (e.g. bench, squat, plank)" autocapitalize="none" />
+      <div id="gym-cats" class="gym-cats"></div>
+      <div id="gym-results" class="gym-results"></div>
+      <div class="gym-custom-box">
+        <div class="eyebrow" style="margin-bottom:6px">Add your own</div>
+        <div class="add-habit" style="margin:0">
+          <input id="gym-modal-custom" placeholder="e.g. Cable Fly, Farmer Carry" maxlength="40" />
+          <button id="gym-modal-custom-add" class="btn">Add</button>
+        </div>
+        <p class="muted tiny" style="margin:8px 2px 0">Custom exercises are saved to your library for next time.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Day editor modal (edit any date from Journey) -->
+  <div id="day-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <b id="day-modal-title">Edit day</b>
+        <button id="day-close" class="icon-btn">✕</button>
+      </div>
+      <div id="day-editor-list" class="tasklist"></div>
+
+      <div class="extra-head">Mood</div>
+      <div id="de-mood" class="mood-buttons"></div>
+
+      <div class="extra-head">Gut health</div>
+      <div id="de-gut" class="mood-buttons"></div>
+
+      <div class="extra-head">Habits</div>
+      <div id="de-habits" class="tasklist"></div>
+
+      <div class="extra-head">Work log</div>
+      <div id="de-work"></div>
+
+      <div class="extra-head">Steps / Sleep / Body</div>
+      <div id="de-metrics"></div>
+
+      <label class="notes-field card">
+        <span class="muted tiny">Notes</span>
+        <textarea id="de-notes" rows="2" placeholder="How did it go?"></textarea>
+      </label>
+
+      <button id="day-save" class="btn primary block">Save this day</button>
+    </div>
+  </div>
+
+  <!-- AI Coach chat -->
+  <div id="coach-modal" class="modal hidden">
+    <div class="modal-card coach-card">
+      <div class="modal-head">
+        <b id="coach-title">✨ AI Coach</b>
+        <span class="coach-head-actions">
+          <button id="coach-clear" class="icon-btn" title="Clear chat">🗑</button>
+          <button id="coach-close" class="icon-btn" title="Close">✕</button>
+        </span>
+      </div>
+      <div id="coach-msgs" class="coach-msgs"></div>
+      <div class="coach-input">
+        <textarea id="coach-text" rows="1" placeholder="Ask about your diet, workouts, streak…"></textarea>
+        <button id="coach-send" class="btn primary" type="button">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="js/config.js"></script>
+  <script src="assets/indian-foods.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

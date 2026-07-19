@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#120f2e"/>
+      <stop offset=".52" stop-color="#3b2160"/>
+      <stop offset="1" stop-color="#8a3563"/>
+    </linearGradient>
+    <radialGradient id="sun" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#ffe9a8"/>
+      <stop offset=".45" stop-color="#ffb25c"/>
+      <stop offset="1" stop-color="#ff6a3d"/>
+    </radialGradient>
+    <radialGradient id="glow" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#ff8a4c" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#ff8a4c" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- full-bleed sky (mask-safe) -->
+  <rect width="512" height="512" fill="url(#sky)"/>
+
+  <!-- artwork kept inside the ~70% maskable safe zone -->
+  <g transform="translate(256 256) scale(0.74) translate(-256 -256)">
+    <circle cx="96" cy="92" r="5" fill="#fff" opacity=".8"/>
+    <circle cx="150" cy="150" r="3" fill="#fff" opacity=".45"/>
+    <circle cx="420" cy="120" r="4" fill="#fff" opacity=".65"/>
+    <circle cx="370" cy="70" r="2.6" fill="#fff" opacity=".4"/>
+
+    <circle cx="256" cy="292" r="182" fill="url(#glow)"/>
+    <circle cx="256" cy="292" r="118" fill="url(#sun)"/>
+
+    <path fill="#0d0918" fill-rule="evenodd"
+          d="M256 92 L432 436 L80 436 Z  M256 208 L346 436 L166 436 Z"/>
+    <path fill="#0d0918" d="M193 344 h126 v46 h-126 z"/>
+    <path d="M256 92 L80 436" stroke="#ffa14c" stroke-width="10" stroke-linecap="round" opacity=".9" fill="none"/>
+    <rect y="436" width="512" height="76" fill="#0d0918"/>
+    <path d="M0 436 h512" stroke="#ff8a4c" stroke-width="4" opacity=".55"/>
+  </g>
+</svg>

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1600" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <pattern id="dots" width="34" height="34" patternUnits="userSpaceOnUse">
+      <circle cx="9" cy="9" r="3.2" fill="#ef0107" fill-opacity="0.10"/>
+    </pattern>
+    <linearGradient id="soften" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.78"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1000" height="1600" fill="#f4f5f7"/>
+  <rect width="1000" height="1600" fill="url(#dots)"/>
+
+  <!-- faint red sashes top & bottom -->
+  <polygon points="0,0 1000,0 1000,150 0,380" fill="#ef0107" fill-opacity="0.09"/>
+  <polygon points="0,1600 1000,1600 1000,1470 0,1250" fill="#ef0107" fill-opacity="0.06"/>
+
+  <!-- thin accent lines -->
+  <g stroke="#ef0107" stroke-opacity="0.18" stroke-width="3">
+    <line x1="0" y1="250" x2="1000" y2="120"/>
+    <line x1="0" y1="1360" x2="1000" y2="1500"/>
+  </g>
+
+  <rect width="1000" height="1600" fill="url(#soften)"/>
+</svg>
