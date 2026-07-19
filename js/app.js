@@ -1164,6 +1164,8 @@
     var bar = $('#us-daybar');
     if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderUsApp); }
     renderRelDates();
+    renderBalance('#us-balance', false);
+    renderRelActs(appDay());
     renderRelCheckin(appDay());
     renderRelRange();
     var cal = $('#us-cal');
@@ -1347,6 +1349,224 @@
     state.profile = profile;
     renderRelDiary();
     api('saveGoals', { profile: profile }).then(function (data) { if (data && data.profile) state.profile = data.profile; }).catch(function (e) { toast(e.message); });
+  }
+
+  /* ----- Small Acts — a daily, low-effort connection prompt -----
+     ADHD-friendly: removes the "what do I even do?" load by suggesting ONE
+     concrete act a day. Deterministic by date (stable through the day) with a
+     shuffle. Marking it done is a one-tap Life-XP win. */
+  var SMALL_ACTS = [
+    { e: '💬', t: 'Text them one specific thing you appreciate about them.' },
+    { e: '👂', t: 'Ask about their day — and listen for 10 minutes without fixing anything.' },
+    { e: '🧠', t: 'Name the thing pulling your focus right now, so they know it isn’t them.' },
+    { e: '📵', t: 'Put your phone in another room for one hour together tonight.' },
+    { e: '🗓️', t: 'Suggest a real plan for this weekend — a place and a time.' },
+    { e: '🤗', t: 'Give them a 20-second hug — long enough to actually relax into it.' },
+    { e: '☕', t: 'Bring them their favourite drink or snack, unprompted.' },
+    { e: '🙏', t: 'Apologise for one small thing you brushed past recently.' },
+    { e: '🍽️', t: 'Share one meal today with no screens.' },
+    { e: '📝', t: 'Leave them a short note somewhere they’ll find it later.' },
+    { e: '🚶', t: 'Take a 15-minute walk together after work.' },
+    { e: '🎧', t: 'Send a song or clip that made you think of them.' },
+    { e: '⏰', t: 'Clock out 30 minutes early today and give that time to them.' },
+    { e: '❓', t: 'Ask: “What would make this week easier for you?”' },
+    { e: '💐', t: 'Bring home a small surprise — anything counts.' },
+    { e: '🛌', t: 'Go to bed at the same time tonight.' },
+    { e: '🍳', t: 'Quietly take one chore off their plate.' },
+    { e: '📸', t: 'Look at old photos together for a few minutes.' },
+    { e: '💌', t: 'Tell them one reason you’re glad you’re with them.' },
+    { e: '🌙', t: 'Ask how they’re really doing — and let there be a pause.' },
+    { e: '🎯', t: 'Ask what they need more of from you right now, then just listen.' },
+    { e: '🔁', t: 'Follow up on something they told you last week.' }
+  ];
+  function actSeed(date) { var s = 0; for (var i = 0; i < date.length; i++) s = (s * 31 + date.charCodeAt(i)) >>> 0; return s; }
+  function suggestedAct(d) { return SMALL_ACTS[(actSeed(d.date) + (state.usActBump || 0)) % SMALL_ACTS.length]; }
+  function renderRelActs(d) {
+    var box = $('#us-act'); if (!box) return;
+    var done = !!relOf(d).act;
+    var act = suggestedAct(d);
+    box.innerHTML =
+      '<div class="card act-card' + (done ? ' done' : '') + '">' +
+        '<span class="eyebrow">💞 Today’s small act</span>' +
+        '<div class="act-text">' + act.e + ' ' + esc(act.t) + '</div>' +
+        '<div class="act-btns">' +
+          '<button class="btn primary act-did" type="button"' + (done ? ' disabled' : '') + '>' + (done ? 'Done today ✓' : 'I did it') + '</button>' +
+          '<button class="btn act-another" type="button">Another idea ↻</button>' +
+        '</div>' +
+      '</div>';
+    box.querySelector('.act-did').addEventListener('click', function () {
+      if (relOf(d).act) return;
+      var before = dayXp(d).total;
+      relPatch(d, { act: true });
+      var delta = dayXp(d).total - before;
+      renderRelActs(d); queueSaveDay(d); gamifyAfterToggle(delta);
+    });
+    box.querySelector('.act-another').addEventListener('click', function () {
+      state.usActBump = (state.usActBump || 0) + 1; renderRelActs(d);
+    });
+  }
+
+  /* ----- Work / Focus check-in — parallel to Us, but boundary-first -----
+     Deliberately rewards focus quality and CLOCKING OUT, not raw hours, so it
+     nudges toward sustainable work instead of more of it. Lives in d.extra.work
+     (zero-redeploy). Focus score & the "overworked" flag earn no XP. */
+  var FOCUS_SCORES = [
+    { v: 5, label: 'Deep',       emoji: '🎯' },
+    { v: 4, label: 'Good',       emoji: '🙂' },
+    { v: 3, label: 'Scattered',  emoji: '😵‍💫' },
+    { v: 2, label: 'Distracted', emoji: '🫤' },
+    { v: 1, label: 'Lost',       emoji: '😞' }
+  ];
+  function focusColor(v) { return v >= 5 ? '#22c55e' : v >= 4 ? '#84cc16' : v >= 3 ? '#eab308' : v >= 2 ? '#f97316' : '#ef4444'; }
+  function workOf(d) { return (d.extra && d.extra.work) || {}; }
+  function workPatch(d, patch) { if (!d.extra) d.extra = {}; d.extra.work = Object.assign({}, workOf(d), patch); }
+
+  function renderWorkCheckin(d) {
+    var box = $('#work-checkin'); if (!box) return;
+    var w = workOf(d);
+    box.innerHTML =
+      '<div class="card">' +
+        '<div class="rel-score-lbl">How was your focus today?</div>' +
+        '<div class="mood-buttons" id="wk-focus-btns">' + FOCUS_SCORES.map(function (s) {
+          return '<button type="button" class="mood-btn' + (w.focus === s.v ? ' sel' : '') + '" style="--mc:' + focusColor(s.v) + '" data-fv="' + s.v + '">' +
+            '<span class="mood-emoji">' + s.emoji + '</span><span class="mood-label">' + s.label + '</span></button>';
+        }).join('') + '</div>' +
+        '<div class="wk-stepper-row"><span>🧱 Deep-work sessions</span>' +
+          '<div class="wk-stepper"><button type="button" class="wk-dec">−</button><b id="wk-deep">' + (Number(w.deep) || 0) + '</b><button type="button" class="wk-inc">+</button></div></div>' +
+        '<label class="rel-qt-row wk-boundary"><input type="checkbox" id="wk-clockout"' + (w.clockOut ? ' checked' : '') + ' /> 🌙 I clocked out and protected my evening</label>' +
+        '<label class="rel-qt-row"><input type="checkbox" id="wk-overwork"' + (w.overwork ? ' checked' : '') + ' /> ⚠️ I overworked today (honest — no penalty)</label>' +
+        (w.overwork ? '<p class="muted tiny wk-overwork-note">Noticing it is the first step. Try one small act in Us to rebalance — it counts more than you think.</p>' : '') +
+        '<label>One win from today<textarea id="wk-note" rows="2" placeholder="e.g. Shipped the thing I’d been avoiding.">' + esc(w.note || '') + '</textarea></label>' +
+      '</div>';
+    box.querySelectorAll('#wk-focus-btns [data-fv]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var v = Number(b.getAttribute('data-fv'));
+        workPatch(d, { focus: workOf(d).focus === v ? 0 : v });
+        renderWorkCheckin(d); queueSaveDay(d);
+        if (!$('#view-work').classList.contains('hidden')) { renderWorkCalRange(); }
+      });
+    });
+    function stepDeep(delta) {
+      var cur = Number(workOf(d).deep) || 0, next = Math.max(0, Math.min(12, cur + delta));
+      if (next === cur) return;
+      var before = dayXp(d).total;
+      workPatch(d, { deep: next });
+      var xd = dayXp(d).total - before;
+      renderWorkCheckin(d); queueSaveDay(d); gamifyAfterToggle(xd);
+    }
+    box.querySelector('.wk-inc').addEventListener('click', function () { stepDeep(1); });
+    box.querySelector('.wk-dec').addEventListener('click', function () { stepDeep(-1); });
+    box.querySelector('#wk-clockout').addEventListener('change', function () {
+      var before = dayXp(d).total;
+      workPatch(d, { clockOut: this.checked });
+      var xd = dayXp(d).total - before;
+      queueSaveDay(d); gamifyAfterToggle(xd);
+    });
+    box.querySelector('#wk-overwork').addEventListener('change', function () {
+      workPatch(d, { overwork: this.checked });
+      renderWorkCheckin(d); queueSaveDay(d);
+    });
+    var noteEl = box.querySelector('#wk-note'), nt;
+    noteEl.addEventListener('input', function () {
+      clearTimeout(nt); var val = noteEl.value;
+      nt = setTimeout(function () {
+        var before = dayXp(d).total;
+        workPatch(d, { note: val });
+        var xd = dayXp(d).total - before;
+        queueSaveDay(d); gamifyAfterToggle(xd);
+      }, 500);
+    });
+  }
+  function renderWorkCalRange() {
+    var cal = $('#work-cal');
+    if (cal) {
+      buildDayPicker(cal, ymOf(appDate()), renderWorkApp, function (date) {
+        var l = logFor(date), w = l ? workOf(l) : null;
+        return w && w.focus ? focusColor(w.focus) : null;
+      });
+    }
+    var leg = $('#work-legend');
+    if (leg) leg.innerHTML = FOCUS_SCORES.map(function (s) {
+      return '<span class="gt-key"><i style="background:' + focusColor(s.v) + '"></i>' + s.emoji + ' ' + s.label + '</span>';
+    }).join('');
+    renderFocusRange();
+  }
+  function renderFocusRange() {
+    var box = $('#work-range'); if (!box) return;
+    var rs = rangeState('workrg');
+    box.innerHTML = rangeBarHtml('workrg');
+    if (rs.mode === 'day') { bindRangeBar(box, 'workrg', renderWorkApp); return; }
+    var r = rangeSpan(rs.mode, rs.anchor);
+    var agg = rangeAgg(r.from, r.to, function (l) { var w = l ? workOf(l) : null; return w && w.focus ? w.focus : null; });
+    var clockOuts = 0, deep = 0, overworks = 0;
+    rangeDatesList(r.from, r.to).filter(function (dt) { return dt <= todayStr(); }).forEach(function (dt) {
+      var l = logFor(dt), w = l ? workOf(l) : null; if (!w) return;
+      if (w.clockOut) clockOuts++; deep += Number(w.deep) || 0; if (w.overwork) overworks++;
+    });
+    var best = FOCUS_SCORES.filter(function (s) { return s.v === Math.round(agg.avg); })[0];
+    box.innerHTML += '<div class="card hero-row">' +
+      ringMini(pctOf(agg.avg, 5), best ? focusColor(best.v) : '#f59e0b', 92, '<b>' + (agg.logged ? agg.avg.toFixed(1) : '—') + '</b>') +
+      '<div class="hero-meta"><div class="metric-big"><b>' + (agg.logged ? agg.avg.toFixed(1) + '/5 ' + (best ? best.emoji : '') : 'No logs') + '</b></div>' +
+      '<div class="muted tiny">focus · ' + agg.logged + ' of ' + agg.days + ' days · 🌙 clocked out ' + clockOuts + ' · 🧱 ' + deep + ' deep sessions' + (overworks ? ' · ⚠️ overworked ' + overworks : '') + '</div></div></div>' +
+      (agg.logged ? '<div class="card"><div class="eyebrow">Focus per day</div>' + rangeBarChart(agg.perDay, '#f59e0b') + '</div>' : '');
+    bindRangeBar(box, 'workrg', renderWorkApp);
+  }
+
+  /* ----- Attention Balance — the antidote to work quietly eating everything -----
+     Compares days you worked vs days you connected over the last week. Makes the
+     invisible imbalance visible (ADHD time-blindness), warmly, without shame. */
+  function workedDay(l) {
+    if (!l) return false;
+    if (l.biz) { for (var k in l.biz) { var e = l.biz[k] || {}; if ((Number(e.m) || 0) > 0 || (Number(e.t) || 0) > 0) return true; } }
+    var w = (l.extra && l.extra.work) || {};
+    return !!(w.focus || Number(w.deep) || w.clockOut || w.overwork || (w.note && String(w.note).trim()));
+  }
+  function connectedDay(l) {
+    if (!l) return false;
+    var r = (l.extra && l.extra.rel) || {};
+    if (r.qt || r.act || (r.note && String(r.note).trim())) return true;
+    if (r.langs) { for (var k in r.langs) if (r.langs[k]) return true; }
+    return false;
+  }
+  function attentionBalance() {
+    var today = todayStr(), wDays = 0, cDays = 0, clockOuts = 0, daysSince = null;
+    for (var i = 0; i < 7; i++) {
+      var dt = addDays(today, -i);
+      var l = dt === today ? state.today : logFor(dt);
+      if (workedDay(l)) wDays++;
+      if (connectedDay(l)) { cDays++; if (daysSince == null) daysSince = i; }
+      var w = (l && l.extra && l.extra.work) || {}; if (w.clockOut) clockOuts++;
+    }
+    return { wDays: wDays, cDays: cDays, clockOuts: clockOuts, daysSince: daysSince, gap: wDays - cDays };
+  }
+  function balanceMsg(b) {
+    if (b.wDays + b.cDays === 0) return null;
+    var name = relInfo().partnerName || 'them';
+    if (b.gap >= 3) return { tone: 'tilt', text: 'Work’s been in the driver’s seat this week. One small act for ' + name + ' today can start to shift it.' };
+    if (b.daysSince != null && b.daysSince >= 2) return { tone: 'nudge', text: 'It’s been ' + b.daysSince + ' days since you last connected. A small hello goes a long way 💞' };
+    if (b.daysSince == null) return { tone: 'nudge', text: 'No connection logged this week yet. Start with one small act — it’s enough.' };
+    if (b.cDays >= b.wDays && b.cDays > 0) return { tone: 'good', text: 'Good balance this week — you’re showing up for both. Keep it going 💪' };
+    return { tone: 'ok', text: 'A steady week. One small act keeps the momentum.' };
+  }
+  function renderBalance(sel, jump) {
+    var box = $(sel); if (!box) return;
+    var b = attentionBalance(), msg = balanceMsg(b);
+    if (!msg) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+    box.classList.remove('hidden');
+    var balRow = function (label, days, color) {
+      var w = Math.round(days / 7 * 100);
+      return '<div class="bal-row"><span class="bal-name">' + label + '</span>' +
+        '<div class="bal-bar"><span style="width:' + w + '%;background:' + color + '"></span></div>' +
+        '<span class="bal-val mono">' + days + '/7</span></div>';
+    };
+    box.innerHTML =
+      '<div class="card home-balance tone-' + msg.tone + '">' +
+        '<span class="eyebrow">⚖️ Focus balance · last 7 days</span>' +
+        '<div class="bal-rows">' + balRow('🏢 Work', b.wDays, '#f59e0b') + balRow('💞 Us', b.cDays, '#ff77a8') + '</div>' +
+        '<div class="bal-msg">' + esc(msg.text) + '</div>' +
+        (b.clockOuts ? '<div class="muted tiny" style="margin-top:6px">🌙 You protected your evening ' + b.clockOuts + ' day' + (b.clockOuts === 1 ? '' : 's') + ' this week.</div>' : '') +
+      '</div>';
+    if (jump) { var c = box.querySelector('.home-balance'); c.style.cursor = 'pointer'; c.onclick = function () { switchView('us'); }; }
   }
 
   /* ----- Mood meter (does NOT affect 75 Hard completion) ----- */
@@ -1535,6 +1755,9 @@
   function renderWorkApp() {
     var bar = $('#work-daybar');
     if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderWorkApp); }
+    renderBalance('#work-balance', false);
+    renderWorkCheckin(appDay());
+    renderWorkCalRange();
     renderBusinesses(appDay());
   }
   function renderBusinesses(d) {
@@ -2086,8 +2309,15 @@
     // only concrete actions do — so there's no incentive to inflate the rating.
     var rel = relOf(d);
     if (rel.qt) life += 10;
+    if (rel.act) life += 10;                    // did the day's small connection act
     if (rel.note && String(rel.note).trim()) life += 8;
     if (rel.langs) REL_LANGS.forEach(function (l) { if (rel.langs[l.key]) life += 4; });
+    // Work check-in — rewards focus & BOUNDARIES, not raw hours. The focus score
+    // and the honest "overworked" flag deliberately earn nothing.
+    var wk = (d.extra && d.extra.work) || {};
+    if (wk.clockOut) life += 12;                // protected the evening — the boundary win
+    if (Number(wk.deep)) life += Math.min(12, Number(wk.deep) * 4);
+    if (wk.note && String(wk.note).trim()) life += 5;
     var bonus = goalMet(d) ? XP_PERFECT : 0;   // perfect-day reward
     return { body: body, mind: mind, life: life, bonus: bonus, total: body + mind + life + bonus };
   }
@@ -4560,6 +4790,9 @@
       }
       spot.innerHTML = html;
     }
+
+    // Attention balance — work vs connection this week, surfaced where you'll see it.
+    renderBalance('#home-balance', true);
 
     // Relationship countdown — a small persistent nudge once dates are set.
     var relBox = $('#home-rel');
