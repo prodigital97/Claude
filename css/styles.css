@@ -630,6 +630,7 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .atlas-word { font-family: var(--font); font-weight: 700; font-size: 34px; letter-spacing: .04em; line-height: 1; margin-top: 2px; }
 .daychip { font-size: 12px; font-weight: 700; color: var(--muted); background: var(--bg-soft); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; white-space: nowrap; }
 
+.rings-cap { margin: 0 2px 7px; opacity: .7; }
 .pillar-rings { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
 .pillar { display: flex; flex-direction: column; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px 4px 10px; cursor: pointer; color: var(--text); }
 .pring-wrap { position: relative; width: 58px; height: 58px; }

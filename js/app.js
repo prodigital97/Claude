@@ -4135,6 +4135,20 @@
     return { body: body, mind: mind, money: null, life: life }; // money apps arrive later
   }
 
+  // Monthly average per pillar (0–100 | null) — the running month grade shown in
+  // the home rings. Body/Mind/Life come from the day logs; Money is the budget
+  // score (null when no budget / still loading).
+  function pillarScoresMonthly(ym) {
+    var sc = monthScores(ym);
+    var money = moneyScoreFor(ym); // number | null | undefined
+    return {
+      body: sc ? sc.body : null,
+      mind: sc ? sc.mind : null,
+      money: (typeof money === 'number') ? money : null,
+      life: sc ? sc.life : null
+    };
+  }
+
   function renderHome() {
     if (!state.user) return;
     var d = state.today || {};
@@ -4142,7 +4156,13 @@
     var chip = $('#home-daychip');
     if (chip) chip.innerHTML = 'DAY ' + cd + (LEN && cd > LEN ? ' 🏆' : '') + ' · ' + streakOf(state.logs) + '🔥';
 
-    var sc = pillarScores();
+    // Top rings show this MONTH's average score per pillar (same source as the
+    // Life Score card below), so they read as a running monthly grade — not just
+    // today. Money loads async; ensureMoneyMonth is triggered by the score card.
+    var homeYm = ymOf(todayStr());
+    var sc = pillarScoresMonthly(homeYm);
+    var ringsCap = $('#home-rings-cap');
+    if (ringsCap) ringsCap.textContent = ymShort(homeYm) + ' · monthly average';
     var rings = $('#home-rings');
     if (rings) {
       var circ = 2 * Math.PI * 26;
