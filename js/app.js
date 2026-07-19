@@ -698,6 +698,7 @@
       state.activeFast = data.activeFast || null;
       var t = logFor(todayStr());
       state.today = t ? Object.assign(emptyDay(todayStr()), t) : emptyDay(todayStr());
+      lastXpLevel = levelInfo(xpTotals().total).level;   // seed baseline once data is ready
       cacheState();
     });
   }
@@ -955,9 +956,12 @@
         (v.metric ? progress : '<div class="t-sub">' + esc(v.sub) + '</div>') + '</div>';
       row.addEventListener('click', function () {
         if (v.metric && v.app) { switchView(v.app); return; }   // deep-link, not toggle
+        var before = dayXp(d).total;
         ruleToggle(d, rule);
+        var delta = dayXp(d).total - before;
         renderToday();
         queueSaveDay(d);
+        gamifyAfterToggle(delta);                                // floater + level-up
       });
       list.appendChild(row);
     });
@@ -1465,9 +1469,12 @@
 
   function toggleTask(t) {
     var d = appDay();
+    var before = dayXp(d).total;
     taskSetDone(d, t, !taskDone(d, t));
+    var delta = dayXp(d).total - before;
     renderToday();
     queueSaveDay(d);   // routes to queueSave() for today, past-day save otherwise
+    gamifyAfterToggle(delta);   // XP floater + level-up
   }
 
   /* ---------------- Saving ---------------- */
@@ -1806,6 +1813,91 @@
     }
     var life = Math.round(parts.reduce(function (a, b) { return a + b; }, 0) / parts.length);
     return { body: body, mind: mind, life: life };
+  }
+
+  /* ================= Gamification =================
+     XP is DERIVED from history, never a stored counter — xpTotals() sums dayXp()
+     over every log, so it is idempotent, offline-safe and needs zero backend.
+     Levels and the four skill tracks fall straight out of the same day logs that
+     already drive the pillar scores. */
+  var XP_K = 140;            // curve: cumulative XP to reach level L = XP_K·L(L+1)/2
+  var XP_PER_GLASS = 3, XP_PERFECT = 40;
+  var lastXpLevel = null;    // seeded on first render; a rise fires the level-up burst
+  function dayXp(d) {
+    d = d || {};
+    var m = d.metrics || {};
+    var body = 0, mind = 0, life = 0;
+    // BODY — training + hydration + movement
+    if (d.workout1) body += 25;
+    if (d.outdoor) body += 25;
+    if (d.diet) body += 15;
+    body += Math.min(GLASS_COUNT, Math.round((Number(d.waterMl) || 0) / GLASS)) * XP_PER_GLASS;
+    if (m.steps) body += Math.min(15, Math.floor(Number(m.steps) / 1000));
+    // MIND — reading + reflection + calm
+    if (d.reading) mind += 15;
+    if (d.mood) mind += Math.round(Number(d.mood) / 5 * 10);
+    if (d.notes && String(d.notes).trim()) mind += 10;
+    if (m.meditMin) mind += Math.min(20, Math.round(Number(m.meditMin) / 3));
+    if (m.breathMin) mind += Math.min(10, Math.round(Number(m.breathMin)));
+    // LIFE — discipline + habits + work
+    if (d.photo) life += 10;
+    if (d.noAlcohol) life += 10;
+    if (d.extra && d.extra.noCig) life += 10;
+    ((state.profile && state.profile.customTasks) || []).forEach(function (h) { if (d.extra && d.extra[h.id]) life += 8; });
+    businesses().forEach(function (b) { var e = (d.biz || {})[b.id] || {}; if ((Number(e.m) || 0) > 0 || (Number(e.t) || 0) > 0) life += 10; });
+    if (m.detoxMin) life += Math.min(15, Math.round(Number(m.detoxMin) / 10));
+    var bonus = goalMet(d) ? XP_PERFECT : 0;   // perfect-day reward
+    return { body: body, mind: mind, life: life, bonus: bonus, total: body + mind + life + bonus };
+  }
+  // Merge today (live, maybe unsaved) over the saved logs so XP updates instantly.
+  function xpLogs() {
+    var byDate = {};
+    (state.logs || []).forEach(function (d) { if (d && d.date) byDate[d.date] = d; });
+    if (state.today && state.today.date) byDate[state.today.date] = state.today;
+    return Object.keys(byDate).map(function (k) { return byDate[k]; });
+  }
+  function xpTotals() {
+    var t = { body: 0, mind: 0, life: 0, total: 0 };
+    xpLogs().forEach(function (d) { var x = dayXp(d); t.body += x.body; t.mind += x.mind; t.life += x.life; t.total += x.total; });
+    return t;
+  }
+  function levelInfo(xp) {              // cumulative XP -> {level, inLevel, span, pct, next}
+    xp = Math.max(0, xp || 0);
+    var L = Math.floor((Math.sqrt(1 + 8 * xp / XP_K) - 1) / 2);
+    if (L < 0) L = 0;
+    var floor = XP_K * L * (L + 1) / 2, next = XP_K * (L + 1) * (L + 2) / 2;
+    return { level: L + 1, xp: xp, inLevel: Math.round(xp - floor), span: Math.round(next - floor), next: next, pct: Math.round((xp - floor) / (next - floor) * 100) };
+  }
+  function pillarLevel(xp) { return levelInfo(xp).level; }
+
+  // A "+N XP" floater — pure visual, fired on a positive change.
+  function showXpFloat(text) {
+    var f = document.createElement('div');
+    f.className = 'xp-float'; f.textContent = text;
+    document.body.appendChild(f);
+    setTimeout(function () { f.remove(); }, 1100);
+    if (state.haptics && navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
+  }
+  // Level-up burst — deterministic confetti (no Math.random needed) + toast.
+  function fireLevelUp(level) {
+    toast('⭐ Level up! You reached LV ' + level);
+    var host = document.createElement('div'); host.className = 'lvlup';
+    for (var i = 0; i < 22; i++) {
+      var p = document.createElement('i');
+      p.style.cssText = '--a:' + (i * 16.4) + 'deg;--d:' + (620 + (i % 5) * 130) + 'ms;--h:' + ((i * 47) % 360);
+      host.appendChild(p);
+    }
+    document.body.appendChild(host);
+    setTimeout(function () { host.remove(); }, 1500);
+    if (state.haptics && navigator.vibrate) { try { navigator.vibrate([20, 40, 20]); } catch (e) {} }
+  }
+  // Called after a task toggle: float the XP delta and celebrate a new level.
+  function gamifyAfterToggle(delta) {
+    if (delta > 0) showXpFloat('+' + delta + ' XP');
+    var lv = levelInfo(xpTotals().total).level;
+    if (lastXpLevel !== null && lv > lastXpLevel) fireLevelUp(lv);
+    lastXpLevel = lv;
+    if (!$('#view-home').classList.contains('hidden')) renderHome();
   }
 
   // Month aggregates from the day logs (money is added separately, async).
@@ -4156,23 +4248,39 @@
     var chip = $('#home-daychip');
     if (chip) chip.innerHTML = 'DAY ' + cd + (LEN && cd > LEN ? ' 🏆' : '') + ' · ' + streakOf(state.logs) + '🔥';
 
+    // Gamification — level + XP progress bar, derived from history.
+    var xt = xpTotals();
+    var lvBox = $('#home-level');
+    if (lvBox) {
+      var li = levelInfo(xt.total);
+      lvBox.innerHTML =
+        '<div class="lv-top"><span class="lv-badge">LV ' + li.level + '</span>' +
+          '<span class="lv-xp mono">' + xt.total.toLocaleString() + ' XP</span></div>' +
+        '<div class="lv-bar"><span style="width:' + Math.min(100, li.pct) + '%"></span></div>' +
+        '<div class="lv-sub muted tiny">' + li.inLevel + ' / ' + li.span + ' XP to LV ' + (li.level + 1) + '</div>';
+      if (lastXpLevel === null) lastXpLevel = li.level;   // seed without firing a burst
+    }
+
     // Top rings show this MONTH's average score per pillar (same source as the
     // Life Score card below), so they read as a running monthly grade — not just
     // today. Money loads async; ensureMoneyMonth is triggered by the score card.
     var homeYm = ymOf(todayStr());
     var sc = pillarScoresMonthly(homeYm);
+    var plv = { body: pillarLevel(xt.body), mind: pillarLevel(xt.mind), life: pillarLevel(xt.life) };
     var ringsCap = $('#home-rings-cap');
-    if (ringsCap) ringsCap.textContent = ymShort(homeYm) + ' · monthly average';
+    if (ringsCap) ringsCap.textContent = ymShort(homeYm) + ' · monthly average · skill levels';
     var rings = $('#home-rings');
     if (rings) {
       var circ = 2 * Math.PI * 26;
       rings.innerHTML = PILLARS.map(function (p) {
         var v = sc[p.id];
         var frac = v == null ? 0 : v / 100;
+        var lvl = plv[p.id];   // money has no XP track (budget-derived, not history)
         return '<button class="pillar" data-pillar="' + p.id + '" style="--pc:' + p.color + '">' +
           '<span class="pring-wrap"><svg viewBox="0 0 64 64" class="pring">' +
           '<circle class="pring-bg" cx="32" cy="32" r="26"></circle>' +
           '<circle class="pring-fg" cx="32" cy="32" r="26" stroke-dasharray="' + circ + '" stroke-dashoffset="' + (circ * (1 - frac)) + '"></circle></svg>' +
+          (lvl ? '<span class="pillar-lvl">L' + lvl + '</span>' : '') +
           '<span class="pillar-val">' + (v == null ? '—' : v) + '</span></span>' +
           '<span class="pillar-name eyebrow">' + p.name + '</span></button>';
       }).join('');
@@ -4282,7 +4390,10 @@
     box.innerHTML = rangeBarHtml('water') + dayBarHtml();
     bindRangeBar(box, 'water', renderWaterApp);
     bindDayBar(box, renderWaterApp);
-    var card = el('div', 'card water-card' + (pct >= 100 ? ' full' : '') + (pct >= 20 ? ' has-water' : ''));
+    // Loss mechanic: an untouched jar TODAY reads as dry/wilted — the cost of
+    // inaction is visible on open, no notification needed.
+    var dry = d.date === todayStr() && ml === 0;
+    var card = el('div', 'card water-card' + (pct >= 100 ? ' full' : '') + (pct >= 20 ? ' has-water' : '') + (dry ? ' jar-dry' : ''));
     card.innerHTML =
       '<div class="jar-wrap">' +
         '<svg viewBox="0 0 150 200" class="jar" aria-hidden="true">' +
