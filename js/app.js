@@ -781,8 +781,13 @@
       b.addEventListener('click', function () { switchView(b.dataset.view); });
     });
     $('#sync-state').addEventListener('click', function () {
+      flushPendingSaves();   // push any queued change first, so the re-read isn't stale
       loadState().then(renderAll).then(function () { toast('Synced'); });
     });
+    // Never lose an in-flight change when the app is backgrounded or closed —
+    // mobile browsers kill pending timers, which used to revert quick toggles.
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushPendingSaves(); });
+    window.addEventListener('pagehide', flushPendingSaves);
     $('#save-day').addEventListener('click', function () {
       var d = appDay();
       if (d.date === todayStr()) { pushToday(true); }
@@ -1185,6 +1190,16 @@
     { v: 2, label: 'Distant', emoji: '😕' },
     { v: 1, label: 'Rough',   emoji: '💔' }
   ];
+  // Shown on a hard day (score <= 2) instead of the positive fields — naming
+  // what strained things is its own kind of showing up.
+  var REL_FRICTION = [
+    { key: 'busy',    emoji: '🏃', label: 'Busy / apart' },
+    { key: 'argument',emoji: '💢', label: 'Argument' },
+    { key: 'distant', emoji: '🌫️', label: 'Felt distant' },
+    { key: 'tired',   emoji: '😮‍💨', label: 'Drained' },
+    { key: 'miscomm', emoji: '🗯️', label: 'Miscommunication' },
+    { key: 'stress',  emoji: '🔥', label: 'Outside stress' }
+  ];
   function relOf(d) { return (d.extra && d.extra.rel) || {}; }
   function relPatch(d, patch) {
     if (!d.extra) d.extra = {};
@@ -1266,6 +1281,26 @@
   function renderRelCheckin(d) {
     var box = $('#us-checkin'); if (!box) return;
     var r = relOf(d);
+    var hard = r.score && r.score <= 2;   // Distant / Rough → show the hard-day path
+    var positive =
+      '<label class="rel-qt-row"><input type="checkbox" id="rel-qt"' + (r.qt ? ' checked' : '') + ' /> We spent real quality time together today</label>' +
+      '<div class="rel-lang-lbl">Love languages you expressed today</div>' +
+      '<div class="rel-langs">' + REL_LANGS.map(function (l) {
+        var on = !!(r.langs && r.langs[l.key]);
+        return '<button type="button" class="rel-lang-chip' + (on ? ' on' : '') + '" data-lk="' + l.key + '">' + l.emoji + ' ' + l.label + '</button>';
+      }).join('') + '</div>' +
+      '<label>One thing you appreciated about them today<textarea id="rel-note" rows="2" placeholder="e.g. They made me laugh when I was stressed about work.">' + esc(r.note || '') + '</textarea></label>';
+    var hardBlock =
+      '<div class="rel-hard">' +
+        '<div class="rel-lang-lbl">What made today hard?</div>' +
+        '<div class="rel-langs">' + REL_FRICTION.map(function (f) {
+          var on = !!(r.friction && r.friction[f.key]);
+          return '<button type="button" class="rel-lang-chip rel-fric' + (on ? ' on' : '') + '" data-fk="' + f.key + '">' + f.emoji + ' ' + f.label + '</button>';
+        }).join('') + '</div>' +
+        '<label>What strained things today? (just for you)<textarea id="rel-hardnote" rows="2" placeholder="e.g. We were both buried in work and barely spoke.">' + esc(r.hardNote || '') + '</textarea></label>' +
+        '<div class="rel-repair"><span>Hard days count too — naming it is showing up. 💛</span>' +
+          '<button type="button" class="btn" id="rel-to-diary">＋ Add a reflection</button></div>' +
+      '</div>';
     box.innerHTML =
       '<div class="card">' +
         '<div class="rel-score-lbl">How connected did you feel today?</div>' +
@@ -1273,13 +1308,7 @@
           return '<button type="button" class="mood-btn' + (r.score === s.v ? ' sel' : '') + '" style="--mc:' + relScoreColor(s.v) + '" data-rv="' + s.v + '">' +
             '<span class="mood-emoji">' + s.emoji + '</span><span class="mood-label">' + s.label + '</span></button>';
         }).join('') + '</div>' +
-        '<label class="rel-qt-row"><input type="checkbox" id="rel-qt"' + (r.qt ? ' checked' : '') + ' /> We spent real quality time together today</label>' +
-        '<div class="rel-lang-lbl">Love languages you expressed today</div>' +
-        '<div class="rel-langs">' + REL_LANGS.map(function (l) {
-          var on = !!(r.langs && r.langs[l.key]);
-          return '<button type="button" class="rel-lang-chip' + (on ? ' on' : '') + '" data-lk="' + l.key + '">' + l.emoji + ' ' + l.label + '</button>';
-        }).join('') + '</div>' +
-        '<label>One thing you appreciated about them today<textarea id="rel-note" rows="2" placeholder="e.g. They made me laugh when I was stressed about work.">' + esc(r.note || '') + '</textarea></label>' +
+        (hard ? hardBlock : positive) +
       '</div>';
     box.querySelectorAll('#rel-score-btns [data-rv]').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -1287,43 +1316,66 @@
         var before = dayXp(d).total;
         relPatch(d, { score: relOf(d).score === v ? 0 : v });
         var delta = dayXp(d).total - before;
-        renderRelCheckin(d);
+        renderRelCheckin(d);   // may switch between the positive / hard layouts
         queueSaveDay(d);
         gamifyAfterToggle(delta);
       });
     });
-    box.querySelector('#rel-qt').addEventListener('change', function () {
-      var before = dayXp(d).total;
-      relPatch(d, { qt: this.checked });
-      var delta = dayXp(d).total - before;
-      queueSaveDay(d);
-      gamifyAfterToggle(delta);
-    });
-    box.querySelectorAll('.rel-lang-chip').forEach(function (chip) {
-      chip.addEventListener('click', function () {
-        var key = chip.getAttribute('data-lk');
-        var langs = Object.assign({}, relOf(d).langs);
-        langs[key] = !langs[key];
+    var bindNote = function (sel, field) {
+      var noteEl = box.querySelector(sel); if (!noteEl) return;
+      var noteTimer;
+      noteEl.addEventListener('input', function () {
+        clearTimeout(noteTimer);
+        var val = noteEl.value, patch = {}; patch[field] = val;
+        noteTimer = setTimeout(function () {
+          var before = dayXp(d).total;
+          relPatch(d, patch);
+          var delta = dayXp(d).total - before;
+          queueSaveDay(d);
+          gamifyAfterToggle(delta);
+        }, 500);
+      });
+    };
+    if (hard) {
+      box.querySelectorAll('.rel-fric').forEach(function (chip) {
+        chip.addEventListener('click', function () {
+          var key = chip.getAttribute('data-fk');
+          var friction = Object.assign({}, relOf(d).friction);
+          friction[key] = !friction[key];
+          relPatch(d, { friction: friction });
+          chip.classList.toggle('on');
+          queueSaveDay(d);
+        });
+      });
+      var diaryBtn = box.querySelector('#rel-to-diary');
+      if (diaryBtn) diaryBtn.addEventListener('click', function () {
+        var form = $('#rel-diary-form');
+        if (form) { form.classList.remove('hidden'); form.scrollIntoView({ behavior: 'smooth', block: 'center' }); var t = form.querySelector('#rd-situation'); if (t) t.focus(); }
+      });
+      bindNote('#rel-hardnote', 'hardNote');
+    } else {
+      box.querySelector('#rel-qt').addEventListener('change', function () {
         var before = dayXp(d).total;
-        relPatch(d, { langs: langs });
+        relPatch(d, { qt: this.checked });
         var delta = dayXp(d).total - before;
-        chip.classList.toggle('on');
         queueSaveDay(d);
         gamifyAfterToggle(delta);
       });
-    });
-    var noteEl = box.querySelector('#rel-note'), noteTimer;
-    noteEl.addEventListener('input', function () {
-      clearTimeout(noteTimer);
-      var val = noteEl.value;
-      noteTimer = setTimeout(function () {
-        var before = dayXp(d).total;
-        relPatch(d, { note: val });
-        var delta = dayXp(d).total - before;
-        queueSaveDay(d);
-        gamifyAfterToggle(delta);
-      }, 500);
-    });
+      box.querySelectorAll('.rel-lang-chip').forEach(function (chip) {
+        chip.addEventListener('click', function () {
+          var key = chip.getAttribute('data-lk');
+          var langs = Object.assign({}, relOf(d).langs);
+          langs[key] = !langs[key];
+          var before = dayXp(d).total;
+          relPatch(d, { langs: langs });
+          var delta = dayXp(d).total - before;
+          chip.classList.toggle('on');
+          queueSaveDay(d);
+          gamifyAfterToggle(delta);
+        });
+      });
+      bindNote('#rel-note', 'note');
+    }
   }
 
   function renderRelRange() {
@@ -1575,7 +1627,9 @@
   function connectedDay(l) {
     if (!l) return false;
     var r = (l.extra && l.extra.rel) || {};
-    if (r.qt || r.act || (r.note && String(r.note).trim())) return true;
+    // Any deliberate engagement counts as showing up — including a hard-day
+    // check-in (a score with a friction note), not just the good-day actions.
+    if (r.qt || r.act || r.score || (r.note && String(r.note).trim()) || (r.hardNote && String(r.hardNote).trim())) return true;
     if (r.langs) { for (var k in r.langs) if (r.langs[k]) return true; }
     return false;
   }
@@ -2013,6 +2067,15 @@
       toast('Saved locally · ' + err.message);
     });
   }
+  // Fire any queued (debounced) save right now. Called before a sync/reload and
+  // when the app is backgrounded, so an in-flight change (e.g. tapping "I did
+  // it") is never lost to a stale server re-read or a killed background timer.
+  function flushPendingSaves() {
+    var pending = false;
+    if (state.saveTimer) { clearTimeout(state.saveTimer); state.saveTimer = null; if (state.today) pushToday(false); pending = true; }
+    if (state.saveTimerPast) { clearTimeout(state.saveTimerPast); state.saveTimerPast = null; if (state.pendingPastSave) { state.pendingPastSave(); state.pendingPastSave = null; } pending = true; }
+    return pending;
+  }
 
   /* ---------------- Mini-app day selection (edit any past date) ----------------
      Every mini-app reads/writes appDay() instead of state.today. A shared date
@@ -2034,12 +2097,15 @@
     d.completed = goalMet(d);
     upsertLocal(d);
     var payload = Object.assign({}, d);
-    clearTimeout(state.saveTimerPast);
-    state.saveTimerPast = setTimeout(function () {
+    var doSave = function () {
+      state.pendingPastSave = null;
       api('saveDay', { day: payload }).then(function () {
         toast('Saved ' + shortDate(payload.date) + ' ✓');
       }).catch(function (err) { toast('Saved locally · ' + err.message); });
-    }, 700);
+    };
+    state.pendingPastSave = doSave;
+    clearTimeout(state.saveTimerPast);
+    state.saveTimerPast = setTimeout(doSave, 700);
   }
   function dayBarHtml() {
     var date = appDate(), isToday = date === todayStr();
@@ -2367,6 +2433,7 @@
     if (rel.qt) life += 10;
     if (rel.act) life += 10;                    // did the day's small connection act
     if (rel.note && String(rel.note).trim()) life += 8;
+    if (rel.hardNote && String(rel.hardNote).trim()) life += 8;   // naming a hard day counts too
     if (rel.langs) REL_LANGS.forEach(function (l) { if (rel.langs[l.key]) life += 4; });
     // Work check-in — rewards focus & BOUNDARIES, not raw hours. The focus score
     // and the honest "overworked" flag deliberately earn nothing.
