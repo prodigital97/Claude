@@ -690,10 +690,36 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .list-row:last-child { border-bottom: 0; }
 .list-row.off { opacity: .5; }
 .list-del { border: 0; background: transparent; color: var(--red); font-size: 15px; padding: 4px 6px; cursor: pointer; }
-.tk-check { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; cursor: pointer; }
-.tk-check input { width: auto; transform: scale(1.15); }
 .tk-done { text-decoration: line-through; color: var(--muted); }
-.tk-over { color: var(--red); }
+/* Task rows — priority accent + due-date urgency */
+.tk-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px 4px; border-top: 1px solid var(--line);
+  border-left: 3px solid var(--pc, var(--line)); padding-left: 11px; }
+.tk-item:first-of-type { border-top: 0; }
+.tk-item.done { opacity: .55; }
+.tk-check { position: relative; flex: none; cursor: pointer; margin-top: 1px; }
+.tk-check input { position: absolute; opacity: 0; width: 24px; height: 24px; margin: 0; cursor: pointer; }
+.tk-box { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px;
+  border: 2px solid var(--line); color: transparent; font-size: 14px; transition: all .15s; }
+.tk-check input:checked + .tk-box { background: var(--green); border-color: var(--green); color: #06210f; }
+.tk-body { flex: 1; min-width: 0; }
+.tk-title-line { font-size: 15px; font-weight: 600; line-height: 1.3; word-break: break-word; }
+.tk-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tk-pri { font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--pc); border: 1px solid color-mix(in srgb, var(--pc) 50%, transparent); border-radius: 6px; padding: 2px 6px; }
+.tk-duechip { font-size: 11px; font-weight: 600; color: var(--muted); }
+.tk-duechip.u-over { color: var(--red); font-weight: 800; }
+.tk-duechip.u-soon { color: var(--amber); font-weight: 700; }
+.tk-item.u-over { border-left-color: var(--red); }
+.tk-item.u-soon { border-left-color: var(--amber); }
+.tk-del { flex: none; border: 0; background: transparent; color: var(--muted); font-size: 14px; padding: 4px 6px; cursor: pointer; }
+/* Alert banner + bell toggle */
+.tk-alert-banner { display: flex; align-items: center; gap: 12px; border-color: color-mix(in srgb, var(--red) 45%, var(--line));
+  background: color-mix(in srgb, var(--red) 8%, var(--card)); }
+.tk-alert-ico { font-size: 22px; }
+.tk-add-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.tk-bell { border: 1px solid var(--line); background: var(--bg-soft); color: var(--muted); border-radius: 99px;
+  padding: 5px 10px; font-size: 11px; font-weight: 700; cursor: pointer; }
+.tk-bell.on { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 45%, var(--line)); }
 .fc-bar.over > span { background: var(--red); }
 
 /* Money Manager (full) */

@@ -7696,23 +7696,109 @@
     }).catch(function (e) { box.innerHTML = '<p class="muted tiny">' + esc(e.message) + '</p>'; });
   }
 
+  /* ---------------- Tasks (to-do with due dates + priority alerts) ---------- */
+  var TK_PRI = {
+    high:   { label: 'High',   c: '#fb5570', rank: 0 },
+    normal: { label: 'Normal', c: '#38bdf8', rank: 1 },
+    low:    { label: 'Low',    c: '#8b909c', rank: 2 }
+  };
+  // Google Sheets round-trips a date input as a full ISO string; accept both.
+  function taskDueInfo(due) {
+    if (!due) return null;
+    var s = String(due);
+    var d = s.length <= 10 ? new Date(s + 'T23:59:00') : new Date(s);
+    if (isNaN(d.getTime())) return null;
+    var dayMs = 86400000, ms = d.getTime() - Date.now();
+    var diffDays = Math.round((new Date(fmt(d)).getTime() - new Date(todayStr()).getTime()) / dayMs);
+    var hasTime = s.length > 10;
+    var label;
+    if (diffDays < 0) label = (diffDays === -1 ? '1 day' : Math.abs(diffDays) + ' days') + ' overdue';
+    else if (diffDays === 0) label = hasTime ? 'Today ' + clockTime(d.toISOString()) : 'Today';
+    else if (diffDays === 1) label = hasTime ? 'Tomorrow ' + clockTime(d.toISOString()) : 'Tomorrow';
+    else if (diffDays <= 6) label = 'in ' + diffDays + ' days';
+    else label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    var urgency = ms < 0 ? 'over' : ms < dayMs ? 'soon' : diffDays <= 3 ? 'near' : 'later';
+    return { date: d, label: label, urgency: urgency, ms: ms, diffDays: diffDays };
+  }
+  function tasksAlertsEnabled() { return localStorage.getItem('hard_taskalert') === '1'; }
+  function taskNotified() { try { return JSON.parse(localStorage.getItem('hard_tasknotified') || '{}'); } catch (e) { return {}; } }
+  // Fire a browser notification for each urgent high-priority task, once per day.
+  function fireTaskAlerts(urgent) {
+    if (!tasksAlertsEnabled() || !('Notification' in window) || Notification.permission !== 'granted') return;
+    var m = taskNotified(), changed = false;
+    urgent.forEach(function (x) {
+      if (m[x.id] === todayStr()) return;
+      var di = taskDueInfo(x.due);
+      try {
+        new Notification((di && di.urgency === 'over' ? '⚠️ Overdue' : '⏰ Due soon') + ': ' + x.title, { body: di ? di.label : '', tag: 'task-' + x.id });
+        m[x.id] = todayStr(); changed = true;
+      } catch (e) {}
+    });
+    if (changed) localStorage.setItem('hard_tasknotified', JSON.stringify(m));
+  }
   function renderTasks() {
     var box = $('#tasks-app'); if (!box) return;
     box.innerHTML = '<p class="muted tiny">Loading…</p>';
     api('listGet', { kind: 'task' }).then(function (dd) {
-      var items = (dd.items || []), today = todayStr();
-      var open = items.filter(function (x) { return !truthy(x.done); }).sort(function (a, b) { return String(a.due || '9999') < String(b.due || '9999') ? -1 : 1; });
+      var items = (dd.items || []);
+      var open = items.filter(function (x) { return !truthy(x.done); });
       var done = items.filter(function (x) { return truthy(x.done); });
-      function row(x) { var over = x.due && String(x.due) < today && !truthy(x.done); return '<div class="list-row"><label class="tk-check"><input type="checkbox" data-done="' + x.id + '"' + (truthy(x.done) ? ' checked' : '') + ' /> <span class="' + (truthy(x.done) ? 'tk-done' : '') + '">' + esc(x.title) + '</span></label><span class="fr-acts">' + (x.due ? '<span class="muted tiny' + (over ? ' tk-over' : '') + '">' + esc(String(x.due)) + '</span>' : '') + '<button class="list-del" data-del="' + x.id + '">✕</button></span></div>'; }
-      box.innerHTML =
-        '<div class="card"><div class="eyebrow">Add task</div>' +
+      // Sort open: soonest due first (overdue at the very top), then by priority.
+      open.sort(function (a, b) {
+        var da = taskDueInfo(a.due), db = taskDueInfo(b.due);
+        var am = da ? da.ms : Infinity, bm = db ? db.ms : Infinity;
+        if (am !== bm) return am - bm;
+        return (TK_PRI[a.priority] || TK_PRI.normal).rank - (TK_PRI[b.priority] || TK_PRI.normal).rank;
+      });
+      // Urgent = high priority that's overdue or due within 24h.
+      var urgent = open.filter(function (x) { var di = taskDueInfo(x.due); return (x.priority === 'high') && di && di.ms < 86400000; });
+      fireTaskAlerts(urgent);
+
+      function row(x) {
+        var di = taskDueInfo(x.due), pri = TK_PRI[x.priority] || TK_PRI.normal, isDone = truthy(x.done);
+        return '<div class="tk-item' + (di && !isDone ? ' u-' + di.urgency : '') + (isDone ? ' done' : '') + '" style="--pc:' + pri.c + '">' +
+          '<label class="tk-check"><input type="checkbox" data-done="' + x.id + '"' + (isDone ? ' checked' : '') + ' /><span class="tk-box">✓</span></label>' +
+          '<div class="tk-body"><div class="tk-title-line' + (isDone ? ' tk-done' : '') + '">' + esc(x.title) + '</div>' +
+            '<div class="tk-meta">' +
+              (x.priority && x.priority !== 'normal' ? '<span class="tk-pri" style="--pc:' + pri.c + '">' + pri.label + '</span>' : '') +
+              (di ? '<span class="tk-duechip u-' + di.urgency + '">' + (di.urgency === 'over' ? '⚠️ ' : di.urgency === 'soon' ? '⏰ ' : '📅 ') + esc(di.label) + '</span>' : '') +
+            '</div></div>' +
+          '<button class="tk-del" data-del="' + x.id + '" aria-label="Delete">✕</button></div>';
+      }
+
+      var alertOn = tasksAlertsEnabled() && ('Notification' in window) && Notification.permission === 'granted';
+      var banner = urgent.length
+        ? '<div class="card tk-alert-banner"><span class="tk-alert-ico">🔔</span><div><b>' + urgent.length + ' high-priority task' + (urgent.length === 1 ? '' : 's') + ' need attention</b>' +
+            '<div class="muted tiny">' + esc(urgent.slice(0, 2).map(function (x) { var di = taskDueInfo(x.due); return x.title + (di ? ' · ' + di.label : ''); }).join(' · ')) + (urgent.length > 2 ? ' …' : '') + '</div></div></div>'
+        : '';
+
+      box.innerHTML = banner +
+        '<div class="card"><div class="tk-add-head"><span class="eyebrow">Add task</span>' +
+          '<button id="tk-bell" class="tk-bell' + (alertOn ? ' on' : '') + '" type="button" title="Deadline alerts">' + (alertOn ? '🔔 Alerts on' : '🔕 Enable alerts') + '</button></div>' +
           '<label>Task<input id="tk-title" placeholder="e.g. Submit tax documents" /></label>' +
-          '<div class="manual-grid"><label>Due<input id="tk-due" type="date" /></label>' +
-          '<label>Priority<select id="tk-pri"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></label></div>' +
-          '<button id="tk-add" class="btn primary block">Add task</button></div>' +
+          '<div class="manual-grid"><label>Due date<input id="tk-due" type="date" /></label>' +
+          '<label>Time (optional)<input id="tk-time" type="time" /></label></div>' +
+          '<label>Priority<select id="tk-pri"><option value="high">🔴 High</option><option value="normal" selected>🔵 Normal</option><option value="low">⚪ Low</option></select></label>' +
+          '<button id="tk-add" class="btn primary block" style="margin-top:12px">Add task</button></div>' +
         '<div class="card"><div class="eyebrow">Open · ' + open.length + '</div>' + (open.length ? open.map(row).join('') : '<p class="muted tiny">Nothing open 🎉</p>') + '</div>' +
         (done.length ? '<div class="card"><div class="eyebrow">Done · ' + done.length + '</div>' + done.map(row).join('') + '</div>' : '');
-      $('#tk-add').addEventListener('click', function () { var t = $('#tk-title').value.trim(); if (!t) { toast('Enter a task'); return; } api('listAdd', { kind: 'task', item: { title: t, due: $('#tk-due').value, priority: $('#tk-pri').value, done: false } }).then(function () { toast('Added ✓'); renderTasks(); }).catch(function (e) { toast(e.message); }); });
+
+      $('#tk-add').addEventListener('click', function () {
+        var t = $('#tk-title').value.trim(); if (!t) { toast('Enter a task'); return; }
+        var date = $('#tk-due').value, time = $('#tk-time').value;
+        var due = date ? (time ? date + 'T' + time : date) : '';
+        api('listAdd', { kind: 'task', item: { title: t, due: due, priority: $('#tk-pri').value, done: false } }).then(function () { toast('Added ✓'); renderTasks(); }).catch(function (e) { toast(e.message); });
+      });
+      var bell = $('#tk-bell');
+      if (bell) bell.addEventListener('click', function () {
+        if (!('Notification' in window)) { toast('This device doesn’t support notifications'); return; }
+        if (tasksAlertsEnabled() && Notification.permission === 'granted') { localStorage.setItem('hard_taskalert', '0'); toast('Alerts off'); renderTasks(); return; }
+        Notification.requestPermission().then(function (perm) {
+          if (perm === 'granted') { localStorage.setItem('hard_taskalert', '1'); toast('Deadline alerts on 🔔'); }
+          else toast('Allow notifications in your browser to enable alerts');
+          renderTasks();
+        });
+      });
       box.querySelectorAll('[data-done]').forEach(function (c) { c.addEventListener('change', function () { api('listUpdate', { kind: 'task', id: c.getAttribute('data-done'), item: { done: c.checked } }).then(renderTasks); }); });
       box.querySelectorAll('[data-del]').forEach(function (b) { b.addEventListener('click', function () { api('listDelete', { kind: 'task', id: b.getAttribute('data-del') }).then(renderTasks); }); });
     }).catch(function (e) { box.innerHTML = '<p class="muted tiny">' + esc(e.message) + '</p>'; });
