@@ -6864,7 +6864,14 @@
               '<div class="ch-card-desc">' + esc(p.desc) + '</div>' +
               (active ? '<div class="ch-card-active">● Active</div>' : '') + '</button>';
           }).join('') + '</div></div>';
-      }).join('');
+      }).join('') +
+      // Custom mode — build your own daily task list from any blocks.
+      '<div class="ch-tier"><div class="ch-tier-head t-custom"><b>Custom</b><span class="muted tiny">your own daily tasks</span></div>' +
+        '<button type="button" class="ch-card ch-card-custom" id="ch-custom-card">' +
+          '<div class="ch-card-top"><span class="ch-emoji">🛠️</span><span class="ch-days">build</span></div>' +
+          '<div class="ch-card-name">Build your own</div>' +
+          '<div class="ch-card-desc">Pick exactly which tasks, metrics, habits and your own items become your daily checklist.</div>' +
+        '</button></div>';
     // History
     var hist = (c.history || []).slice().reverse();
     if (hist.length) {
@@ -6888,6 +6895,8 @@
       });
     });
     $('#ch-custom-new').addEventListener('click', function () { chStartBuilder(); });
+    var customCard = $('#ch-custom-card');
+    if (customCard) customCard.addEventListener('click', function () { chStartBuilder(); });
     var restartBtn = $('#ch-restart2');
     if (restartBtn) restartBtn.addEventListener('click', function () {
       if (!confirm('Restart this challenge from Day 1? The current run is archived.')) return;
