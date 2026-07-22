@@ -5007,7 +5007,6 @@
     { id: 'money',     name: 'Money',     icon: '💸', pillar: 'money', open: function () { switchView('money'); } },
     { id: 'subs',      name: 'Subs',      icon: '🔁', pillar: 'money', open: function () { switchView('subs'); } },
     { id: 'savings',   name: 'Savings',   icon: '🐷', pillar: 'money', open: function () { switchView('savings'); } },
-    { id: 'avatar',    name: 'Character', icon: '🦸', pillar: 'life', open: function () { switchView('avatar'); } },
     { id: 'us',        name: 'Us',        icon: '💞', pillar: 'life', open: function () { switchView('us'); } },
     { id: 'habits',    name: 'Habits',    icon: '🔗', pillar: 'life', open: function () { switchView('habits'); } },
     { id: 'work',      name: 'Work',      icon: '💼', pillar: 'life', open: function () { switchView('work'); } },
