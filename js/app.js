@@ -930,6 +930,7 @@
     if (name === 'fast') renderFasting();
     if (name === 'mood') renderMoodApp();
     if (name === 'us') renderUsApp();
+    if (name === 'avatar') renderAvatar();
     if (name === 'gut') renderGutApp();
     if (name === 'habits') renderHabitsApp();
     if (name === 'work') renderWorkApp();
@@ -2544,6 +2545,180 @@
     var text = msg.indexOf('|') >= 0 ? msg.split('|')[1] : 'You’re out of Charge for this month.';
     toast('🔋 ' + text);
     refreshCharge();
+  }
+
+  /* ================= Character (RPG avatar) =================
+     A FIFA-style card built from the SAME logged behaviour that drives the
+     pillar scores — you can't fake it, you earn it by living it. Six traits,
+     each 0–99, derived from your real history: 60% recent-30-day form + a
+     saturating lifetime-mastery bonus. On top of the earned base, each level
+     grants skill points you can spend to shape your build (capped, so effort
+     always dominates). All derived + a small profile.avatar allocation blob,
+     synced through saveGoals — zero backend. */
+  var AV_ALLOC_CAP = 15;   // max points you can pour into one trait
+  var AV_PTS_PER_LVL = 2;  // skill points earned per character level
+  var AVATAR_TRAITS = [
+    { key: 'pow', label: 'Power',     abbr: 'POW', emoji: '💪', pillar: 'body', color: 'var(--body-c)', blurb: 'strength & training' },
+    { key: 'end', label: 'Endurance', abbr: 'END', emoji: '🏃', pillar: 'body', color: '#f97316', blurb: 'cardio & hydration' },
+    { key: 'foc', label: 'Focus',     abbr: 'FOC', emoji: '🎯', pillar: 'mind', color: 'var(--mind-c)', blurb: 'calm & deep work' },
+    { key: 'mnd', label: 'Mind',      abbr: 'MND', emoji: '🧠', pillar: 'mind', color: '#818cf8', blurb: 'reading & reflection' },
+    { key: 'wlt', label: 'Wealth',    abbr: 'WLT', emoji: '💰', pillar: 'money', color: 'var(--money-c)', blurb: 'money discipline' },
+    { key: 'wil', label: 'Willpower', abbr: 'WIL', emoji: '🔥', pillar: 'life', color: 'var(--life-c)', blurb: 'streak & discipline' }
+  ];
+  // Generic 0–99 rating: recent-30-day avg intensity (0..1) + saturating volume.
+  function avTrait(intensityFn, volFn, volSat, formW, masteryW) {
+    var today = todayStr(), sum = 0, n = 0;
+    for (var i = 0; i < 30; i++) { var dt = addDays(today, -i); var l = dt === today ? (state.today || {}) : (logFor(dt) || {}); sum += intensityFn(l); n++; }
+    var rate = n ? sum / n : 0;
+    var vol = 0; xpLogs().forEach(function (l) { vol += volFn(l || {}); });
+    var mastery = Math.min(1, vol / volSat);
+    return Math.max(1, Math.min(99, Math.round(12 + rate * (formW || 58) + mastery * (masteryW || 29))));
+  }
+  function avMetric(l, k) { return Number((l.metrics || {})[k]) || 0; }
+  function avatarBase() {
+    var habits = (state.profile && state.profile.customTasks) || [];
+    var streak = streakOf(state.logs || []);
+    var pow = avTrait(
+      function (l) { return l.workout1 ? 1 : 0; },
+      function (l) { return l.workout1 ? 1 : 0; }, 120);
+    var end = avTrait(
+      function (l) { return Math.min(1, (l.outdoor ? 0.6 : 0) + Math.min(0.5, avMetric(l, 'steps') / 12000) + Math.min(0.3, (Number(l.waterMl) || 0) / WATER_GOAL * 0.3)); },
+      function (l) { return (l.outdoor || avMetric(l, 'steps') >= 6000) ? 1 : 0; }, 120);
+    var foc = avTrait(
+      function (l) { var wk = (l.extra && l.extra.work) || {}; var min = avMetric(l, 'meditMin') + avMetric(l, 'detoxMin') + avMetric(l, 'breathMin') + (Number(wk.deep) || 0) * 30; return Math.min(1, min / 60); },
+      function (l) { var wk = (l.extra && l.extra.work) || {}; return (avMetric(l, 'meditMin') + avMetric(l, 'detoxMin') + avMetric(l, 'breathMin') + (Number(wk.deep) || 0) * 30) / 60; }, 30);
+    var mnd = avTrait(
+      function (l) { return Math.min(1, (l.reading ? 0.7 : 0) + (l.mood ? Number(l.mood) / 5 * 0.2 : 0) + (l.notes && String(l.notes).trim() ? 0.1 : 0)); },
+      function (l) { return l.reading ? 1 : 0; }, 120);
+    var wil = avTrait(
+      function (l) {
+        var hp = habits.length ? habits.filter(function (h) { return l.extra && l.extra[h.id]; }).length / habits.length : 0;
+        return Math.min(1, (l.noAlcohol ? 0.28 : 0) + (l.extra && l.extra.noCig ? 0.18 : 0) + (l.diet ? 0.22 : 0) + hp * 0.32);
+      },
+      function (l) { return goalMet(l) ? 1 : 0; }, 75, 45, 42);
+    // Streak is the strongest willpower signal — fold it in.
+    wil = Math.max(1, Math.min(99, Math.round(wil * 0.6 + Math.min(1, streak / 60) * 99 * 0.4)));
+    // Wealth: from the budget score + lifetime budget wins. Low until a budget
+    // exists — honestly reflecting that money isn't being tracked yet.
+    var msc = moneyScoreFor(ymOf(todayStr()));
+    var wltScore = (typeof msc === 'number') ? msc : 0;
+    var wlt = Math.max(1, Math.min(99, Math.round(12 + wltScore / 100 * 58 + Math.min(1, moneyXp() / 300) * 29)));
+    return { pow: pow, end: end, foc: foc, mnd: mnd, wlt: wlt, wil: wil };
+  }
+  function avatarProfile() { return (state.profile && state.profile.avatar) || {}; }
+  function avatarAlloc() { return avatarProfile().alloc || {}; }
+  function avatarSkill() {
+    var lvl = levelInfo(xpTotals().total).level;
+    var earned = Math.max(0, (lvl - 1) * AV_PTS_PER_LVL);
+    var a = avatarAlloc(), spent = 0;
+    for (var k in a) spent += Math.max(0, Number(a[k]) || 0);
+    return { earned: earned, spent: spent, avail: Math.max(0, earned - spent) };
+  }
+  function avatarTraits() {
+    var base = avatarBase(), a = avatarAlloc(), out = {};
+    AVATAR_TRAITS.forEach(function (t) {
+      var b = base[t.key] || 1, add = Math.max(0, Math.min(AV_ALLOC_CAP, Number(a[t.key]) || 0));
+      out[t.key] = { base: b, alloc: add, val: Math.min(99, b + add) };
+    });
+    return out;
+  }
+  function avatarOverall(tr) { var s = 0; AVATAR_TRAITS.forEach(function (t) { s += tr[t.key].val; }); return Math.round(s / AVATAR_TRAITS.length); }
+  function avatarTier(ovr) {
+    if (ovr >= 90) return { name: 'Icon', cls: 'icon', emoji: '👑' };
+    if (ovr >= 82) return { name: 'Legend', cls: 'legend', emoji: '⭐' };
+    if (ovr >= 72) return { name: 'Elite', cls: 'elite', emoji: '🥇' };
+    if (ovr >= 60) return { name: 'Pro', cls: 'pro', emoji: '🥈' };
+    if (ovr >= 45) return { name: 'Rising', cls: 'rising', emoji: '🥉' };
+    return { name: 'Rookie', cls: 'rookie', emoji: '🌱' };
+  }
+  function avatarArchetype(tr) {
+    var pil = { body: (tr.pow.val + tr.end.val) / 2, mind: (tr.foc.val + tr.mnd.val) / 2, money: tr.wlt.val, life: tr.wil.val };
+    var arr = Object.keys(pil).map(function (k) { return { k: k, v: pil[k] }; }).sort(function (a, b) { return b.v - a.v; });
+    if (arr[0].v - arr[3].v <= 8) return { name: 'All-Rounder', emoji: '🌟', pos: 'ALL' };
+    var map = {
+      body: { name: 'Athlete', emoji: '🏃', pos: 'ATH' },
+      mind: { name: 'Sage', emoji: '🧘', pos: 'SGE' },
+      money: { name: 'Mogul', emoji: '💼', pos: 'MGL' },
+      life: { name: 'Monk', emoji: '🛡️', pos: 'MNK' }
+    };
+    return map[arr[0].k];
+  }
+  // Form: last-7-day XP vs the 7 before — momentum arrow.
+  function avatarForm() {
+    var today = todayStr(), a = 0, b = 0;
+    for (var i = 0; i < 7; i++) { var l = logFor(addDays(today, -i)) || (addDays(today, -i) === today ? state.today : null); if (l) a += dayXp(l).total; }
+    for (var j = 7; j < 14; j++) { var l2 = logFor(addDays(today, -j)); if (l2) b += dayXp(l2).total; }
+    if (a > b * 1.15) return { label: 'Hot', arrow: '▲', cls: 'up' };
+    if (a < b * 0.85) return { label: 'Cooling', arrow: '▼', cls: 'down' };
+    return { label: 'Steady', arrow: '●', cls: 'flat' };
+  }
+  function saveAvatar(patch) {
+    var av = Object.assign({}, avatarProfile(), patch);
+    var profile = Object.assign({}, state.profile, { avatar: av });
+    state.profile = profile;
+    api('saveGoals', { profile: profile }).then(function (data) { if (data && data.profile) state.profile = data.profile; }).catch(function (e) { toast(e.message); });
+  }
+  function avatarAllocSet(key, delta) {
+    var a = Object.assign({}, avatarAlloc());
+    var sk = avatarSkill();
+    var cur = Math.max(0, Number(a[key]) || 0);
+    if (delta > 0) { if (sk.avail <= 0) { toast('No skill points left — level up to earn more'); return; } if (cur >= AV_ALLOC_CAP) { toast('Maxed this trait (+' + AV_ALLOC_CAP + ')'); return; } }
+    if (delta < 0 && cur <= 0) return;
+    a[key] = cur + delta;
+    saveAvatar({ alloc: a });
+    renderAvatar();
+  }
+
+  function renderAvatar() {
+    var box = $('#avatar-app'); if (!box) return;
+    var tr = avatarTraits(), ovr = avatarOverall(tr), tier = avatarTier(ovr), arch = avatarArchetype(tr);
+    var li = levelInfo(xpTotals().total), sk = avatarSkill(), form = avatarForm();
+    var name = avatarProfile().name || (state.user && state.user.displayName) || 'You';
+    var nextTier = [45, 60, 72, 82, 90].filter(function (x) { return x > ovr; })[0];
+
+    var traitRows = AVATAR_TRAITS.map(function (t) {
+      var v = tr[t.key];
+      return '<div class="av-trait"><div class="av-tr-top">' +
+          '<span class="av-tr-name">' + t.emoji + ' ' + t.abbr + ' <span class="muted tiny">' + t.blurb + '</span></span>' +
+          '<span class="av-tr-val">' + v.val + (v.alloc ? '<span class="av-tr-alloc">+' + v.alloc + '</span>' : '') + '</span></div>' +
+        '<div class="av-tr-bar"><span style="width:' + v.val + '%;background:' + t.color + '"></span></div>' +
+        '<div class="av-tr-ctl"><button class="av-pt" data-avdec="' + t.key + '">−</button>' +
+          '<button class="av-pt" data-avinc="' + t.key + '">+</button></div></div>';
+    }).join('');
+
+    box.innerHTML =
+      '<div class="card av-card av-' + tier.cls + '">' +
+        '<div class="av-card-top">' +
+          '<div class="av-ovr"><div class="av-ovr-num">' + ovr + '</div><div class="av-ovr-lbl">OVR</div>' +
+            '<div class="av-pos">' + arch.pos + '</div></div>' +
+          '<div class="av-portrait">' + arch.emoji + '<span class="av-tierbadge">' + tier.emoji + '</span></div>' +
+        '</div>' +
+        '<div class="av-name">' + esc(name) + ' <button class="av-edit" id="av-rename" title="Rename">✎</button></div>' +
+        '<div class="av-sub"><span class="av-tier-chip av-' + tier.cls + '">' + tier.emoji + ' ' + tier.name + '</span>' +
+          '<span class="muted">' + arch.emoji + ' ' + arch.name + '</span>' +
+          '<span class="av-form av-form-' + form.cls + '">' + form.arrow + ' ' + form.label + '</span></div>' +
+        '<div class="av-lvl"><div class="lv-bar"><span style="width:' + Math.min(100, li.pct) + '%"></span></div>' +
+          '<div class="muted tiny" style="margin-top:5px">LV ' + li.level + ' · ' + li.inLevel + ' / ' + li.span + ' XP to LV ' + (li.level + 1) +
+            (nextTier ? ' · next tier at OVR ' + nextTier : ' · top tier reached 👑') + '</div></div>' +
+      '</div>' +
+      '<div class="card av-pts-card"><div class="av-pts-head"><span class="eyebrow">Skill points</span>' +
+        '<span class="av-pts-bal ' + (sk.avail ? 'has' : '') + '">' + sk.avail + ' to spend</span></div>' +
+        '<p class="muted tiny" style="margin:2px 0 10px">Earn ' + AV_PTS_PER_LVL + ' per level. Spend them to shape your build (up to +' + AV_ALLOC_CAP + ' per trait). Your base rating is earned by showing up — points just add on top.</p>' +
+        '<div class="av-traits">' + traitRows + '</div>' +
+        (sk.spent ? '<button class="btn block" id="av-reset" style="margin-top:12px">↺ Reset points</button>' : '') +
+      '</div>' +
+      '<div class="card"><div class="eyebrow" style="margin-bottom:6px">How your character grows</div>' +
+        '<p class="muted tiny" style="margin:0">Every trait is computed from what you actually log — 60% your last 30 days, 40% lifetime mastery. Run and train → POW/END climb. Meditate, unplug, read → FOC/MND. Stay under budget → WLT. Keep your streak and habits → WIL. Live it and the card rises on its own.</p></div>';
+
+    box.querySelectorAll('[data-avinc]').forEach(function (b) { b.addEventListener('click', function () { avatarAllocSet(b.getAttribute('data-avinc'), 1); }); });
+    box.querySelectorAll('[data-avdec]').forEach(function (b) { b.addEventListener('click', function () { avatarAllocSet(b.getAttribute('data-avdec'), -1); }); });
+    var reset = $('#av-reset');
+    if (reset) reset.addEventListener('click', function () { if (!confirm('Reset all allocated skill points?')) return; saveAvatar({ alloc: {} }); renderAvatar(); });
+    var rename = $('#av-rename');
+    if (rename) rename.addEventListener('click', function () {
+      var n = prompt('Name your character', name); if (n == null) return;
+      saveAvatar({ name: String(n).slice(0, 24) }); renderAvatar();
+    });
   }
 
   // Month aggregates from the day logs (money is added separately, async).
@@ -4832,6 +5007,7 @@
     { id: 'money',     name: 'Money',     icon: '💸', pillar: 'money', open: function () { switchView('money'); } },
     { id: 'subs',      name: 'Subs',      icon: '🔁', pillar: 'money', open: function () { switchView('subs'); } },
     { id: 'savings',   name: 'Savings',   icon: '🐷', pillar: 'money', open: function () { switchView('savings'); } },
+    { id: 'avatar',    name: 'Character', icon: '🦸', pillar: 'life', open: function () { switchView('avatar'); } },
     { id: 'us',        name: 'Us',        icon: '💞', pillar: 'life', open: function () { switchView('us'); } },
     { id: 'habits',    name: 'Habits',    icon: '🔗', pillar: 'life', open: function () { switchView('habits'); } },
     { id: 'work',      name: 'Work',      icon: '💼', pillar: 'life', open: function () { switchView('work'); } },

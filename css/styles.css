@@ -1380,3 +1380,44 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 /* Challenge gallery — custom "build your own" */
 .ch-tier-head.t-custom { border-left-color: var(--primary); }
 .ch-card-custom { border-style: dashed; border-color: color-mix(in srgb, var(--primary) 45%, var(--line)); }
+
+/* ================= Character (RPG avatar card) ================= */
+.av-card { position: relative; overflow: hidden; border-width: 1px; }
+.av-card::before { content: ""; position: absolute; inset: 0; opacity: .16; pointer-events: none;
+  background: radial-gradient(120% 80% at 80% 0%, var(--av-glow, var(--primary)), transparent 60%); }
+.av-card.av-rookie  { --av-glow: #6b7280; }
+.av-card.av-rising  { --av-glow: #b45309; }
+.av-card.av-pro     { --av-glow: #9ca3af; }
+.av-card.av-elite   { --av-glow: #eab308; border-color: color-mix(in srgb, #eab308 45%, var(--line)); }
+.av-card.av-legend  { --av-glow: #a855f7; border-color: color-mix(in srgb, #a855f7 55%, var(--line)); }
+.av-card.av-icon    { --av-glow: #f5c542; border-color: color-mix(in srgb, #f5c542 65%, var(--line)); }
+.av-card-top { display: flex; align-items: flex-start; justify-content: space-between; position: relative; }
+.av-ovr { text-align: center; line-height: 1; }
+.av-ovr-num { font-size: 46px; font-weight: 800; letter-spacing: -1px; }
+.av-ovr-lbl { font-size: 11px; font-weight: 700; letter-spacing: .18em; color: var(--muted); margin-top: 2px; }
+.av-pos { margin-top: 6px; font-size: 12px; font-weight: 800; letter-spacing: .08em; color: var(--av-glow, var(--primary)); }
+.av-portrait { position: relative; font-size: 62px; line-height: 1; filter: drop-shadow(0 4px 12px rgba(0,0,0,.4)); }
+.av-tierbadge { position: absolute; bottom: -4px; right: -10px; font-size: 26px; }
+.av-name { position: relative; font-size: 20px; font-weight: 800; margin-top: 10px; }
+.av-edit { border: 0; background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; padding: 2px 4px; }
+.av-sub { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; font-size: 13px; }
+.av-tier-chip { font-weight: 800; font-size: 11px; letter-spacing: .04em; padding: 3px 8px; border-radius: 7px;
+  color: #0a0b0e; background: var(--av-glow, var(--primary)); }
+.av-form { font-weight: 700; font-size: 12px; margin-left: auto; }
+.av-form-up { color: #22c55e; } .av-form-down { color: #fb5570; } .av-form-flat { color: var(--muted); }
+.av-lvl { position: relative; margin-top: 14px; }
+/* Skill points + traits */
+.av-pts-head { display: flex; align-items: center; justify-content: space-between; }
+.av-pts-bal { font-size: 12px; font-weight: 800; color: var(--muted); }
+.av-pts-bal.has { color: var(--primary); }
+.av-traits { display: flex; flex-direction: column; gap: 12px; }
+.av-trait { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "top ctl" "bar ctl"; column-gap: 12px; row-gap: 5px; align-items: center; }
+.av-tr-top { grid-area: top; display: flex; align-items: baseline; justify-content: space-between; }
+.av-tr-name { font-size: 13px; font-weight: 700; }
+.av-tr-val { font-size: 16px; font-weight: 800; }
+.av-tr-alloc { color: var(--primary); font-size: 12px; margin-left: 3px; }
+.av-tr-bar { grid-area: bar; height: 8px; border-radius: 99px; background: var(--bg-soft); overflow: hidden; }
+.av-tr-bar > span { display: block; height: 100%; border-radius: 99px; transition: width .5s ease; }
+.av-tr-ctl { grid-area: ctl; display: flex; gap: 6px; }
+.av-pt { width: 32px; height: 32px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg-soft); color: var(--text); font-size: 18px; cursor: pointer; }
+.av-pt:active { transform: scale(.9); }
