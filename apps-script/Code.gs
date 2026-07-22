@@ -908,14 +908,32 @@ function handleScanLabel(body) {
   // Convert everything to per-100 g deterministically here (don't trust the model's math).
   var basis = Number(p.basisGrams) || 100;
   if (!(basis > 0) || basis > 1000) basis = 100;
+  // An ESTIMATE is instructed to already be per-100 g; never rescale it. The
+  // model sometimes fills basisGrams with a per-bar/per-serving size on a
+  // front-of-pack estimate, which used to inflate everything (e.g. 522 kcal ->
+  // 3480). Force a per-100 basis for estimates.
+  if (p.estimated) basis = 100;
   var factor = 100 / basis;
-  function per100(x, intval) { var v = n(x) * factor; return intval ? Math.round(v) : Math.round(v * 10) / 10; }
+  function conv(x, f, intval) { var v = n(x) * f; return intval ? Math.round(v) : Math.round(v * 10) / 10; }
+  function build(f) {
+    return {
+      calories: conv(p.calories, f, true), protein: conv(p.protein, f), carbs: conv(p.carbs, f), fat: conv(p.fat, f), sugar: conv(p.sugar, f),
+      addedSugar: conv(p.addedSugar, f), saturatedFat: conv(p.saturatedFat, f), transFat: conv(p.transFat, f),
+      fiber: conv(p.fiber, f), sodium: conv(p.sodium, f, true), cholesterol: conv(p.cholesterol, f, true), calcium: conv(p.calcium, f, true), iron: conv(p.iron, f)
+    };
+  }
+  var vals = build(factor);
+  // Sanity guard: per-100 g values can't break physics. If protein+carbs+fat
+  // exceed ~100 g or energy tops ~900 kcal, basisGrams was wrong and inflated
+  // the result — fall back to treating the model's numbers as already per-100 g.
+  var macroSum = vals.protein + vals.carbs + vals.fat;
+  if (vals.calories > 902 || macroSum > 101) { basis = 100; vals = build(1); }
   var result = {
     name: String(p.name || ''), estimated: !!p.estimated, servingSize: String(p.servingSize || ''),
     basisGrams: basis,
-    calories: per100(p.calories, true), protein: per100(p.protein), carbs: per100(p.carbs), fat: per100(p.fat), sugar: per100(p.sugar),
-    addedSugar: per100(p.addedSugar), saturatedFat: per100(p.saturatedFat), transFat: per100(p.transFat),
-    fiber: per100(p.fiber), sodium: per100(p.sodium, true), cholesterol: per100(p.cholesterol, true), calcium: per100(p.calcium, true), iron: per100(p.iron)
+    calories: vals.calories, protein: vals.protein, carbs: vals.carbs, fat: vals.fat, sugar: vals.sugar,
+    addedSugar: vals.addedSugar, saturatedFat: vals.saturatedFat, transFat: vals.transFat,
+    fiber: vals.fiber, sodium: vals.sodium, cholesterol: vals.cholesterol, calcium: vals.calcium, iron: vals.iron
   };
   try { logScan(body, usedModel, imgs.length, usage, result.name, 'food'); } catch (e) { /* logging must never break a scan */ }
   return result;
