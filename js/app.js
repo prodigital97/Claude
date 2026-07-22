@@ -3656,8 +3656,10 @@
   }
   function fromLocalInput(v) { return new Date(v).toISOString(); }
 
-  // The fast calendar + history "dates box" — shown whether or not a fast is
-  // currently running (populated by loadFastHistory via its element ids).
+  // The fast calendar "dates box" — shown whether or not a fast is currently
+  // running (populated by loadFastCalendar via its element ids). The calendar
+  // is the single source of truth for past fasts; tapping a day opens an
+  // inline edit/delete form right here instead of a separate list.
   function fastCalHtml() {
     return '<div class="card">' +
       '<div class="cal-nav" style="margin-bottom:8px">' +
@@ -3673,8 +3675,8 @@
         '<span class="gt-key"><i style="background:#8da3c4"></i>under 14h</span>' +
       '</div>' +
       '<p class="muted tiny" style="margin:8px 0 0">Tap a fast to edit it · tap an empty day to log one.</p>' +
-    '</div>' +
-    '<div class="card" style="padding-top:12px"><div id="fast-history" class="fast-history"></div></div>';
+      '<div id="fast-day-edit" class="fh-edit-form hidden"></div>' +
+    '</div>';
   }
   function renderFasting() {
     stopFastTimer();
@@ -3720,7 +3722,7 @@
       });
       updateFastTimer();
       state.fastTimer = setInterval(updateFastTimer, 1000);
-      loadFastHistory();   // populate the dates box shown below the active fast
+      loadFastCalendar();   // populate the dates box shown below the active fast
     } else {
       box.innerHTML =
         '<div class="card fast-card">' +
@@ -3745,7 +3747,7 @@
       $('#fast-manual-toggle').addEventListener('click', function () { fastManualOpen(); });
       $('#fm-cancel').addEventListener('click', function () { $('#fast-manual').classList.add('hidden'); });
       $('#fm-save').addEventListener('click', saveManualFast);
-      loadFastHistory();
+      loadFastCalendar();
     }
   }
 
@@ -3822,10 +3824,7 @@
             var col = fastTierColor(hit.h);
             cell.style.background = 'color-mix(in srgb, ' + col + ' 30%, var(--bg-soft))';
             cell.style.borderColor = col; cell.style.color = 'var(--text)';
-            cell.addEventListener('click', function () {
-              var row = document.querySelector('[data-fast-row="' + hit.f.id + '"]');
-              if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); row.classList.add('flash'); setTimeout(function () { row.classList.remove('flash'); }, 1200); }
-            });
+            cell.addEventListener('click', function () { openFastEdit(hit.f); });
           } else {
             cell.addEventListener('click', function () { fastManualOpen(date); });
           }
@@ -3882,7 +3881,7 @@
     }).catch(function (e) { toast(e.message); });
   }
 
-  function loadFastHistory() {
+  function loadFastCalendar() {
     api('getFasts', {}).then(function (data) {
       var all = data.fasts || [];
       buildFastCal(all);
@@ -3892,59 +3891,41 @@
         fcPrev.addEventListener('click', function () { state.fastCalYm = ymShift(state.fastCalYm, -1); buildFastCal(all); });
         fcNext.addEventListener('click', function () { state.fastCalYm = ymShift(state.fastCalYm, 1); buildFastCal(all); });
       }
-      var box = $('#fast-history'); if (!box) return;
-      var list = all.slice(0, 10);
-      box.innerHTML = '';
-      if (!list.length) { box.innerHTML = '<p class="muted tiny">No fasts yet — start your first one above.</p>'; return; }
-      box.appendChild(el('div', 'muted tiny fh-title', 'Recent fasts'));
-      list.forEach(function (f) { box.appendChild(buildFastRow(f)); });
     }).catch(function () {});
   }
 
-  function buildFastRow(f) {
+  // Inline edit/delete for a past fast, opened by tapping its day on the
+  // calendar — the calendar is now the only place past fasts are browsed.
+  function openFastEdit(f) {
+    var box = $('#fast-day-edit'); if (!box) return;
     var dur = new Date(f.endAt).getTime() - new Date(f.startAt).getTime();
     var mark = milestoneInfo(dur / 3600000).reached;
-    var wrap = el('div', 'fh-item');
-    wrap.setAttribute('data-fast-row', f.id);
-    var row = el('div', 'fh-row');
-    row.innerHTML =
-      '<span class="fh-date">' + new Date(f.startAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + '</span>' +
-      '<span class="fh-dur">' + durLabel(dur) + '</span>' +
-      '<span class="fh-mark">' + (mark ? mark + 'h mark' : '—') + '</span>';
-    var edit = el('button', 'fh-btn', '✎');
-    var del = el('button', 'fh-btn', '🗑');
-    row.appendChild(edit); row.appendChild(del);
-
-    var form = el('div', 'fh-edit-form hidden');
-    form.innerHTML =
-      '<label class="tiny">Start<input type="datetime-local" class="fh-s"></label>' +
-      '<label class="tiny">End<input type="datetime-local" class="fh-e"></label>' +
-      '<div class="row-2"><button class="btn primary fh-save">Save</button>' +
-      '<button class="btn fh-cancel">Cancel</button></div>';
-
-    edit.addEventListener('click', function () {
-      form.querySelector('.fh-s').value = toLocalInput(f.startAt);
-      form.querySelector('.fh-e').value = toLocalInput(f.endAt);
-      form.classList.toggle('hidden');
-    });
-    form.querySelector('.fh-cancel').addEventListener('click', function () { form.classList.add('hidden'); });
-    form.querySelector('.fh-save').addEventListener('click', function () {
-      var s = form.querySelector('.fh-s').value, e = form.querySelector('.fh-e').value;
+    box.classList.remove('hidden');
+    box.innerHTML =
+      '<div class="fh-row"><span class="fh-date">' + new Date(f.startAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + '</span>' +
+        '<span class="fh-dur">' + durLabel(dur) + '</span>' +
+        '<span class="fh-mark">' + (mark ? mark + 'h mark' : '—') + '</span></div>' +
+      '<label class="tiny">Start<input type="datetime-local" class="fh-s" value="' + toLocalInput(f.startAt) + '"></label>' +
+      '<label class="tiny">End<input type="datetime-local" class="fh-e" value="' + toLocalInput(f.endAt) + '"></label>' +
+      '<button class="btn primary block fh-save">Save changes</button>' +
+      '<div class="row-2"><button class="btn danger fh-del">Delete fast</button>' +
+        '<button class="btn fh-cancel">Cancel</button></div>';
+    box.querySelector('.fh-cancel').addEventListener('click', function () { box.classList.add('hidden'); });
+    box.querySelector('.fh-save').addEventListener('click', function () {
+      var s = box.querySelector('.fh-s').value, e = box.querySelector('.fh-e').value;
       if (!s || !e) { toast('Set both times'); return; }
       if (new Date(e).getTime() <= new Date(s).getTime()) { toast('End must be after start'); return; }
       api('updateFast', { id: f.id, startAt: fromLocalInput(s), endAt: fromLocalInput(e) })
-        .then(function () { loadFastHistory(); toast('Fast updated ✓'); })
+        .then(function () { box.classList.add('hidden'); loadFastCalendar(); toast('Fast updated ✓'); })
         .catch(function (err) { toast(err.message); });
     });
-    del.addEventListener('click', function () {
+    box.querySelector('.fh-del').addEventListener('click', function () {
       if (!confirm('Delete this fast?')) return;
       api('deleteFast', { id: f.id })
-        .then(function () { loadFastHistory(); toast('Deleted'); })
+        .then(function () { box.classList.add('hidden'); loadFastCalendar(); toast('Deleted'); })
         .catch(function (err) { toast(err.message); });
     });
-
-    wrap.appendChild(row); wrap.appendChild(form);
-    return wrap;
+    box.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   function renderDietBody() {
