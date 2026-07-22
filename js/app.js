@@ -2615,6 +2615,14 @@
       score: Math.round(winScore * 0.7 + paceScore * 0.3)
     };
   }
+  // Money skill XP — the money pillar has no day-log track, so its level comes
+  // from budget wins in whatever months are cached (each day under the daily
+  // limit = 6 XP, parallel to a completed day). Grows as spending is logged.
+  function moneyXp() {
+    var xp = 0;
+    for (var ym in moneyMonthCache) { var det = moneyDetailFor(ym); if (det) xp += det.wins * 6; }
+    return xp;
+  }
   // → number (scored), null (no budget set), undefined (still loading)
   function moneyScoreFor(ym) {
     var c = moneyMonthCache[ym];
@@ -3648,6 +3656,26 @@
   }
   function fromLocalInput(v) { return new Date(v).toISOString(); }
 
+  // The fast calendar + history "dates box" — shown whether or not a fast is
+  // currently running (populated by loadFastHistory via its element ids).
+  function fastCalHtml() {
+    return '<div class="card">' +
+      '<div class="cal-nav" style="margin-bottom:8px">' +
+        '<button id="fc-prev" class="icon-btn" type="button">‹</button>' +
+        '<div id="fc-label" class="cal-month-label"></div>' +
+        '<button id="fc-next" class="icon-btn" type="button">›</button>' +
+      '</div>' +
+      '<div id="fast-cal" class="calendar-grid month"></div>' +
+      '<div class="gt-legend" style="margin-top:10px">' +
+        '<span class="gt-key"><i style="background:var(--green)"></i>18h+</span>' +
+        '<span class="gt-key"><i style="background:#38bdf8"></i>16–18h</span>' +
+        '<span class="gt-key"><i style="background:var(--amber)"></i>14–16h</span>' +
+        '<span class="gt-key"><i style="background:#8da3c4"></i>under 14h</span>' +
+      '</div>' +
+      '<p class="muted tiny" style="margin:8px 0 0">Tap a fast to edit it · tap an empty day to log one.</p>' +
+    '</div>' +
+    '<div class="card" style="padding-top:12px"><div id="fast-history" class="fast-history"></div></div>';
+  }
   function renderFasting() {
     stopFastTimer();
     var box = $('#fasting');
@@ -3675,7 +3703,8 @@
             '<div class="row-2"><button id="fast-save-start" class="btn primary">Save</button>' +
             '<button id="fast-cancel-start" class="btn">Cancel</button></div></div>' +
           '<button id="fast-end" class="btn danger block">End fast</button>' +
-        '</div>';
+        '</div>' +
+        fastCalHtml();   // keep the dates/history box visible during a fast too
       $('#fast-end').addEventListener('click', endFast);
       $('#fast-edit-start').addEventListener('click', function () {
         $('#fast-start-edit').value = toLocalInput(f.startAt);
@@ -3691,6 +3720,7 @@
       });
       updateFastTimer();
       state.fastTimer = setInterval(updateFastTimer, 1000);
+      loadFastHistory();   // populate the dates box shown below the active fast
     } else {
       box.innerHTML =
         '<div class="card fast-card">' +
@@ -3705,22 +3735,7 @@
             '<div class="row-2"><button id="fm-save" class="btn primary">Save fast</button>' +
             '<button id="fm-cancel" class="btn">Cancel</button></div></div>' +
         '</div>' +
-        '<div class="card">' +
-          '<div class="cal-nav" style="margin-bottom:8px">' +
-            '<button id="fc-prev" class="icon-btn" type="button">‹</button>' +
-            '<div id="fc-label" class="cal-month-label"></div>' +
-            '<button id="fc-next" class="icon-btn" type="button">›</button>' +
-          '</div>' +
-          '<div id="fast-cal" class="calendar-grid month"></div>' +
-          '<div class="gt-legend" style="margin-top:10px">' +
-            '<span class="gt-key"><i style="background:var(--green)"></i>18h+</span>' +
-            '<span class="gt-key"><i style="background:#38bdf8"></i>16–18h</span>' +
-            '<span class="gt-key"><i style="background:var(--amber)"></i>14–16h</span>' +
-            '<span class="gt-key"><i style="background:#8da3c4"></i>under 14h</span>' +
-          '</div>' +
-          '<p class="muted tiny" style="margin:8px 0 0">Tap a fast to edit it · tap an empty day to log one.</p>' +
-        '</div>' +
-        '<div class="card" style="padding-top:12px"><div id="fast-history" class="fast-history"></div></div>';
+        fastCalHtml();
       $('#fast-start-input').value = toLocalInput(new Date().toISOString());
       $('#fast-start').addEventListener('click', function () {
         var v = $('#fast-start-input').value;
@@ -4914,7 +4929,7 @@
     // today. Money loads async; ensureMoneyMonth is triggered by the score card.
     var homeYm = ymOf(todayStr());
     var sc = pillarScoresMonthly(homeYm);
-    var plv = { body: pillarLevel(xt.body), mind: pillarLevel(xt.mind), life: pillarLevel(xt.life) };
+    var plv = { body: pillarLevel(xt.body), mind: pillarLevel(xt.mind), money: pillarLevel(moneyXp()), life: pillarLevel(xt.life) };
     var ringsCap = $('#home-rings-cap');
     if (ringsCap) ringsCap.textContent = ymShort(homeYm) + ' · monthly average · skill levels';
     var rings = $('#home-rings');
@@ -4923,7 +4938,7 @@
       rings.innerHTML = PILLARS.map(function (p) {
         var v = sc[p.id];
         var frac = v == null ? 0 : v / 100;
-        var lvl = plv[p.id];   // money has no XP track (budget-derived, not history)
+        var lvl = plv[p.id];   // all four pillars now carry a skill level
         return '<button class="pillar" data-pillar="' + p.id + '" style="--pc:' + p.color + '">' +
           '<span class="pring-wrap"><svg viewBox="0 0 64 64" class="pring">' +
           '<circle class="pring-bg" cx="32" cy="32" r="26"></circle>' +
