@@ -1434,9 +1434,15 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .brs { width: 30px; height: 30px; display: block; }
 .gbr.sel .brs { filter: drop-shadow(0 1px 3px rgba(0,0,0,.4)); }
 .gbr-name { font-size: 8.5px; font-weight: 700; color: var(--muted); text-align: center; line-height: 1.1; }
-.gbr.ideal { border-color: color-mix(in srgb, var(--gc) 45%, var(--line)); }
+/* "Ideal" (types 3-4) is a small badge, never a border — a border there would
+   read as "selected" alongside the actually-tapped type, which is confusing. */
+.gbr.ideal::after {
+  content: "✓"; position: absolute; top: -6px; right: -4px; width: 15px; height: 15px; border-radius: 50%;
+  background: var(--gc); color: #06210f; font: 800 9px/15px system-ui, sans-serif; text-align: center;
+}
 .gbr.sel { border-color: var(--gc); background: color-mix(in srgb, var(--gc) 20%, var(--card)); }
 .gbr.sel .gbr-n, .gbr.sel .gbr-name { color: var(--text); }
+.gbr.sel.ideal::after { background: var(--text); color: var(--card); }
 .gut-sel-note { font-size: 13px; line-height: 1.4; margin-top: 10px; }
 .gut-step-row { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; font-size: 13px; font-weight: 600; gap: 10px; }
 .gut-stepper { display: flex; align-items: center; gap: 12px; flex: none; }
