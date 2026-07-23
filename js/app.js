@@ -1189,7 +1189,10 @@
     if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderGutApp); }
     var d = appDay(), g = gutOf(d);
     var sel = GUT.filter(function (x) { return x.v === d.gut; })[0];
-    var plantsWk = gutWeekSum('plants'), fiber = Number(g.fiber) || 0, ferm = Number(g.fermented) || 0;
+    var plantsWk = gutWeekSum('plants'), ferm = Number(g.fermented) || 0;
+    var fiber = dietFiberFor(d.date);   // auto from the Diet log (null = loading)
+    // Persist the diet-sourced fibre so the weekly trends can read it.
+    if (fiber != null && (Number(g.fiber) || 0) !== fiber) { gutPatch(d, { fiber: fiber }); queueSaveDay(d); }
     var waterMl = Number(d.waterMl) || 0, waterPct = pctOf(waterMl, WATER_GOAL);
     var ideal = gutIdealRate();
     var sleepMin = Number((d.metrics || {}).sleepMin) || 0;
@@ -1201,7 +1204,7 @@
         '<span class="muted tiny">Bristol scale · aim for 3–4</span></div>' +
         '<div class="gut-bristol">' + GUT.map(function (t) {
           return '<button type="button" class="gbr' + (d.gut === t.v ? ' sel' : '') + (t.tier === 'Ideal' ? ' ideal' : '') + '" data-bristol="' + t.v + '" style="--gc:' + t.color + '">' +
-            '<span class="gbr-n">' + t.v + '</span><span class="gbr-emoji">' + t.emoji + '</span><span class="gbr-name">' + t.short + '</span></button>';
+            '<span class="gbr-n">' + t.v + '</span><span class="gbr-emoji">' + bristolSvg(t.v) + '</span><span class="gbr-name">' + t.short + '</span></button>';
         }).join('') + '</div>' +
         (sel ? '<div class="gut-sel-note"><b style="color:' + sel.color + '">' + sel.label + ' · ' + sel.tier + '</b> — ' + esc(sel.sub) + '</div>'
              : '<div class="muted tiny" style="margin-top:8px">Tap the type that matches. Types 3–4 are the healthy target.</div>') +
@@ -1223,9 +1226,9 @@
         '<div class="gut-target"><div class="gt-top"><span>🥦 Plant diversity</span><b>' + plantsWk + ' / ' + GUT_PLANTS_WK + ' this week</b></div>' +
           gutBar(plantsWk / GUT_PLANTS_WK * 100, '#22c55e') +
           gutStepperHtml('plants', 'Unique plants today', '🥕', Number(g.plants) || 0, '') + '</div>' +
-        '<div class="gut-target"><div class="gt-top"><span>🌾 Fibre today</span><b>' + fiber + ' g <span class="muted">/ ' + GUT_FIBER_MIN + '–' + GUT_FIBER_MAX + ' g</span></b></div>' +
-          gutBar(fiber / GUT_FIBER_MAX * 100, fiber >= GUT_FIBER_MIN ? '#22c55e' : '#eab308') +
-          '<label class="gut-num">Grams<input type="number" inputmode="numeric" id="gut-fiber" value="' + (g.fiber != null ? g.fiber : '') + '" placeholder="e.g. 28" /></label></div>' +
+        '<div class="gut-target"><div class="gt-top"><span>🌾 Fibre today</span><b>' + (fiber == null ? '…' : fiber + ' g') + ' <span class="muted">/ ' + GUT_FIBER_MIN + '–' + GUT_FIBER_MAX + ' g</span></b></div>' +
+          gutBar((fiber || 0) / GUT_FIBER_MAX * 100, (fiber || 0) >= GUT_FIBER_MIN ? '#22c55e' : '#eab308') +
+          '<p class="muted tiny" style="margin:6px 0 0">Auto-summed from what you logged in <button class="link-btn gut-open-diet" type="button" style="margin:0;padding:0">Diet ›</button></p></div>' +
         gutStepperHtml('fermented', 'Fermented servings (kefir, yogurt, kimchi…)', '🫙', ferm, '') +
         '<div class="gut-target" style="margin-top:12px"><div class="gt-top"><span>💧 Hydration</span><b>' + litres(waterMl) + ' / ' + litres(WATER_GOAL) + ' L</b></div>' +
           gutBar(waterPct, '#38bdf8') +
@@ -1284,15 +1287,10 @@
         clearTimeout(state.gutSaveTimer); state.gutSaveTimer = setTimeout(function () { queueSaveDay(d); }, 400);
       });
     });
-    // Fibre number
-    var fibEl = $('#gut-fiber');
-    if (fibEl) fibEl.addEventListener('input', function () {
-      var v = fibEl.value === '' ? null : Math.max(0, Number(fibEl.value) || 0);
-      gutPatch(d, { fiber: v });
-      clearTimeout(state.gutSaveTimer); state.gutSaveTimer = setTimeout(function () { queueSaveDay(d); }, 400);
-    });
     var wbtn = box.querySelector('.gut-open-water');
     if (wbtn) wbtn.addEventListener('click', function () { switchView('water'); });
+    var dbtn = box.querySelector('.gut-open-diet');
+    if (dbtn) dbtn.addEventListener('click', function () { switchView('diet'); });
 
     renderGutRange();
   }
@@ -1889,6 +1887,34 @@
   ];
   function gutColor(v) { for (var i = 0; i < GUT.length; i++) if (GUT[i].v === v) return GUT[i].color; return null; }
   function gutLabel(v) { var g = GUT.filter(function (x) { return x.v === v; })[0]; return g ? g.label + ' · ' + g.short : null; }
+  // Hand-drawn Bristol stool illustrations (crisp, scalable, theme-safe) — a
+  // much clearer visual cue than a coloured dot when picking your type.
+  function bristolSvg(v) {
+    var c = '#8a5a2c', k = '#5c3812';
+    var s = '<svg viewBox="0 0 44 44" class="brs" aria-hidden="true">';
+    if (v === 1) return s + '<g fill="' + c + '"><circle cx="23" cy="9" r="4.6"/><circle cx="18" cy="19" r="3.7"/><circle cx="26" cy="26" r="4.2"/><circle cx="19" cy="34" r="3.3"/></g></svg>';
+    if (v === 2) return s + '<g fill="' + c + '"><ellipse cx="22" cy="22" rx="8" ry="16"/><circle cx="16" cy="12" r="4.2"/><circle cx="28" cy="15" r="4.6"/><circle cx="16" cy="23" r="4.6"/><circle cx="28" cy="29" r="4.2"/><circle cx="21" cy="35" r="4.2"/></g></svg>';
+    if (v === 3) return s + '<rect x="16" y="5" width="12" height="34" rx="6" fill="' + c + '"/><g stroke="' + k + '" stroke-width="1.7" stroke-linecap="round" fill="none"><path d="M20 12l4 3"/><path d="M24 20l-4 3"/><path d="M20 28l4 3"/></g></svg>';
+    if (v === 4) return s + '<path d="M22 4c5 0 5 8 4 18s2 18-4 18-3-8-4-18S17 4 22 4z" fill="' + c + '"/></svg>';
+    if (v === 5) return s + '<g fill="' + c + '"><ellipse cx="23" cy="11" rx="7.5" ry="5.5"/><ellipse cx="18" cy="24" rx="6.8" ry="5"/><ellipse cx="25" cy="35" rx="6.2" ry="4.6"/></g></svg>';
+    if (v === 6) return s + '<path d="M11 25c-2-8 6-9 6-9 1-6 9-4 9-4 8-1 8 6 8 6 4 3 0 8 0 8 1 6-7 6-7 6-4 3-9-1-9-1-7 1-7-6-7-6z" fill="' + c + '"/><g fill="' + k + '" opacity=".5"><circle cx="15" cy="20" r="1.4"/><circle cx="30" cy="19" r="1.4"/><circle cx="24" cy="30" r="1.4"/></g></svg>';
+    return s + '<path d="M6 27c4-3 8-1 8-1 3-4 8-2 8-2 4-3 8 0 8 0 4-1 7 3 7 3-1 6-10 6-10 6-7 2-13-1-13-1-7 0-8-5-8-5z" fill="' + c + '"/></svg>';
+  }
+  // Fibre grams logged in the Diet app for a date (summed from food entries).
+  // Uses the already-loaded diet foods for the current diet date; otherwise
+  // fetches once and caches, then re-renders the gut view.
+  var gutFiberCache = {};
+  function dietFiberFor(date) {
+    if (state.foodsDate === date && state.foods) {
+      return Math.round(state.foods.reduce(function (s, f) { return s + (Number(f.fiber) || 0); }, 0));
+    }
+    if (gutFiberCache[date] != null) return gutFiberCache[date];
+    api('getFood', { date: date }).then(function (data) {
+      gutFiberCache[date] = Math.round((data.foods || []).reduce(function (s, f) { return s + (Number(f.fiber) || 0); }, 0));
+      if (!$('#view-gut').classList.contains('hidden')) renderGutApp();
+    }).catch(function () { gutFiberCache[date] = 0; });
+    return null; // loading
+  }
   var GUT_SYMPTOMS = [
     { key: 'bloat', label: 'Bloating', emoji: '🎈' },
     { key: 'gas', label: 'Gas', emoji: '💨' },
