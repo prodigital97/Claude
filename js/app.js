@@ -1176,41 +1176,170 @@
       (agg.logged ? '<div class="card"><div class="eyebrow">Overall mood per day</div>' + rangeBarChart(agg.perDay, 'var(--mind-c)') + '</div>' : '');
     bindRangeBar(box, 'moodrg', renderMoodApp);
   }
+  function gutBar(pct, color) { return '<div class="gut-bar"><span style="width:' + Math.max(0, Math.min(100, pct)) + '%;background:' + color + '"></span></div>'; }
+  function gutStepperHtml(field, label, emoji, val, unit) {
+    return '<div class="gut-step-row"><span>' + emoji + ' ' + label + '</span>' +
+      '<div class="gut-stepper"><button type="button" class="gs-dec" data-gk="' + field + '">−</button>' +
+      '<b id="gs-' + field + '">' + (val || 0) + (unit || '') + '</b>' +
+      '<button type="button" class="gs-inc" data-gk="' + field + '">+</button></div></div>';
+  }
   function renderGutApp() {
+    var box = $('#gut-app'); if (!box) return;
     var bar = $('#gut-daybar');
     if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderGutApp); }
-    renderGut(appDay(), '#gut-buttons');
-    var cal = $('#gut-cal');
-    if (cal) {
-      buildDayPicker(cal, ymOf(appDate()), renderGutApp, function (date) {
-        var l = logFor(date);
-        return l && l.gut ? gutColor(l.gut) : null;
+    var d = appDay(), g = gutOf(d);
+    var sel = GUT.filter(function (x) { return x.v === d.gut; })[0];
+    var plantsWk = gutWeekSum('plants'), fiber = Number(g.fiber) || 0, ferm = Number(g.fermented) || 0;
+    var waterMl = Number(d.waterMl) || 0, waterPct = pctOf(waterMl, WATER_GOAL);
+    var ideal = gutIdealRate();
+    var sleepMin = Number((d.metrics || {}).sleepMin) || 0;
+    var moved = d.workout1 || d.outdoor || (Number((d.metrics || {}).steps) || 0) >= 6000;
+
+    var html =
+      // ---- Bowel movement (Bristol scale) ----
+      '<div class="card"><div class="gut-head"><span class="eyebrow">💩 Bowel movement</span>' +
+        '<span class="muted tiny">Bristol scale · aim for 3–4</span></div>' +
+        '<div class="gut-bristol">' + GUT.map(function (t) {
+          return '<button type="button" class="gbr' + (d.gut === t.v ? ' sel' : '') + (t.tier === 'Ideal' ? ' ideal' : '') + '" data-bristol="' + t.v + '" style="--gc:' + t.color + '">' +
+            '<span class="gbr-n">' + t.v + '</span><span class="gbr-emoji">' + t.emoji + '</span><span class="gbr-name">' + t.short + '</span></button>';
+        }).join('') + '</div>' +
+        (sel ? '<div class="gut-sel-note"><b style="color:' + sel.color + '">' + sel.label + ' · ' + sel.tier + '</b> — ' + esc(sel.sub) + '</div>'
+             : '<div class="muted tiny" style="margin-top:8px">Tap the type that matches. Types 3–4 are the healthy target.</div>') +
+        gutStepperHtml('bm', 'Times today', '🔁', Number(g.bm) || 0, '') +
+      '</div>' +
+      // ---- Symptoms ----
+      '<div class="card"><span class="eyebrow">📊 Symptoms today</span>' +
+        '<p class="muted tiny" style="margin:2px 0 12px">0 = none · 10 = severe. Track how strong each felt.</p>' +
+        GUT_SYMPTOMS.map(function (s) {
+          var v = Number(g[s.key]) || 0;
+          return '<div class="gut-slider"><div class="gsl-top"><span>' + s.emoji + ' ' + s.label + '</span><b id="gv-' + s.key + '">' + v + '</b></div>' +
+            '<input type="range" min="0" max="10" step="1" value="' + v + '" data-gsl="' + s.key + '" class="gut-range-input"></div>';
+        }).join('') +
+        '<div class="gut-slider"><div class="gsl-top"><span>🧠 Stress</span><b id="gv-stress">' + (Number(g.stress) || 0) + '</b></div>' +
+          '<input type="range" min="0" max="10" step="1" value="' + (Number(g.stress) || 0) + '" data-gsl="stress" class="gut-range-input"></div>' +
+      '</div>' +
+      // ---- Feed your microbiome ----
+      '<div class="card"><span class="eyebrow">🌱 Feed your microbiome</span>' +
+        '<div class="gut-target"><div class="gt-top"><span>🥦 Plant diversity</span><b>' + plantsWk + ' / ' + GUT_PLANTS_WK + ' this week</b></div>' +
+          gutBar(plantsWk / GUT_PLANTS_WK * 100, '#22c55e') +
+          gutStepperHtml('plants', 'Unique plants today', '🥕', Number(g.plants) || 0, '') + '</div>' +
+        '<div class="gut-target"><div class="gt-top"><span>🌾 Fibre today</span><b>' + fiber + ' g <span class="muted">/ ' + GUT_FIBER_MIN + '–' + GUT_FIBER_MAX + ' g</span></b></div>' +
+          gutBar(fiber / GUT_FIBER_MAX * 100, fiber >= GUT_FIBER_MIN ? '#22c55e' : '#eab308') +
+          '<label class="gut-num">Grams<input type="number" inputmode="numeric" id="gut-fiber" value="' + (g.fiber != null ? g.fiber : '') + '" placeholder="e.g. 28" /></label></div>' +
+        gutStepperHtml('fermented', 'Fermented servings (kefir, yogurt, kimchi…)', '🫙', ferm, '') +
+        '<div class="gut-target" style="margin-top:12px"><div class="gt-top"><span>💧 Hydration</span><b>' + litres(waterMl) + ' / ' + litres(WATER_GOAL) + ' L</b></div>' +
+          gutBar(waterPct, '#38bdf8') +
+          '<p class="muted tiny" style="margin:6px 0 0">Fibre needs water to move — logged from your <button class="link-btn gut-open-water" type="button" style="margin:0;padding:0">Water app ›</button></p></div>' +
+      '</div>' +
+      // ---- This week / modulators ----
+      '<div class="card"><span class="eyebrow">📈 Gut vitals</span>' +
+        '<div class="gut-tiles">' +
+          gutTile('✅ Ideal stool', ideal == null ? '—' : ideal + '%', 'last 30 days (type 3–4)') +
+          gutTile('🥦 Plants', plantsWk + '/' + GUT_PLANTS_WK, 'this week') +
+          gutTile('😴 Sleep', sleepMin ? hoursMin(sleepMin) : '—', '7–9h target · from Sleep') +
+          gutTile('🏃 Movement', moved ? 'Yes' : '—', '30+ min aids motility') +
+        '</div></div>' +
+      // ---- Calendar ----
+      '<div class="card"><h3>Bristol calendar</h3><p class="muted tiny" style="margin:0 0 8px">Tap a day to view or edit it. Green = ideal (3–4).</p>' +
+        '<div id="gut-cal"></div>' +
+        '<div class="gt-legend" style="margin-top:10px">' + GUT.map(function (t) {
+          return '<span class="gt-key"><i style="background:' + t.color + '"></i>' + t.v + ' ' + t.short + '</span>';
+        }).join('') + '</div></div>' +
+      // ---- Trends ----
+      '<div id="gut-range"></div>';
+
+    box.innerHTML = html;
+
+    // Calendar
+    buildDayPicker($('#gut-cal'), ymOf(appDate()), renderGutApp, function (date) {
+      var l = logFor(date);
+      return l && l.gut ? gutColor(l.gut) : null;
+    });
+
+    // Bristol type
+    box.querySelectorAll('[data-bristol]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var v = Number(b.getAttribute('data-bristol'));
+        gutPatch(d, { bristol: d.gut === v ? 0 : v });
+        queueSaveDay(d); renderGutApp();
       });
-      cal.classList.remove('hidden');
-    }
-    var leg = $('#gut-legend');
-    if (leg) leg.innerHTML = GUT.map(function (g) {
-      return '<span class="gt-key"><i style="background:' + g.color + '"></i>' + g.emoji + ' ' + g.label + '</span>';
-    }).join('');
+    });
+    // Steppers (bm, plants, fermented)
+    box.querySelectorAll('.gs-inc, .gs-dec').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var k = b.getAttribute('data-gk'), cur = Number(gutOf(d)[k]) || 0;
+        var next = Math.max(0, cur + (b.classList.contains('gs-inc') ? 1 : -1));
+        var patch = {}; patch[k] = next; gutPatch(d, patch);
+        queueSaveDay(d);
+        if (k === 'plants') renderGutApp();       // updates the weekly bar
+        else $('#gs-' + k).textContent = next;
+      });
+    });
+    // Symptom + stress sliders — live label, debounced save, no full re-render.
+    box.querySelectorAll('.gut-range-input').forEach(function (r) {
+      r.addEventListener('input', function () {
+        var k = r.getAttribute('data-gsl'), v = Number(r.value);
+        var lab = $('#gv-' + k); if (lab) lab.textContent = v;
+        var patch = {}; patch[k] = v; gutPatch(d, patch);
+        clearTimeout(state.gutSaveTimer); state.gutSaveTimer = setTimeout(function () { queueSaveDay(d); }, 400);
+      });
+    });
+    // Fibre number
+    var fibEl = $('#gut-fiber');
+    if (fibEl) fibEl.addEventListener('input', function () {
+      var v = fibEl.value === '' ? null : Math.max(0, Number(fibEl.value) || 0);
+      gutPatch(d, { fiber: v });
+      clearTimeout(state.gutSaveTimer); state.gutSaveTimer = setTimeout(function () { queueSaveDay(d); }, 400);
+    });
+    var wbtn = box.querySelector('.gut-open-water');
+    if (wbtn) wbtn.addEventListener('click', function () { switchView('water'); });
+
     renderGutRange();
+  }
+  function gutTile(label, val, sub) {
+    return '<div class="gut-tile"><div class="gt-lbl eyebrow">' + label + '</div><div class="gt-val">' + val + '</div><div class="muted tiny">' + sub + '</div></div>';
   }
   function renderGutRange() {
     var box = $('#gut-range'); if (!box) return;
     var rs = rangeState('gutrg');
     box.innerHTML = rangeBarHtml('gutrg');
-    bindRangeBar(box, 'gutrg', renderGutApp);
-    // Default (Day mode): last-30-day snapshot, as before.
-    var span = rs.mode === 'day' ? { from: addDays(todayStr(), -29), to: todayStr() } : rangeSpan(rs.mode, rs.anchor);
-    var counts = {}, logged = 0;
-    rangeDatesList(span.from, span.to).filter(function (d) { return d <= todayStr(); }).forEach(function (d) {
-      var l = logFor(d);
-      if (l && l.gut) { counts[l.gut] = (counts[l.gut] || 0) + 1; logged++; }
+    if (rs.mode === 'day') { bindRangeBar(box, 'gutrg', renderGutApp); return; }
+    var r = rangeSpan(rs.mode, rs.anchor);
+    var dates = rangeDatesList(r.from, r.to).filter(function (x) { return x <= todayStr(); });
+    var counts = {}, logged = 0, idealDays = 0, symSum = { bloat: 0, gas: 0, heartburn: 0, energy: 0, stress: 0 }, symN = 0, plants = 0, fiberSum = 0, fiberN = 0, ferm = 0;
+    dates.forEach(function (dt) {
+      var l = logFor(dt); if (!l) return;
+      if (l.gut) { counts[l.gut] = (counts[l.gut] || 0) + 1; logged++; if (l.gut === 3 || l.gut === 4) idealDays++; }
+      var gg = gutOf(l);
+      if (Object.keys(gg).length) {
+        symN++; ['bloat', 'gas', 'heartburn', 'energy', 'stress'].forEach(function (k) { symSum[k] += Number(gg[k]) || 0; });
+        plants += Number(gg.plants) || 0; ferm += Number(gg.fermented) || 0;
+        if (gg.fiber != null) { fiberSum += Number(gg.fiber) || 0; fiberN++; }
+      }
     });
-    var cbox = $('#gut-counts');
-    var label = rs.mode === 'day' ? 'Last 30 days' : rangeLabelFor(rs.mode, rs.anchor);
-    if (cbox) cbox.textContent = logged
-      ? label + ': ' + GUT.filter(function (g) { return counts[g.v]; }).map(function (g) { return g.label + ' ' + counts[g.v]; }).join(' · ')
-      : 'No gut logs yet in this range.';
+    var distro = GUT.map(function (t) {
+      var c = counts[t.v] || 0, pct = logged ? Math.round(c / logged * 100) : 0;
+      return '<div class="mr-row"><span class="mr-name" style="width:74px">' + t.v + ' ' + t.short + '</span>' +
+        '<div class="mr-bar"><span style="width:' + pct + '%;background:' + t.color + '"></span></div>' +
+        '<span class="mr-val mono">' + c + '</span></div>';
+    }).join('');
+    var symRows = GUT_SYMPTOMS.concat([{ key: 'stress', label: 'Stress', emoji: '🧠' }]).map(function (s) {
+      var avg = symN ? symSum[s.key] / symN : 0;
+      return '<div class="mr-row"><span class="mr-name" style="width:74px">' + s.emoji + ' ' + s.label + '</span>' +
+        '<div class="mr-bar"><span style="width:' + (avg / 10 * 100) + '%;background:#f59e0b"></span></div>' +
+        '<span class="mr-val mono">' + avg.toFixed(1) + '</span></div>';
+    }).join('');
+    box.innerHTML +=
+      '<div class="card"><div class="eyebrow" style="margin-bottom:8px">Bristol distribution · ' + rangeLabelFor(rs.mode, rs.anchor) + '</div>' +
+        (logged ? distro + '<div class="muted tiny" style="margin-top:8px">✅ ' + Math.round(idealDays / logged * 100) + '% ideal (3–4) · ' + logged + ' logged</div>' : '<p class="muted tiny">No stool logs in this range.</p>') + '</div>' +
+      (symN ? '<div class="card"><div class="eyebrow" style="margin-bottom:8px">Symptoms · avg /10</div>' + symRows + '</div>' : '') +
+      '<div class="card"><div class="eyebrow" style="margin-bottom:6px">Microbiome fuel · avg per day</div>' +
+        '<div class="gut-tiles">' +
+          gutTile('🥦 Plants', dates.length ? (plants / dates.length).toFixed(1) : '—', 'per day') +
+          gutTile('🌾 Fibre', fiberN ? Math.round(fiberSum / fiberN) + 'g' : '—', 'per logged day') +
+          gutTile('🫙 Fermented', dates.length ? (ferm / dates.length).toFixed(1) : '—', 'servings/day') +
+        '</div></div>';
+    bindRangeBar(box, 'gutrg', renderGutApp);
   }
 
   /* ----- Us — relationship check-ins (Life pillar) -----
@@ -1746,17 +1875,46 @@
   }
 
   /* ----- Gut health tracker (does NOT affect 75 Hard completion) ----- */
+  // Bristol Stool Scale (the medical standard). Types 3–4 are the ideal target.
+  // d.gut holds the Bristol type (1–7) — the calendar colours by it. The richer
+  // gut data (symptoms, inputs, stress) lives in d.extra.gut (zero-redeploy).
   var GUT = [
-    { v: 1, label: 'Didn’t go',   emoji: '🚫', color: '#8da3c4' },
-    { v: 2, label: 'Hard',        emoji: '🪨', color: '#ff9f43' },
-    { v: 3, label: 'Healthy',     emoji: '✅', color: '#2fd47a' },
-    { v: 4, label: 'Soft',        emoji: '💧', color: '#4bb6ff' },
-    { v: 5, label: 'Loose',       emoji: '🌊', color: '#ff5470' },
-    { v: 6, label: 'Bloated',     emoji: '🎈', color: '#e3b341' },
-    { v: 7, label: 'Acidity',     emoji: '🔥', color: '#f97316' }
+    { v: 1, label: 'Type 1', short: 'Pellets', emoji: '🔴', sub: 'Hard separate lumps — hard to pass', tier: 'Constipation', color: '#ef4444' },
+    { v: 2, label: 'Type 2', short: 'Lumpy',   emoji: '🟠', sub: 'Lumpy, sausage-shaped',              tier: 'Constipation', color: '#f97316' },
+    { v: 3, label: 'Type 3', short: 'Cracked', emoji: '🟢', sub: 'Sausage with cracks on the surface', tier: 'Ideal',        color: '#84cc16' },
+    { v: 4, label: 'Type 4', short: 'Smooth',  emoji: '✅', sub: 'Smooth & soft, like a snake',        tier: 'Ideal',        color: '#22c55e' },
+    { v: 5, label: 'Type 5', short: 'Blobs',   emoji: '🟡', sub: 'Soft blobs with clear edges',        tier: 'Lacking fibre',color: '#eab308' },
+    { v: 6, label: 'Type 6', short: 'Mushy',   emoji: '🟤', sub: 'Fluffy, mushy, ragged edges',        tier: 'Diarrhoea',    color: '#f59e0b' },
+    { v: 7, label: 'Type 7', short: 'Liquid',  emoji: '💧', sub: 'Entirely liquid — no solid pieces',  tier: 'Diarrhoea',    color: '#3b82f6' }
   ];
   function gutColor(v) { for (var i = 0; i < GUT.length; i++) if (GUT[i].v === v) return GUT[i].color; return null; }
-  function gutLabel(v) { for (var i = 0; i < GUT.length; i++) if (GUT[i].v === v) return GUT[i].label; return null; }
+  function gutLabel(v) { var g = GUT.filter(function (x) { return x.v === v; })[0]; return g ? g.label + ' · ' + g.short : null; }
+  var GUT_SYMPTOMS = [
+    { key: 'bloat', label: 'Bloating', emoji: '🎈' },
+    { key: 'gas', label: 'Gas', emoji: '💨' },
+    { key: 'heartburn', label: 'Heartburn', emoji: '🔥' },
+    { key: 'energy', label: 'Energy crash', emoji: '🥱' }
+  ];
+  var GUT_PLANTS_WK = 30, GUT_FIBER_MIN = 25, GUT_FIBER_MAX = 38;
+  function gutOf(d) { return (d.extra && d.extra.gut) || {}; }
+  function gutPatch(d, patch) {
+    if (!d.extra) d.extra = {};
+    d.extra.gut = Object.assign({}, gutOf(d), patch);
+    if (patch.bristol !== undefined) d.gut = patch.bristol;   // mirror for the calendar + legacy
+  }
+  // Sum a numeric gut field over the last 7 days (incl. today).
+  function gutWeekSum(field) {
+    var t = 0;
+    for (var i = 0; i < 7; i++) { var dt = addDays(todayStr(), -i); var l = dt === todayStr() ? (state.today || {}) : logFor(dt); t += Number(gutOf(l || {})[field]) || 0; }
+    return t;
+  }
+  // % of logged days in the last 30 that were an ideal stool (Bristol 3–4).
+  function gutIdealRate() {
+    var hit = 0, n = 0;
+    for (var i = 0; i < 30; i++) { var dt = addDays(todayStr(), -i); var l = dt === todayStr() ? state.today : logFor(dt); if (l && l.gut) { n++; if (l.gut === 3 || l.gut === 4) hit++; } }
+    return n ? Math.round(hit / n * 100) : null;
+  }
+  // The Bristol selector — used in the gut app and the day editor.
   function renderGut(d, sel) {
     var box = $(sel || '#gut-buttons'); if (!box) return;
     box.innerHTML = '';
@@ -1764,10 +1922,11 @@
       var on = d.gut === g.v;
       var b = el('button', 'mood-btn' + (on ? ' sel' : ''));
       b.style.setProperty('--mc', g.color);
-      b.innerHTML = '<span class="mood-emoji">' + g.emoji + '</span><span class="mood-label">' + g.label + '</span>';
+      b.innerHTML = '<span class="mood-emoji">' + g.emoji + '</span><span class="mood-label">' + g.short + '</span>';
       b.addEventListener('click', function () {
-        d.gut = (d.gut === g.v) ? 0 : g.v;
-        renderGut(d, '#gut-buttons');
+        var nv = (d.gut === g.v) ? 0 : g.v;
+        gutPatch(d, { bristol: nv });
+        renderGut(d, sel || '#gut-buttons');
         queueSaveDay(d);
         if (!$('#view-gut').classList.contains('hidden')) renderGutApp();
       });
@@ -2985,8 +3144,8 @@
       var on = d.gut === g.v;
       var b = el('button', 'mood-btn' + (on ? ' sel' : ''));
       b.style.setProperty('--mc', g.color);
-      b.innerHTML = '<span class="mood-emoji">' + g.emoji + '</span><span class="mood-label">' + g.label + '</span>';
-      b.addEventListener('click', function () { d.gut = (d.gut === g.v) ? 0 : g.v; dayEditorRenderGut(); });
+      b.innerHTML = '<span class="mood-emoji">' + g.emoji + '</span><span class="mood-label">' + g.short + '</span>';
+      b.addEventListener('click', function () { gutPatch(d, { bristol: (d.gut === g.v) ? 0 : g.v }); dayEditorRenderGut(); });
       box.appendChild(b);
     });
   }
