@@ -305,17 +305,23 @@
   // or blips — the request never reaches it, and fetch() itself rejects
   // (Safari: "Load failed", Chrome: "Failed to fetch") before any response
   // comes back. That's distinct from the server responding with a real error,
-  // which is never retried here. A couple of quick retries clears most of
-  // these transient hiccups without the user ever seeing them.
-  function fetchWithRetry(url, opts, attempt) {
+  // which is never retried here. Retrying with backoff clears most transient
+  // hiccups without the user ever seeing them; the schedule is generous
+  // (~8s total) since an Apps Script cold start or a brief connectivity gap
+  // can outlast a couple of quick retries.
+  var API_BACKOFF = [600, 1200, 2200, 4000]; // ms of delay before each retry
+  function fetchWithRetry(url, opts, attempt, onRetry) {
     attempt = attempt || 0;
     return fetch(url, opts).catch(function (err) {
-      if (attempt >= 2) throw err;
-      return new Promise(function (resolve) { setTimeout(resolve, 700 * (attempt + 1)); })
-        .then(function () { return fetchWithRetry(url, opts, attempt + 1); });
+      if (attempt >= API_BACKOFF.length) throw err;
+      if (onRetry) onRetry(attempt + 1, API_BACKOFF.length + 1);
+      return new Promise(function (resolve) { setTimeout(resolve, API_BACKOFF[attempt]); })
+        .then(function () { return fetchWithRetry(url, opts, attempt + 1, onRetry); });
     });
   }
-  function api(action, payload) {
+  // onRetry(attempt, totalAttempts) is optional — pass it to surface live
+  // "still trying" progress instead of the UI going silent for several seconds.
+  function api(action, payload, onRetry) {
     payload = payload || {};
     payload.action = action;
     if (state.token) { payload.token = state.token; payload.username = state.username; }
@@ -327,7 +333,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight
           body: JSON.stringify(payload)
-        }).then(function (r) { return r.json(); })
+        }, 0, onRetry).then(function (r) { return r.json(); })
           .then(function (res) {
             if (!res.ok) throw new Error(res.error || 'Request failed');
             if (res.charge) updateCharge(res.charge);   // battery echoed back on metered calls
@@ -339,7 +345,7 @@
       // Reword the raw browser network-failure strings (meaningless to a user)
       // into something actionable — this only fires once retries are exhausted.
       if (/^(load failed|failed to fetch|networkerror|typeerror)/i.test(msg) || /network/i.test(msg)) {
-        throw new Error('Couldn’t reach the server — check your connection and try again.');
+        throw new Error('Couldn’t reach the server after several tries — check your connection and try again.');
       }
       throw err;
     });
@@ -739,21 +745,37 @@
     });
   }
 
-  function authMsg(msg, cls) {
+  function authMsg(msg, cls, retry) {
     var m = $('#auth-msg');
-    m.textContent = msg || '';
     m.className = 'form-msg' + (cls ? ' ' + cls : '');
+    if (retry) {
+      m.innerHTML = '';
+      m.appendChild(document.createTextNode(msg || ''));
+      var b = el('button', 'link-btn auth-retry-btn', 'Try again');
+      b.type = 'button';
+      b.addEventListener('click', retry);
+      m.appendChild(document.createTextNode(' '));
+      m.appendChild(b);
+    } else {
+      m.textContent = msg || '';
+    }
   }
 
   function authSubmit(action, payload, busy) {
     authMsg(busy);
-    api(action, payload).then(function (data) {
+    api(action, payload, function (attempt, total) {
+      // Live progress during the ~8s retry window, so a slow connection reads
+      // as "still working" instead of a frozen button.
+      authMsg('Still trying to reach the server… (' + attempt + '/' + total + ')');
+    }).then(function (data) {
       state.token = data.token; state.username = data.user.username; state.user = data.user;
       localStorage.setItem('hard_token', state.token);
       localStorage.setItem('hard_user', state.username);
       authMsg('');
       return loadState();
-    }).then(enterApp).catch(function (err) { authMsg(err.message, 'error'); });
+    }).then(enterApp).catch(function (err) {
+      authMsg(err.message, 'error', function () { authSubmit(action, payload, busy); });
+    });
   }
 
   /* ---------------- App boot ---------------- */
