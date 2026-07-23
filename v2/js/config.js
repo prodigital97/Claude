@@ -9,7 +9,7 @@
  */
 window.APP_CONFIG = {
   // e.g. "https://script.google.com/macros/s/AKfy....../exec"
-  API_URL: "https://script.google.com/macros/s/AKfycbyFvGswUWCeMn-jBjZcI06ajOVYmwaDp96EmOtOxA5difjG1F6gNaY0LbgCeLfSj4JphA/exec",
+  API_URL: "https://script.google.com/macros/s/AKfycbwsq5EIGs61a6mvFA3oY66mjIppg3pNRMB4vH4mHWCZNrP_AbWYWuyZn4-icw6-sP4g/exec",
 
   CHALLENGE_LENGTH: 75,
   WATER_GOAL_ML: 4000,  // 4 L — comfortably meets the 1-gallon (3.8 L) rule
