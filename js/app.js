@@ -8366,7 +8366,17 @@
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('sw.js').catch(function () {});
+      navigator.serviceWorker.register('sw.js').then(function (reg) {
+        // Actively check for a newer build each launch so updates aren't missed.
+        try { reg.update(); } catch (e) {}
+      }).catch(function () {});
+    });
+    // When a new service worker takes control (a fresh build shipped), reload
+    // once so the page runs the new code instead of the stale cached version.
+    var swReloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (swReloaded) return; swReloaded = true;
+      window.location.reload();
     });
   }
 
