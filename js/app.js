@@ -301,6 +301,20 @@
   }
 
   /* ---------------- API ---------------- */
+  // A free-tier Apps Script Web App ("Execute as: Me") occasionally cold-starts
+  // or blips — the request never reaches it, and fetch() itself rejects
+  // (Safari: "Load failed", Chrome: "Failed to fetch") before any response
+  // comes back. That's distinct from the server responding with a real error,
+  // which is never retried here. A couple of quick retries clears most of
+  // these transient hiccups without the user ever seeing them.
+  function fetchWithRetry(url, opts, attempt) {
+    attempt = attempt || 0;
+    return fetch(url, opts).catch(function (err) {
+      if (attempt >= 2) throw err;
+      return new Promise(function (resolve) { setTimeout(resolve, 700 * (attempt + 1)); })
+        .then(function () { return fetchWithRetry(url, opts, attempt + 1); });
+    });
+  }
   function api(action, payload) {
     payload = payload || {};
     payload.action = action;
@@ -309,7 +323,7 @@
     // out-of-Charge gate) rejects like the network path instead of throwing sync.
     var p = OFFLINE
       ? new Promise(function (resolve) { resolve(offlineApi(action, payload)); })
-      : fetch(CFG.API_URL, {
+      : fetchWithRetry(CFG.API_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight
           body: JSON.stringify(payload)
@@ -320,7 +334,13 @@
             return res.data;
           });
     return p.catch(function (err) {
-      if (String(err && err.message).indexOf('CHARGE_EMPTY') === 0) handleChargeEmpty(String(err.message));
+      var msg = String(err && err.message || '');
+      if (msg.indexOf('CHARGE_EMPTY') === 0) { handleChargeEmpty(msg); throw err; }
+      // Reword the raw browser network-failure strings (meaningless to a user)
+      // into something actionable — this only fires once retries are exhausted.
+      if (/^(load failed|failed to fetch|networkerror|typeerror)/i.test(msg) || /network/i.test(msg)) {
+        throw new Error('Couldn’t reach the server — check your connection and try again.');
+      }
       throw err;
     });
   }
