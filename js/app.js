@@ -1188,7 +1188,11 @@
     var bar = $('#gut-daybar');
     if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderGutApp); }
     var d = appDay(), g = gutOf(d);
-    var sel = GUT.filter(function (x) { return x.v === d.gut; })[0];
+    // Only trust d.gut as a real Bristol pick if extra.gut.bristol confirms it —
+    // guards against legacy pre-Bristol-scale data (old value 1 meant "didn't
+    // go", now value 1 means Pellets) showing up as a false selection.
+    var confirmedGut = (d.gut && g.bristol === d.gut) ? d.gut : 0;
+    var sel = GUT.filter(function (x) { return x.v === confirmedGut; })[0];
     var plantsWk = gutWeekSum('plants'), ferm = Number(g.fermented) || 0;
     var fiber = dietFiberFor(d.date);   // auto from the Diet log (null = loading)
     // Persist the diet-sourced fibre so the weekly trends can read it.
@@ -1202,13 +1206,15 @@
       // ---- Bowel movement (Bristol scale) ----
       '<div class="card"><div class="gut-head"><span class="eyebrow">💩 Bowel movement</span>' +
         '<span class="muted tiny">Bristol scale · aim for 3–4</span></div>' +
-        '<div class="gut-bristol">' + GUT.map(function (t) {
-          return '<button type="button" class="gbr' + (d.gut === t.v ? ' sel' : '') + (t.tier === 'Ideal' ? ' ideal' : '') + '" data-bristol="' + t.v + '" style="--gc:' + t.color + '">' +
+        '<div class="gut-bristol' + (g.noGo ? ' gut-bristol-off' : '') + '">' + GUT.map(function (t) {
+          return '<button type="button" class="gbr' + (confirmedGut === t.v && !g.noGo ? ' sel' : '') + (t.tier === 'Ideal' ? ' ideal' : '') + '" data-bristol="' + t.v + '" style="--gc:' + t.color + '">' +
             '<span class="gbr-n">' + t.v + '</span><span class="gbr-emoji">' + bristolSvg(t.v) + '</span><span class="gbr-name">' + t.short + '</span></button>';
         }).join('') + '</div>' +
-        (sel ? '<div class="gut-sel-note"><b style="color:' + sel.color + '">' + sel.label + ' · ' + sel.tier + '</b> — ' + esc(sel.sub) + '</div>'
+        (g.noGo ? '<div class="gut-sel-note"><b style="color:' + GUT_NOGO_COLOR + '">🚫 No bowel movement</b> — didn’t go today.</div>'
+             : sel ? '<div class="gut-sel-note"><b style="color:' + sel.color + '">' + sel.label + ' · ' + sel.tier + '</b> — ' + esc(sel.sub) + '</div>'
              : '<div class="muted tiny" style="margin-top:8px">Tap the type that matches. Types 3–4 are the healthy target.</div>') +
-        gutStepperHtml('bm', 'Times today', '🔁', Number(g.bm) || 0, '') +
+        '<button type="button" class="gut-nogo-btn' + (g.noGo ? ' on' : '') + '" id="gut-nogo">🚫 ' + (g.noGo ? 'Marked as no BM today' : "Didn't go today") + '</button>' +
+        (g.noGo ? '' : gutStepperHtml('bm', 'Times today', '🔁', Number(g.bm) || 0, '')) +
       '</div>' +
       // ---- Symptoms ----
       '<div class="card"><span class="eyebrow">📊 Symptoms today</span>' +
@@ -1247,7 +1253,7 @@
         '<div id="gut-cal"></div>' +
         '<div class="gt-legend" style="margin-top:10px">' + GUT.map(function (t) {
           return '<span class="gt-key"><i style="background:' + t.color + '"></i>' + t.v + ' ' + t.short + '</span>';
-        }).join('') + '</div></div>' +
+        }).join('') + '<span class="gt-key"><i style="background:' + GUT_NOGO_COLOR + '"></i>No BM</span></div></div>' +
       // ---- Trends ----
       '<div id="gut-range"></div>';
 
@@ -1255,17 +1261,23 @@
 
     // Calendar
     buildDayPicker($('#gut-cal'), ymOf(appDate()), renderGutApp, function (date) {
-      var l = logFor(date);
-      return l && l.gut ? gutColor(l.gut) : null;
+      return gutCalColor(logFor(date));
     });
 
-    // Bristol type
+    // Bristol type (picking one clears any "no BM" mark — mutually exclusive)
     box.querySelectorAll('[data-bristol]').forEach(function (b) {
       b.addEventListener('click', function () {
         var v = Number(b.getAttribute('data-bristol'));
-        gutPatch(d, { bristol: d.gut === v ? 0 : v });
+        var cur = (d.gut && gutOf(d).bristol === d.gut) ? d.gut : 0;
+        gutPatch(d, { bristol: cur === v ? 0 : v, noGo: false });
         queueSaveDay(d); renderGutApp();
       });
+    });
+    var nogoBtn = $('#gut-nogo');
+    if (nogoBtn) nogoBtn.addEventListener('click', function () {
+      var now = !gutOf(d).noGo;
+      gutPatch(d, now ? { noGo: true, bristol: 0 } : { noGo: false });
+      queueSaveDay(d); renderGutApp();
     });
     // Steppers (bm, plants, fermented)
     box.querySelectorAll('.gs-inc, .gs-dec').forEach(function (b) {
@@ -1304,11 +1316,12 @@
     if (rs.mode === 'day') { bindRangeBar(box, 'gutrg', renderGutApp); return; }
     var r = rangeSpan(rs.mode, rs.anchor);
     var dates = rangeDatesList(r.from, r.to).filter(function (x) { return x <= todayStr(); });
-    var counts = {}, logged = 0, idealDays = 0, symSum = { bloat: 0, gas: 0, heartburn: 0, energy: 0, stress: 0 }, symN = 0, plants = 0, fiberSum = 0, fiberN = 0, ferm = 0;
+    var counts = {}, logged = 0, idealDays = 0, noGoDays = 0, symSum = { bloat: 0, gas: 0, heartburn: 0, energy: 0, stress: 0 }, symN = 0, plants = 0, fiberSum = 0, fiberN = 0, ferm = 0;
     dates.forEach(function (dt) {
       var l = logFor(dt); if (!l) return;
-      if (l.gut) { counts[l.gut] = (counts[l.gut] || 0) + 1; logged++; if (l.gut === 3 || l.gut === 4) idealDays++; }
       var gg = gutOf(l);
+      if (gg.noGo) noGoDays++;
+      else if (l.gut && gg.bristol === l.gut) { counts[l.gut] = (counts[l.gut] || 0) + 1; logged++; if (l.gut === 3 || l.gut === 4) idealDays++; }
       if (Object.keys(gg).length) {
         symN++; ['bloat', 'gas', 'heartburn', 'energy', 'stress'].forEach(function (k) { symSum[k] += Number(gg[k]) || 0; });
         plants += Number(gg.plants) || 0; ferm += Number(gg.fermented) || 0;
@@ -1320,7 +1333,9 @@
       return '<div class="mr-row"><span class="mr-name" style="width:74px">' + t.v + ' ' + t.short + '</span>' +
         '<div class="mr-bar"><span style="width:' + pct + '%;background:' + t.color + '"></span></div>' +
         '<span class="mr-val mono">' + c + '</span></div>';
-    }).join('');
+    }).join('') + (noGoDays ? '<div class="mr-row"><span class="mr-name" style="width:74px">🚫 No BM</span>' +
+      '<div class="mr-bar"><span style="width:' + Math.round(noGoDays / (logged + noGoDays) * 100) + '%;background:' + GUT_NOGO_COLOR + '"></span></div>' +
+      '<span class="mr-val mono">' + noGoDays + '</span></div>' : '');
     var symRows = GUT_SYMPTOMS.concat([{ key: 'stress', label: 'Stress', emoji: '🧠' }]).map(function (s) {
       var avg = symN ? symSum[s.key] / symN : 0;
       return '<div class="mr-row"><span class="mr-name" style="width:74px">' + s.emoji + ' ' + s.label + '</span>' +
@@ -1329,7 +1344,7 @@
     }).join('');
     box.innerHTML +=
       '<div class="card"><div class="eyebrow" style="margin-bottom:8px">Bristol distribution · ' + rangeLabelFor(rs.mode, rs.anchor) + '</div>' +
-        (logged ? distro + '<div class="muted tiny" style="margin-top:8px">✅ ' + Math.round(idealDays / logged * 100) + '% ideal (3–4) · ' + logged + ' logged</div>' : '<p class="muted tiny">No stool logs in this range.</p>') + '</div>' +
+        ((logged || noGoDays) ? distro + '<div class="muted tiny" style="margin-top:8px">' + (logged ? '✅ ' + Math.round(idealDays / logged * 100) + '% ideal (3–4) · ' : '') + logged + ' logged' + (noGoDays ? ' · ' + noGoDays + ' no-BM' : '') + '</div>' : '<p class="muted tiny">No stool logs in this range.</p>') + '</div>' +
       (symN ? '<div class="card"><div class="eyebrow" style="margin-bottom:8px">Symptoms · avg /10</div>' + symRows + '</div>' : '') +
       '<div class="card"><div class="eyebrow" style="margin-bottom:6px">Microbiome fuel · avg per day</div>' +
         '<div class="gut-tiles">' +
@@ -1885,7 +1900,20 @@
     { v: 6, label: 'Type 6', short: 'Mushy',   emoji: '🟤', sub: 'Fluffy, mushy, ragged edges',        tier: 'Diarrhoea',    color: '#f59e0b' },
     { v: 7, label: 'Type 7', short: 'Liquid',  emoji: '💧', sub: 'Entirely liquid — no solid pieces',  tier: 'Diarrhoea',    color: '#3b82f6' }
   ];
+  var GUT_NOGO_COLOR = '#5b6472';
   function gutColor(v) { for (var i = 0; i < GUT.length; i++) if (GUT[i].v === v) return GUT[i].color; return null; }
+  // The old picker (pre-Bristol-scale) stored value 1 as "Didn't go" — the same
+  // raw number the new scale uses for Type 1 (Pellets). A day only gets coloured
+  // by its Bristol value if extra.gut.bristol confirms it was logged through the
+  // NEW scale; otherwise (ambiguous legacy data, or genuinely no log) it's left
+  // uncoloured rather than risk mislabelling an old "didn't go" day as Pellets.
+  function gutCalColor(l) {
+    if (!l) return null;
+    var g = gutOf(l);
+    if (g.noGo) return GUT_NOGO_COLOR;
+    if (l.gut && g.bristol === l.gut) return gutColor(l.gut);
+    return null;
+  }
   function gutLabel(v) { var g = GUT.filter(function (x) { return x.v === v; })[0]; return g ? g.label + ' · ' + g.short : null; }
   // Hand-drawn Bristol stool illustrations (crisp, scalable, theme-safe) — a
   // much clearer visual cue than a coloured dot when picking your type.
@@ -1937,7 +1965,11 @@
   // % of logged days in the last 30 that were an ideal stool (Bristol 3–4).
   function gutIdealRate() {
     var hit = 0, n = 0;
-    for (var i = 0; i < 30; i++) { var dt = addDays(todayStr(), -i); var l = dt === todayStr() ? state.today : logFor(dt); if (l && l.gut) { n++; if (l.gut === 3 || l.gut === 4) hit++; } }
+    for (var i = 0; i < 30; i++) {
+      var dt = addDays(todayStr(), -i); var l = dt === todayStr() ? state.today : logFor(dt); if (!l) continue;
+      var gg = gutOf(l);
+      if (l.gut && gg.bristol === l.gut) { n++; if (l.gut === 3 || l.gut === 4) hit++; }
+    }
     return n ? Math.round(hit / n * 100) : null;
   }
   // The Bristol selector — used in the gut app and the day editor.
