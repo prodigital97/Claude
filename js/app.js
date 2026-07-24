@@ -792,6 +792,12 @@
       state.today = t ? Object.assign(emptyDay(todayStr()), t) : emptyDay(todayStr());
       lastXpLevel = levelInfo(xpTotals().total).level;   // seed baseline once data is ready
       cacheState();
+      // Safe to run only here: state.logs/profile are freshly loaded from the
+      // network. enterApp() also runs optimistically against a STALE cached
+      // snapshot before this resolves — migrating there would process an
+      // incomplete log list and mark itself done, silently skipping the real
+      // data once it arrives.
+      migrateLegacyGutData();
     });
   }
   function cacheState() {
@@ -1955,6 +1961,52 @@
     if (!d.extra) d.extra = {};
     d.extra.gut = Object.assign({}, gutOf(d), patch);
     if (patch.bristol !== undefined) d.gut = patch.bristol;   // mirror for the calendar + legacy
+  }
+  /* ---------------- One-time legacy Gut data migration ----------------
+     The pre-Bristol-scale picker reused the numbers 1-7 for entirely different
+     things — two of them (Bloated, Acidity) were SYMPTOMS, not stool shapes at
+     all. Remap each old value into the field it actually corresponds to in the
+     new model: real stool-consistency values become a confirmed Bristol type;
+     "Didn't go" becomes the new no-BM flag; the two symptom values move into
+     their matching symptom slider instead of being forced into a stool shape
+     that was never actually reported. Runs once per account, then never again. */
+  var GUT_LEGACY_MAP = {
+    1: { noGo: true },   // "Didn't go"  -> the no-BM flag (not Pellets)
+    2: { bristol: 2 },   // "Hard"       -> Lumpy (constipation)
+    3: { bristol: 3 },   // "Healthy"    -> Cracked (ideal)
+    4: { bristol: 4 },   // "Soft"       -> Smooth (ideal)
+    5: { bristol: 6 },   // "Loose"      -> Mushy (diarrhoea-leaning)
+    6: { bloat: 7 },     // "Bloated"    -> the Bloating symptom slider
+    7: { heartburn: 7 }  // "Acidity"    -> the Heartburn symptom slider
+  };
+  function migrateLegacyGutData() {
+    if (state.profile && state.profile.gutLegacyMigrated) return;
+    var toSave = [];
+    (state.logs || []).forEach(function (d) {
+      if (!d || !d.gut) return;
+      if (gutOf(d).bristol === d.gut) return;        // already a confirmed new-scheme log
+      var map = GUT_LEGACY_MAP[d.gut]; if (!map) return;
+      var patch = Object.assign({}, map);
+      if (patch.bristol === undefined) patch.bristol = 0;   // symptom/no-go days carry no stool type
+      gutPatch(d, patch);
+      toSave.push(d);
+    });
+    function finish() {
+      var profile = Object.assign({}, state.profile, { gutLegacyMigrated: true });
+      state.profile = profile;
+      api('saveGoals', { profile: profile }).then(function (data) {
+        if (data && data.profile) state.profile = data.profile;
+        if (!$('#view-gut').classList.contains('hidden')) renderGutApp();
+      }).catch(function () {});
+    }
+    if (!toSave.length) { finish(); return; }
+    toast('Updating ' + toSave.length + ' past gut log' + (toSave.length === 1 ? '' : 's') + ' to the new scale…');
+    // Save one at a time — Apps Script doesn't love a burst of concurrent writes.
+    (function next() {
+      var d = toSave.shift();
+      if (!d) { finish(); return; }
+      api('saveDay', { day: d }).catch(function () {}).then(next);
+    })();
   }
   // Sum a numeric gut field over the last 7 days (incl. today).
   function gutWeekSum(field) {
