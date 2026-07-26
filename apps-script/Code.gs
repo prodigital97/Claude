@@ -211,9 +211,10 @@ function doPost(e) {
       case 'adminFoods':      data = handleAdminFoods(body);      break;
       case 'adminUpdateFood': data = handleAdminUpdateFood(body); break;
       case 'adminDeleteFood': data = handleAdminDeleteFood(body); break;
-      case 'startFast':  data = handleStartFast(body);  break;
-      case 'endFast':    data = handleEndFast(body);    break;
-      case 'getFasts':   data = handleGetFasts(body);   break;
+      case 'startFast':    data = handleStartFast(body);    break;
+      case 'endFast':      data = handleEndFast(body);      break;
+      case 'logPastFast':  data = handleLogPastFast(body);  break;
+      case 'getFasts':     data = handleGetFasts(body);     break;
       case 'updateFast': data = handleUpdateFast(body); break;
       case 'deleteFast': data = handleDeleteFast(body); break;
       case 'getCharge':  data = handleGetCharge(body); break;
@@ -434,6 +435,28 @@ function handleStartFast(body) {
     startAt: body.startAt ? String(body.startAt) : new Date().toISOString(),
     endAt: '',
     goalHours: 0,  // unused — milestone is derived from actual duration
+    createdAt: new Date().toISOString()
+  };
+  var sheet = getSheet(FAST_SHEET, FAST_HEADERS);
+  sheet.appendRow(FAST_HEADERS.map(function (h) { return record[h]; }));
+  return { fast: record };
+}
+
+// Logging a completed PAST fast (the "+ Log a past fast" form) always creates
+// its own row directly — it must never reuse handleStartFast, which returns
+// your CURRENT active fast if one exists. Piggybacking on startFast+updateFast
+// used to silently overwrite (and end) a real in-progress fast with the past
+// dates you were only trying to log separately.
+function handleLogPastFast(body) {
+  var user = authUser(body);
+  var startAt = String(body.startAt || ''), endAt = String(body.endAt || '');
+  if (!startAt || !endAt) throw new Error('Both start and end times are required.');
+  var record = {
+    id: Utilities.getUuid(),
+    username: user.username,
+    startAt: startAt,
+    endAt: endAt,
+    goalHours: 0,
     createdAt: new Date().toISOString()
   };
   var sheet = getSheet(FAST_SHEET, FAST_HEADERS);

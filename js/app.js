@@ -502,6 +502,12 @@
       var act = activeFast(); if (act) { act.endAt = new Date().toISOString(); saveDb(d); }
       return { fast: act || null };
     }
+    if (action === 'logPastFast') {
+      if (!p.startAt || !p.endAt) throw new Error('Both start and end times are required.');
+      d.fasts = d.fasts || {}; var fap = d.fasts[me.username] || (d.fasts[me.username] = []);
+      var pf = { id: 'fa_' + Date.now(), startAt: p.startAt, endAt: p.endAt, goalHours: 0 };
+      fap.push(pf); saveDb(d); return { fast: pf };
+    }
     if (action === 'getFasts') {
       var done = myFasts().filter(function (f) { return f.endAt; }).sort(function (a, b) { return a.startAt < b.startAt ? 1 : -1; });
       return { active: activeFast(), fasts: done.slice(0, 30) };
@@ -788,6 +794,7 @@
       state._ch = null;          // recompute active challenge from the fresh profile
       syncChallenge();
       state.activeFast = data.activeFast || null;
+      reconcilePendingFast();    // push a locally-started fast the server never got, if any
       var t = logFor(todayStr());
       state.today = t ? Object.assign(emptyDay(todayStr()), t) : emptyDay(todayStr());
       lastXpLevel = levelInfo(xpTotals().total).level;   // seed baseline once data is ready
@@ -4203,7 +4210,7 @@
         var v = $('#fast-start-edit').value; if (!v) return;
         if (new Date(v).getTime() > Date.now()) { toast('Start time can’t be in the future'); return; }
         api('updateFast', { id: f.id, startAt: fromLocalInput(v) }).then(function (data) {
-          state.activeFast = data.fast; renderFasting(); toast('Start time updated ✓');
+          state.activeFast = data.fast; cacheActiveFast(data.fast); renderFasting(); toast('Start time updated ✓');
         }).catch(function (e) { toast(e.message); });
       });
       updateFastTimer();
@@ -4259,11 +4266,13 @@
     if (eT > Date.now()) { toast('End time can’t be in the future'); return; }
     if (eT - sT > 72 * 3600000) { toast('That’s over 72h — double-check the dates'); return; }
     var btn = $('#fm-save'); btn.disabled = true; btn.textContent = 'Saving…';
-    // No dedicated endpoint needed: create an open fast, then close it with updateFast.
-    api('startFast', { startAt: fromLocalInput(s) }).then(function (data) {
-      return api('updateFast', { id: data.fast.id, startAt: fromLocalInput(s), endAt: fromLocalInput(e) });
-    }).then(function () {
-      state.activeFast = null;
+    // A dedicated action that always creates its own row — this must NEVER
+    // reuse startFast+updateFast: if a real fast is currently active,
+    // startFast hands back THAT fast instead of a new one, and the follow-up
+    // updateFast would silently overwrite (and end) it with these past dates.
+    // Also never touch state.activeFast here — logging a past fast has no
+    // bearing on whether one is currently running.
+    api('logPastFast', { startAt: fromLocalInput(s), endAt: fromLocalInput(e) }).then(function () {
       var mark = milestoneInfo((eT - sT) / 3600000).reached;
       toast(mark ? 'Past fast logged — ' + mark + 'h mark 🎉' : 'Past fast logged ✓');
       renderFasting();
@@ -4348,17 +4357,49 @@
     });
   }
 
+  // A started fast used to live ONLY in memory + whatever the server confirmed
+  // — if that single request failed (even after retries) it vanished without
+  // a trace, with nothing to recover on the next load. It's now also cached
+  // locally the instant you tap Start, and reconciled (pushed to the server)
+  // on the next successful loadState() if it never made it through.
+  function fastCacheKey() { return 'hard_fast_' + (state.username || ''); }
+  function cacheActiveFast(f) {
+    try { if (f) localStorage.setItem(fastCacheKey(), JSON.stringify(f)); else localStorage.removeItem(fastCacheKey()); } catch (e) {}
+  }
+  function cachedActiveFast() {
+    try { return JSON.parse(localStorage.getItem(fastCacheKey()) || 'null'); } catch (e) { return null; }
+  }
+  function reconcilePendingFast() {
+    var cached = cachedActiveFast();
+    if (cached && cached.pending && !state.activeFast) {
+      // Started locally, never confirmed by the server, and the server still
+      // shows nothing active — push it now instead of silently losing it.
+      api('startFast', { startAt: cached.startAt }).then(function (data) {
+        state.activeFast = data.fast; cacheActiveFast(data.fast);
+        if (!$('#view-fast').classList.contains('hidden')) renderFasting();
+      }).catch(function () {});
+    } else if (state.activeFast) {
+      cacheActiveFast(state.activeFast);          // keep the cache aligned with confirmed server truth
+    } else if (cached) {
+      cacheActiveFast(null);                      // server says nothing active and it wasn't just pending — stale, clear it
+    }
+  }
   function startFast(startIso) {
+    // Cache immediately, before the network round-trip — a reload mid-request
+    // (or a request that fails even after retries) can no longer lose this;
+    // reconcilePendingFast() will push it on the next successful load.
+    var optimistic = { id: 'pending', startAt: startIso, endAt: '', pending: true };
+    state.activeFast = optimistic; cacheActiveFast(optimistic); renderFasting();
     api('startFast', { startAt: startIso }).then(function (data) {
-      state.activeFast = data.fast; renderFasting(); toast('Fast started — stay strong 💪');
-    }).catch(function (e) { toast(e.message); });
+      state.activeFast = data.fast; cacheActiveFast(data.fast); renderFasting(); toast('Fast started — stay strong 💪');
+    }).catch(function (e) { toast('Saved locally · will sync when back online · ' + e.message); });
   }
   function endFast() {
     var f = state.activeFast; if (!f) return;
     var elapsed = Date.now() - new Date(f.startAt).getTime();
     if (!confirm('End your fast? You fasted ' + durLabel(elapsed) + '.')) return;
     api('endFast', {}).then(function (data) {
-      state.activeFast = null;
+      state.activeFast = null; cacheActiveFast(null);
       var done = data.fast;
       var ms = done ? (new Date(done.endAt).getTime() - new Date(done.startAt).getTime()) : elapsed;
       var mark = milestoneInfo(ms / 3600000).reached;
