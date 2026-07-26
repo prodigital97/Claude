@@ -795,6 +795,7 @@
       syncChallenge();
       state.activeFast = data.activeFast || null;
       reconcilePendingFast();    // push a locally-started fast the server never got, if any
+      reconcileDetoxSession();   // sync an in-progress detox timer with the server, either direction
       var t = logFor(todayStr());
       state.today = t ? Object.assign(emptyDay(todayStr()), t) : emptyDay(todayStr());
       lastXpLevel = levelInfo(xpTotals().total).level;   // seed baseline once data is ready
@@ -2392,7 +2393,12 @@
   function flushPendingSaves() {
     var pending = false;
     if (state.saveTimer) { clearTimeout(state.saveTimer); state.saveTimer = null; if (state.today) pushToday(false); pending = true; }
-    if (state.saveTimerPast) { clearTimeout(state.saveTimerPast); state.saveTimerPast = null; if (state.pendingPastSave) { state.pendingPastSave(); state.pendingPastSave = null; } pending = true; }
+    if (state.pendingPastSaves) {
+      Object.keys(state.pendingPastSaves).forEach(function (date) {
+        var p = state.pendingPastSaves[date];
+        clearTimeout(p.timer); p.fn(); pending = true;
+      });
+    }
     return pending;
   }
 
@@ -2416,15 +2422,22 @@
     d.completed = goalMet(d);
     upsertLocal(d);
     var payload = Object.assign({}, d);
-    var doSave = function () {
-      state.pendingPastSave = null;
+    var date = payload.date;
+    // Keyed by date (not a single global slot) so editing two different past
+    // days within the same debounce window queues both saves instead of the
+    // second edit silently cancelling and dropping the first one's network save.
+    state.pendingPastSaves = state.pendingPastSaves || {};
+    var existing = state.pendingPastSaves[date];
+    if (existing) clearTimeout(existing.timer);
+    var slot = { timer: null, fn: null };
+    slot.fn = function () {
+      delete state.pendingPastSaves[date];
       api('saveDay', { day: payload }).then(function () {
         toast('Saved ' + shortDate(payload.date) + ' ✓');
       }).catch(function (err) { toast('Saved locally · ' + err.message); });
     };
-    state.pendingPastSave = doSave;
-    clearTimeout(state.saveTimerPast);
-    state.saveTimerPast = setTimeout(doSave, 700);
+    slot.timer = setTimeout(slot.fn, 700);
+    state.pendingPastSaves[date] = slot;
   }
   function dayBarHtml() {
     var date = appDate(), isToday = date === todayStr();
@@ -6076,21 +6089,28 @@
       (applicable > 1 ? '<button id="st-apply-all" class="btn primary block">✓ Apply all ' + applicable + ' days</button>' : '');
     $('#st-body').querySelectorAll('[data-stapply]').forEach(function (b) {
       b.addEventListener('click', function () {
-        stApplyDay(state.stDays[Number(b.getAttribute('data-stapply'))]);
-        b.textContent = 'Applied ✓'; b.disabled = true;
+        b.textContent = 'Saving…'; b.disabled = true;
+        stApplyDay(state.stDays[Number(b.getAttribute('data-stapply'))]).then(function () {
+          b.textContent = 'Applied ✓';
+        }).catch(function (e) {
+          b.textContent = 'Retry — not saved'; b.disabled = false; toast('Didn’t save: ' + e.message);
+        });
       });
     });
     var all = $('#st-apply-all');
     if (all) all.addEventListener('click', function () {
-      var n = 0;
-      state.stDays.forEach(function (d) { if (d.date) { stApplyDay(d); n++; } });
-      toast(n + ' day' + (n === 1 ? '' : 's') + ' applied ✓');
-      hide('#st-modal');
-      if (state.stAfterApply) state.stAfterApply();
+      var days = state.stDays.filter(function (d) { return d.date; });
+      all.textContent = 'Saving…'; all.disabled = true;
+      Promise.all(days.map(function (d) { return stApplyDay(d).then(function () { return true; }).catch(function () { return false; }); })).then(function (results) {
+        var ok = results.filter(Boolean).length, failed = results.length - ok;
+        toast(ok + ' day' + (ok === 1 ? '' : 's') + ' applied ✓' + (failed ? ' · ' + failed + ' failed, still shown locally' : ''));
+        hide('#st-modal');
+        if (state.stAfterApply) state.stAfterApply();
+      });
     });
   }
   function stApplyDay(dd) {
-    if (!dd || !dd.date) return;
+    if (!dd || !dd.date) return Promise.resolve();
     var d = logFor(dd.date);
     if (!d) { d = emptyDay(dd.date); state.logs.push(d); state.logs.sort(function (a, b) { return a.date < b.date ? -1 : 1; }); }
     var m = d.metrics || (d.metrics = {});
@@ -6102,9 +6122,9 @@
     }
     d.completed = goalMet(d);
     upsertLocal(d);
-    api('saveDay', { day: Object.assign({}, d) }).catch(function () {});
     if (!$('#view-sleep').classList.contains('hidden')) renderSleep();
     if (!$('#view-detox').classList.contains('hidden')) renderDetox();
+    return api('saveDay', { day: Object.assign({}, d) });
   }
 
   /* ----- Body metric engine: series, trend, chart ----- */
@@ -6361,9 +6381,11 @@
         weightGoal: Number($('#bd-goal').value) || 0,
         heightCm: Number($('#bd-height').value) || 0
       });
-      queueSaveDay(day);
-      api('saveGoals', { profile: state.profile }).catch(function () {});
-      toast('Logged ✓'); renderBody();
+      queueSaveDay(day);   // reports its own "Saved ✓" once the day metrics are confirmed
+      api('saveGoals', { profile: state.profile }).then(function (d) {
+        if (d && d.profile) state.profile = d.profile;
+      }).catch(function (e) { toast('Profile fields didn’t save: ' + e.message); });
+      renderBody();
     });
   }
 
@@ -6864,6 +6886,29 @@
 
   /* ================= Digital Detox (Mind) ================= */
   function detoxKey() { return 'hard_detox_' + (state.username || ''); }
+  // A running detox session used to live ONLY in localStorage until it was
+  // stopped — the exact bug class the fasting fix addressed: a crash, a
+  // cleared cache, or a switch to another device meant the whole session's
+  // minutes were gone with no way to recover them. detoxActiveSince mirrors
+  // the local timer into the profile blob (already durably synced via
+  // saveGoals) so the session survives all of that; reconcileDetoxSession()
+  // brings the two back in sync on every load.
+  function detoxPersistStart(ts) {
+    var p = Object.assign({}, state.profile, { detoxActiveSince: ts });
+    state.profile = p;
+    api('saveGoals', { profile: p }).then(function (d) { if (d && d.profile) state.profile = d.profile; }).catch(function () {});
+  }
+  function detoxPersistEnd() {
+    var p = Object.assign({}, state.profile, { detoxActiveSince: 0 });
+    state.profile = p;
+    api('saveGoals', { profile: p }).catch(function () {});
+  }
+  function reconcileDetoxSession() {
+    var local = Number(localStorage.getItem(detoxKey())) || 0;
+    var server = Number(state.profile && state.profile.detoxActiveSince) || 0;
+    if (server && !local) localStorage.setItem(detoxKey(), String(server));
+    else if (local && !server) detoxPersistStart(local);
+  }
   function renderDetox() {
     var box = $('#detox-app'); if (!box) return;
     if (state.detoxTimer) { clearInterval(state.detoxTimer); state.detoxTimer = null; }
@@ -6873,7 +6918,7 @@
     var day = appDay(), m = metricsOf(day);
     var total = Number(m.detoxMin) || 0;
     var isToday = appDate() === todayStr();
-    var startedAt = isToday ? (Number(localStorage.getItem(detoxKey())) || 0) : 0;
+    var startedAt = isToday ? (Number(localStorage.getItem(detoxKey())) || Number(state.profile && state.profile.detoxActiveSince) || 0) : 0;
     var pct = pctOf(total, goal);
     var screenMin = Number(m.screenMin) || 0;
     var screenApps = m.screenApps || [];
@@ -6934,11 +6979,18 @@
       $('#dx-stop').addEventListener('click', function () {
         var mins = Math.round((Date.now() - startedAt) / 60000);
         localStorage.removeItem(detoxKey());
+        detoxPersistEnd();
         if (state.detoxTimer) { clearInterval(state.detoxTimer); state.detoxTimer = null; }
         if (mins >= 1) {
-          m.detoxMin = (Number(m.detoxMin) || 0) + mins;
+          // A session left running for a very long time (app closed and
+          // reopened days later, etc.) is almost certainly stale, not a real
+          // multi-day detox — cap what gets auto-banked and point the user
+          // at manual edit instead of silently crediting bogus minutes.
+          var banked = Math.min(mins, 480);
+          m.detoxMin = (Number(m.detoxMin) || 0) + banked;
           queueSave();
-          toast('+' + mins + ' min banked 📵✨');
+          if (mins > 480) toast('That ran ' + Math.round(mins / 60) + 'h — capped at 8h. Fix the number below if needed.');
+          else toast('+' + banked + ' min banked 📵✨');
         } else {
           toast('Under a minute — not banked.');
         }
@@ -6946,7 +6998,9 @@
       });
     } else {
       $('#dx-start').addEventListener('click', function () {
-        localStorage.setItem(detoxKey(), String(Date.now()));
+        var ts = Date.now();
+        localStorage.setItem(detoxKey(), String(ts));
+        detoxPersistStart(ts);
         renderDetox();
       });
     }
