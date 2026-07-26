@@ -1273,8 +1273,9 @@ function handleCoachChat(body) {
 // Compact, current snapshot of one user's tracked data for the coach prompt.
 function buildCoachContext(username, displayName) {
   var today = todayStr();
-  var wa = new Date(); wa.setDate(wa.getDate() - 7);
-  var weekAgo = wa.getFullYear() + '-' + ('0' + (wa.getMonth() + 1)).slice(-2) + '-' + ('0' + wa.getDate()).slice(-2);
+  function daysAgoStr(n) { var d = new Date(); d.setDate(d.getDate() - n); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  var weekAgo = daysAgoStr(7);
+  var monthAgo = daysAgoStr(30);   // covers "last 4 weeks"-style questions, not just the last 7 days
 
   var usheet = getSheet(USERS_SHEET, USER_HEADERS);
   var found = findUserRow(usheet, username);
@@ -1306,23 +1307,29 @@ function buildCoachContext(username, displayName) {
       (l.gut ? (', gut ' + (GUT_WORDS[l.gut] || '')) : '');
   });
 
+  // Fetch a 30-day window once, then derive both a 7-day AND a ~30-day
+  // average from it — so the coach can correctly answer both "this week"
+  // and "last month" style questions instead of only ever seeing 7 days.
   var foodRows = getSheet(FOOD_SHEET, FOOD_HEADERS).getDataRange().getValues();
   var fIdx = colIndex(FOOD_HEADERS);
   var byDate = {};
   for (var b = 1; b < foodRows.length; b++) {
     if (normalizeUsername(foodRows[b][fIdx.username]) !== username) continue;
-    var dt = formatDate(foodRows[b][fIdx.date]); if (dt < weekAgo) continue;
+    var dt = formatDate(foodRows[b][fIdx.date]); if (dt < monthAgo) continue;
     var e = byDate[dt] || (byDate[dt] = { cal: 0, p: 0, c: 0, f: 0, s: 0 });
     e.cal += Number(foodRows[b][fIdx.calories]) || 0; e.p += Number(foodRows[b][fIdx.protein]) || 0;
     e.c += Number(foodRows[b][fIdx.carbs]) || 0; e.f += Number(foodRows[b][fIdx.fat]) || 0; e.s += Number(foodRows[b][fIdx.sugar]) || 0;
   }
-  var fdays = Object.keys(byDate).sort();
-  var avgCal = 0, avgP = 0, avgC = 0, avgF = 0, avgS = 0;
-  if (fdays.length) {
-    fdays.forEach(function (k) { avgCal += byDate[k].cal; avgP += byDate[k].p; avgC += byDate[k].c; avgF += byDate[k].f; avgS += byDate[k].s; });
-    avgCal = Math.round(avgCal / fdays.length); avgP = Math.round(avgP / fdays.length);
-    avgC = Math.round(avgC / fdays.length); avgF = Math.round(avgF / fdays.length); avgS = Math.round(avgS / fdays.length);
+  function avgDiet(fromDate) {
+    var days = Object.keys(byDate).filter(function (k) { return k >= fromDate; }).sort();
+    var out = { n: days.length, cal: 0, p: 0, c: 0, f: 0, s: 0 };
+    if (!days.length) return out;
+    days.forEach(function (k) { out.cal += byDate[k].cal; out.p += byDate[k].p; out.c += byDate[k].c; out.f += byDate[k].f; out.s += byDate[k].s; });
+    out.cal = Math.round(out.cal / days.length); out.p = Math.round(out.p / days.length);
+    out.c = Math.round(out.c / days.length); out.f = Math.round(out.f / days.length); out.s = Math.round(out.s / days.length);
+    return out;
   }
+  var diet7 = avgDiet(weekAgo), diet30 = avgDiet(monthAgo);
 
   var fastRows = getSheet(FAST_SHEET, FAST_HEADERS).getDataRange().getValues();
   var faIdx = colIndex(FAST_HEADERS);
@@ -1339,8 +1346,9 @@ function buildCoachContext(username, displayName) {
   lines.push('Challenge: Day ' + day + ' of 75, started ' + start + ', ' + Object.keys(done).length + ' days fully completed, current streak ' + currentStreak(logs) + '.');
   lines.push('Goals/body: calorie goal ' + (prof.calorieGoal || '?') + ' kcal/day, protein ' + (prof.proteinGoal || '?') + 'g, carbs ' + (prof.carbGoal || '?') + 'g, fat ' + (prof.fatGoal || '?') + 'g, sugar limit ' + (prof.sugarGoal || '?') + 'g; weight ' + (prof.weightKg || '?') + 'kg, height ' + (prof.heightCm || '?') + 'cm, age ' + (prof.age || '?') + ', sex ' + (prof.sex || '?') + ', activity ' + (prof.activity || '?') + ', aim ' + (prof.goalType || '?') + '.');
   lines.push('Task consistency (over ' + elapsed + ' logged days): indoor workout ' + pct('workout1') + '%, outdoor ' + pct('outdoor') + '%, reading ' + pct('reading') + '%, photo ' + pct('photo') + '%, diet ' + pct('diet') + '%, no-alcohol ' + pct('noAlcohol') + '%, water goal ' + waterPct + '%.');
-  if (fdays.length) lines.push('Diet (avg over last ' + fdays.length + ' logged days): ' + avgCal + ' kcal, ' + avgP + 'g protein, ' + avgC + 'g carbs, ' + avgF + 'g fat, ' + avgS + 'g sugar per day.');
-  else lines.push('Diet: no food logged in the last 7 days.');
+  if (diet7.n) lines.push('Diet, last 7 days (avg over ' + diet7.n + ' logged days): ' + diet7.cal + ' kcal, ' + diet7.p + 'g protein, ' + diet7.c + 'g carbs, ' + diet7.f + 'g fat, ' + diet7.s + 'g sugar per day.');
+  if (diet30.n) lines.push('Diet, last 30 days / ~4 weeks (avg over ' + diet30.n + ' logged days): ' + diet30.cal + ' kcal, ' + diet30.p + 'g protein, ' + diet30.c + 'g carbs, ' + diet30.f + 'g fat, ' + diet30.s + 'g sugar per day.');
+  if (!diet7.n && !diet30.n) lines.push('Diet: no food logged in the last 30 days.');
   if (avgFast) lines.push('Fasting: average ' + avgFast + 'h over ' + durs.length + ' completed fasts.');
   if (recent.length) lines.push('Recent days:\n  ' + recent.join('\n  '));
   return lines.join('\n');
@@ -2544,18 +2552,28 @@ function handleMoneyCoachChat(body) {
 function moneyBuildCoachContext(username, displayName) {
   var status = moneyComputeBudgetStatus(username);
   var from = moneyMonthStart(), to = todayStr();
+  var d90 = new Date(); d90.setDate(d90.getDate() - 90);
+  var since90 = d90.getFullYear() + '-' + ('0' + (d90.getMonth() + 1)).slice(-2) + '-' + ('0' + d90.getDate()).slice(-2);
   var cats = {}; moneyGetCategories(username).forEach(function (c) { cats[c.id] = c; });
   var accts = {}; moneyGetAccounts(username).forEach(function (a) { accts[a.id] = a; });
   var sheet = getSheet(MONEY_TXN_SHEET, MONEY_TXN_HEADERS);
   var values = sheet.getDataRange().getValues(); var idx = colIndex(MONEY_TXN_HEADERS);
+  // This-month totals (for the budget/guard-rail numbers) AND a rolling 90-day
+  // by-month breakdown (so "how was last month" / "over the last few months"
+  // can actually be answered instead of only ever seeing the current month).
   var byCat = {}, byKind = { need: 0, want: 0, saving: 0 }, byAcct = {}, income = 0, spend = 0;
+  var byMonth = {};   // 'YYYY-MM' -> { spend, income }
   for (var i = 1; i < values.length; i++) {
     var r = values[i];
     if (normalizeUsername(r[idx.username]) !== username) continue;
-    var d = formatDate(r[idx.date]); if (d < from || d > to) continue;
+    var d = formatDate(r[idx.date]); if (d < since90 || d > to) continue;
     var type = String(r[idx.type]); var amt = Number(r[idx.amount]) || 0;
-    if (type === 'income') { income += amt; continue; }
+    var ym = d.slice(0, 7);
+    var mrec = byMonth[ym] || (byMonth[ym] = { spend: 0, income: 0 });
+    if (type === 'income') { mrec.income += amt; if (d >= from) income += amt; continue; }
     if (type === 'transfer') continue;
+    mrec.spend += amt;
+    if (d < from) continue;   // the rest (categories/accounts) stay scoped to THIS month
     spend += amt;
     var c = cats[String(r[idx.categoryId])] || { name: 'Uncategorised', kind: 'want' };
     byCat[c.name] = (byCat[c.name] || 0) + amt; byKind[c.kind] = (byKind[c.kind] || 0) + amt;
@@ -2566,14 +2584,18 @@ function moneyBuildCoachContext(username, displayName) {
     return Object.keys(o).map(function (k) { return [k, o[k]]; }).sort(function (a, b) { return b[1] - a[1]; })
       .slice(0, n || 8).map(function (p) { return p[0] + ' ₹' + Math.round(p[1]); }).join(', ');
   }
+  var monthsLine = Object.keys(byMonth).sort().map(function (ym) {
+    return ym + ': spent ₹' + Math.round(byMonth[ym].spend) + ', income ₹' + Math.round(byMonth[ym].income);
+  }).join(' | ');
   var budget = moneyGetBudget(username);
   var lines = [];
   lines.push('Name: ' + (displayName || username) + '. Monthly income (if set): ₹' + (budget.monthlyIncome || '?') + '. Savings goal: ₹' + (budget.savingsGoal || '?') + '/month.');
   lines.push('This month so far (' + from + ' to ' + to + '): spent ₹' + Math.round(spend) + ', income ₹' + Math.round(income) + '.');
   lines.push('Monthly limit: ₹' + status.limit + '. Spent ₹' + status.spent + ' (' + Math.round(status.pct * 100) + '%). Remaining ₹' + status.remaining + ' over ' + status.daysLeft + ' days = ₹' + status.safePerDay + '/day safe to spend. Projected month-end: ₹' + status.projection + '. Guard level: ' + status.level + '.');
-  lines.push('Needs ₹' + Math.round(byKind.need) + ' / Wants ₹' + Math.round(byKind.want) + ' / Savings ₹' + Math.round(byKind.saving) + ' (target roughly 50/30/20).');
-  lines.push('Top spend categories: ' + (top(byCat, 8) || 'none yet') + '.');
-  lines.push('By account/card: ' + (top(byAcct, 6) || 'none') + '.');
+  lines.push('Needs ₹' + Math.round(byKind.need) + ' / Wants ₹' + Math.round(byKind.want) + ' / Savings ₹' + Math.round(byKind.saving) + ' (target roughly 50/30/20) — this month.');
+  lines.push('Top spend categories (this month): ' + (top(byCat, 8) || 'none yet') + '.');
+  lines.push('By account/card (this month): ' + (top(byAcct, 6) || 'none') + '.');
+  if (monthsLine) lines.push('Month-by-month, last ~90 days: ' + monthsLine + '.');
   return lines.join('\n');
 }
 function moneyMonthStart() { return todayStr().slice(0, 7) + '-01'; }
