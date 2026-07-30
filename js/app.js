@@ -6495,6 +6495,51 @@
     if (vol > 0) return Math.round(vol).toLocaleString() + ' kg vol';
     return reps + ' rep' + (reps === 1 ? '' : 's');
   }
+  // Matches "Push-ups", "Push ups", "Diamond push-ups", etc. — any variant,
+  // not just the exact library spelling — so the daily count tile doesn't
+  // miss custom-typed entries.
+  function gymIsPushupName(name) {
+    return String(name || '').toLowerCase().replace(/[^a-z]/g, '').indexOf('pushup') >= 0;
+  }
+  function gymPushupTotal(list) {
+    var total = 0;
+    (list || []).forEach(function (e) {
+      if (!gymIsPushupName(e.n)) return;
+      gymSetsOf(e).forEach(function (s) { total += Number(s.r) || 0; });
+    });
+    return total;
+  }
+  // Whether an exercise has ever been logged with real weight — used to pick
+  // the right unit (reps vs kg) for its trend chart, independent of whether
+  // it's in the built-in library (custom-typed names have no GYM_INDEX entry).
+  function gymExerciseIsBodyweight(name) {
+    if (gymIsBodyweight(name)) return true;
+    var hasWeight = false;
+    (state.logs || []).forEach(function (l) {
+      ((l.metrics && l.metrics.gym) || []).forEach(function (e) {
+        if (e.n !== name || hasWeight) return;
+        gymSetsOf(e).forEach(function (s) { if ((Number(s.w) || 0) > 0) hasWeight = true; });
+      });
+    });
+    return !hasWeight;
+  }
+  // Per-day value for one exercise across a range: total reps if it's a
+  // bodyweight movement, total volume (kg × reps) otherwise.
+  function gymExerciseMetricOf(name, bw) {
+    return function (l) {
+      if (!l || !l.metrics || !l.metrics.gym) return 0;
+      var entries = l.metrics.gym.filter(function (e) { return e.n === name; });
+      if (!entries.length) return 0;
+      if (bw) return entries.reduce(function (s, e) { return s + gymSetsOf(e).reduce(function (s2, st) { return s2 + (Number(st.r) || 0); }, 0); }, 0);
+      return entries.reduce(function (s, e) { return s + gymEntryVol(e); }, 0);
+    };
+  }
+  // Exercises the user has ever logged, most-frequent first — powers the
+  // trend dropdown regardless of what's in the currently-viewed range.
+  function gymAllExerciseNames() {
+    var freq = gymFreq();
+    return Object.keys(freq).sort(function (a, b) { return freq[b] - freq[a]; });
+  }
 
   // Rest timer — survives re-renders, chimes when done.
   var gymRest = { left: 0, tick: null };
@@ -6523,6 +6568,7 @@
     var day = appDay();
     var list = gymOf(day);
     var vol = gymVolOf(day), setCount = gymSetCountOf(day);
+    var pushups = gymPushupTotal(list);
     var weekDays = 0, today = todayStr();
     for (var i = 0; i < 7; i++) {
       var l = logFor(addDays(today, -i));
@@ -6544,6 +6590,7 @@
         '<div class="js-stat"><b>' + list.length + '</b><span>exercises</span></div>' +
         '<div class="js-stat"><b>' + setCount + '</b><span>sets</span></div>' +
         '<div class="js-stat"><b>' + (vol ? (vol >= 1000 ? (vol / 1000).toFixed(1) + 't' : Math.round(vol) + 'kg') : '0') + '</b><span>volume</span></div>' +
+        '<div class="js-stat"><b>' + pushups + '</b><span>push-ups</span></div>' +
         '<div class="js-stat"><b>' + weekDays + '/7</b><span>this week</span></div>' +
       '</div></div>' +
       (isToday ?
@@ -6699,6 +6746,26 @@
     var agg = rangeAgg(r.from, r.to, gymVolOf);
     var setsAgg = rangeAgg(r.from, r.to, gymSetCountOf);
     var trained = agg.perDay.filter(function (p) { return p.v > 0; }).length;
+
+    var exNames = gymAllExerciseNames();
+    if (state.gymExSel && exNames.indexOf(state.gymExSel) < 0) state.gymExSel = '';
+    var sel = state.gymExSel || '';
+
+    var exBlock = '';
+    if (sel) {
+      var bw = gymExerciseIsBodyweight(sel);
+      var exAgg = rangeAgg(r.from, r.to, gymExerciseMetricOf(sel, bw));
+      var unit = bw ? ' reps' : ' kg';
+      var sessions = exAgg.hits;
+      var avgSession = sessions ? Math.round(exAgg.sum / sessions) : 0;
+      exBlock = '<div class="card"><div class="gym-stats">' +
+          '<div class="js-stat"><b>' + sessions + '</b><span>sessions</span></div>' +
+          '<div class="js-stat"><b>' + Math.round(exAgg.sum).toLocaleString() + '</b><span>total' + (bw ? ' reps' : ' kg') + '</span></div>' +
+          '<div class="js-stat"><b>' + avgSession + '</b><span>avg/session</span></div>' +
+        '</div></div>' +
+        '<div class="card"><div class="eyebrow">' + esc(sel) + ' — ' + (bw ? 'reps' : 'volume') + ' per day</div>' + rangeBarChart(exAgg.perDay, 'var(--body-c)', unit) + '</div>';
+    }
+
     box.innerHTML = rangeBarHtml('gym') +
       '<div class="card"><div class="gym-stats">' +
         '<div class="js-stat"><b>' + trained + '/' + agg.days + '</b><span>days trained</span></div>' +
@@ -6706,8 +6773,17 @@
         '<div class="js-stat"><b>' + (agg.sum >= 1000 ? (agg.sum / 1000).toFixed(1) + 't' : Math.round(agg.sum) + 'kg') + '</b><span>total volume</span></div>' +
         '<div class="js-stat"><b>' + (agg.avg >= 1000 ? (agg.avg / 1000).toFixed(1) + 't' : Math.round(agg.avg) + 'kg') + '</b><span>avg/day</span></div>' +
       '</div></div>' +
-      '<div class="card"><div class="eyebrow">Volume per day</div>' + rangeBarChart(agg.perDay, 'var(--body-c)', ' kg') + '</div>';
+      '<div class="card"><div class="eyebrow">Volume per day</div>' + rangeBarChart(agg.perDay, 'var(--body-c)', ' kg') + '</div>' +
+      (exNames.length ? '<div class="card"><div class="eyebrow" style="margin-bottom:8px">📈 Trend for one exercise</div>' +
+        '<select id="gym-ex-sel" class="gym-ex-select">' +
+          '<option value="">Pick an exercise…</option>' +
+          exNames.map(function (n) { return '<option value="' + esc(n) + '"' + (n === sel ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('') +
+        '</select></div>' : '') +
+      exBlock;
+
     bindRangeBar(box, 'gym', renderGym);
+    var selEl = $('#gym-ex-sel');
+    if (selEl) selEl.addEventListener('change', function () { state.gymExSel = this.value; renderGymRange(box, rs); });
   }
 
   /* ----- Exercise picker modal (searchable library, like the food app) ----- */
