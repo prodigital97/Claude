@@ -911,6 +911,9 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .gym-stats { display: flex; flex-wrap: wrap; gap: 10px; }
 .gym-stats .js-stat { padding: 10px 6px; flex: 1 1 30%; min-width: 68px; }
 .gym-stats .js-stat b { font-size: 18px; }
+/* Exactly four tiles read better as 2×2 than as 3 + 1 orphan */
+.gym-stats .js-stat:first-child:nth-last-child(4),
+.gym-stats .js-stat:first-child:nth-last-child(4) ~ .js-stat { flex-basis: calc(50% - 5px); }
 .gym-ex-select { margin-bottom: 0; font-weight: 700; }
 .gym-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 10px 0; }
 .pr-badge { font-size: 10px; font-weight: 800; color: var(--amber); background: color-mix(in srgb, var(--amber) 15%, transparent); border-radius: 6px; padding: 2px 6px; vertical-align: 1px; }
@@ -1110,13 +1113,27 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .walk-grid span { font-size: 9px; color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: .08em; text-align: center; }
 @media (prefers-reduced-motion: reduce) { .walk-dot { animation: none; } }
 
-/* Diet Week/Month average — calories-per-day bar chart */
-.rc-bars { display: flex; align-items: flex-end; gap: 6px; height: 70px; }
-.rc-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; justify-content: flex-end; min-width: 0; }
-.rc-bar { width: 100%; border-radius: 5px 5px 3px 3px; background: linear-gradient(180deg, var(--primary), var(--amber)); }
-.rc-bar.empty { background: var(--bg-soft); border: 1px solid var(--line); }
+/* Per-day bar chart shared by every range-aware mini-app.
+   Slim bars in a tall plot, with the value printed on each cap — a phone has
+   no hover, so a tooltip-only value is no value at all. */
+.rc-plot { position: relative; height: 122px; }
+.rc-cols { display: flex; align-items: flex-end; gap: 5px; height: 100%; position: relative; z-index: 1; }
+.rc-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+.rc-val { font-size: 10px; font-weight: 800; color: var(--text); font-family: var(--mono); line-height: 1; margin-bottom: 4px; white-space: nowrap; }
+.rc-bar { width: 100%; max-width: 22px; border-radius: 4px 4px 0 0; background: var(--primary); }
+.rc-bar.empty { background: var(--line); }
 .rc-bar.future { background: transparent; border: 1px dashed var(--line); opacity: .5; }
-.rc-lbl { font-size: 9px; color: var(--muted); font-family: var(--mono); }
+/* Average / goal reference line — dashed because it IS a threshold, not a
+   gridline. Sits behind the bars so it never cuts through a value label; its
+   number lives in the legend above instead of riding the line. */
+.rc-avg { position: absolute; left: 0; right: 0; z-index: 0; pointer-events: none;
+  border-top: 1px dashed color-mix(in srgb, var(--text) 34%, transparent); }
+.rc-legend { display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+  font-size: 10px; color: var(--muted); font-family: var(--mono); }
+.rc-legend i { width: 14px; flex: none; display: inline-block;
+  border-top: 1px dashed color-mix(in srgb, var(--text) 45%, transparent); }
+.rc-axis { display: flex; gap: 5px; margin-top: 6px; }
+.rc-lbl { flex: 1; min-width: 0; text-align: center; font-size: 9px; color: var(--muted); font-family: var(--mono); }
 
 /* Generic Day/Week/Month range bar (reused across mini-apps) */
 .rg-mode { margin-bottom: 10px; }

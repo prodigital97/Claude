@@ -2596,17 +2596,71 @@
     });
     return { avg: n ? sum / n : 0, sum: sum, days: dates.length, logged: n, hits: hits, perDay: perDay };
   }
+  // One label format per chart, chosen from that chart's max — so 1,046 and
+  // 1,072 stay distinguishable instead of both collapsing to "1k". Only shorten
+  // to "k" once the values are big enough that the dropped digits don't matter.
+  function rcFormatter(max, dec) {
+    if (max >= 10000) return function (v) { return (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k'; };
+    return function (v) {
+      return v.toFixed(dec || 0).replace(/\.0+$/, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    };
+  }
   // Small per-day bar chart shared by every range-aware mini-app.
-  function rangeBarChart(perDay, colorVar, unit, dec) {
-    var max = 0; perDay.forEach(function (p) { if (p.v > max) max = p.v; });
+  // Tall plot + a value printed on each cap + an average reference line: squat
+  // full-width blocks whose only value was a hover tooltip were unreadable on a
+  // phone (nothing to hover), so day-to-day change was impossible to spot.
+  function rangeBarChart(perDay, colorVar, unit, dec, ref) {
     var today = todayStr();
-    var bars = perDay.map(function (p) {
+    var H = 104;                       // tallest bar, px — sets the plot's aspect
+    var max = 0, sum = 0, n = 0;
+    perDay.forEach(function (p) {
+      if (p.date > today) return;
+      if (p.v > max) max = p.v;
+      if (p.v > 0) { sum += p.v; n++; }
+    });
+    // A reference line (e.g. your calorie goal) is part of the scale, so a day
+    // under it still reads as under it.
+    if (ref && ref.v > max) max = ref.v;
+    var avg = n ? sum / n : 0;
+    var fmt = rcFormatter(max, dec);
+    var dense = perDay.length > 10;    // a month — 31 labelled caps is unreadable
+    var peak = null;
+    if (max > 0) perDay.forEach(function (p) { if (!peak && p.date <= today && p.v === max) peak = p.date; });
+    var cols = perDay.map(function (p) {
       var isFuture = p.date > today;
-      var h = max ? Math.max(p.v ? 4 : 2, Math.round(p.v / max * 52)) : 2;
-      return '<div class="rc-col"><div class="rc-bar' + (isFuture ? ' future' : p.v ? '' : ' empty') + '" style="height:' + h + 'px;' + (p.v && !isFuture ? 'background:' + colorVar : '') + '" title="' + shortDate(p.date) + ': ' + p.v.toFixed(dec || 0) + (unit || '') + '"></div>' +
-        '<span class="rc-lbl">' + (perDay.length <= 31 ? parse(p.date).toLocaleDateString(undefined, { weekday: 'narrow' }) : '') + '</span></div>';
+      var h = max && p.v > 0 ? Math.max(3, Math.round(p.v / max * H)) : 3;
+      // Label every cap across a week; on a month only the peak gets one and
+      // the average line carries the rest.
+      var showVal = p.v > 0 && !isFuture && (!dense || p.date === peak);
+      return '<div class="rc-col">' +
+        (showVal ? '<span class="rc-val">' + fmt(p.v) + '</span>' : '') +
+        '<div class="rc-bar' + (isFuture ? ' future' : p.v ? '' : ' empty') + '"' +
+          ' style="height:' + h + 'px' + (p.v > 0 && !isFuture ? ';background:' + colorVar : '') + '"' +
+          ' title="' + shortDate(p.date) + ': ' + p.v.toFixed(dec || 0) + (unit || '') + '"></div>' +
+        '</div>';
     }).join('');
-    return '<div class="rc-bars">' + bars + '</div>';
+    var axis = perDay.map(function (p, i) {
+      var lbl = dense
+        ? ((i === 0 || (i + 1) % 5 === 0) ? String(Number(p.date.slice(8, 10))) : '')
+        : parse(p.date).toLocaleDateString(undefined, { weekday: 'narrow' });
+      return '<span class="rc-lbl">' + lbl + '</span>';
+    }).join('');
+    // One reference line: an explicit one (a goal) when given, else the average.
+    var line = null;
+    if (ref && ref.v > 0 && max) line = { h: Math.round(ref.v / max * H), label: ref.label || ('goal ' + fmt(ref.v)) };
+    else if (n >= 2 && max && avg > 0) line = { h: Math.round(avg / max * H), label: 'avg ' + fmt(avg) };
+    // The line's value rides a small legend above the plot, not the line itself:
+    // an on-line label always ends up colliding with whichever bar cap sits at
+    // roughly average height.
+    var showLine = line && line.h > 8;
+    return '<div class="rc-chart">' +
+      (showLine ? '<div class="rc-legend"><i></i>' + esc(line.label) + '</div>' : '') +
+      '<div class="rc-plot">' +
+        (showLine ? '<div class="rc-avg" style="bottom:' + line.h + 'px"></div>' : '') +
+        '<div class="rc-cols">' + cols + '</div>' +
+      '</div>' +
+      '<div class="rc-axis">' + axis + '</div>' +
+    '</div>';
   }
 
   /* ---------------- Calendar (real month grid) ---------------- */
@@ -4016,19 +4070,10 @@
   }
   function dietRangeChart(range) {
     var byDate = {}; (range.perDay || []).forEach(function (d) { byDate[d.date] = d.cal; });
-    var max = 0; (range.perDay || []).forEach(function (d) { if (d.cal > max) max = d.cal; });
+    var perDay = [], d = range.from;
+    while (d <= range.to) { perDay.push({ date: d, v: byDate[d] || 0 }); d = addDays(d, 1); }
     var goal = dietGoals().cal;
-    if (goal > max) max = goal;
-    var bars = '', d = range.from;
-    while (d <= range.to) {
-      var v = byDate[d] || 0;
-      var h = max ? Math.max(v ? 4 : 2, Math.round(v / max * 52)) : 2;
-      var isFuture = d > todayStr();
-      bars += '<div class="rc-col"><div class="rc-bar' + (isFuture ? ' future' : v ? '' : ' empty') + '" style="height:' + h + 'px" title="' + shortDate(d) + ': ' + Math.round(v) + ' kcal"></div>' +
-        '<span class="rc-lbl">' + parse(d).toLocaleDateString(undefined, { weekday: 'narrow' }) + '</span></div>';
-      d = addDays(d, 1);
-    }
-    return '<div class="rc-bars">' + bars + '</div>';
+    return rangeBarChart(perDay, 'var(--primary)', ' kcal', 0, goal > 0 ? { v: goal } : null);
   }
 
   function renderDiet() {
