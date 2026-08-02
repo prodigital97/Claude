@@ -310,10 +310,29 @@
   // (~8s total) since an Apps Script cold start or a brief connectivity gap
   // can outlast a couple of quick retries.
   var API_BACKOFF = [600, 1200, 2200, 4000]; // ms of delay before each retry
+  var API_TIMEOUT = 20000;                   // hard ceiling for one attempt
+  // fetch() only rejects when the connection itself fails — a server that
+  // accepts the request and then stalls leaves the promise pending forever,
+  // which is how a save could sit on "Saving…" indefinitely. Abort instead.
+  function fetchWithTimeout(url, opts) {
+    if (typeof AbortController === 'undefined') return fetch(url, opts);
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, API_TIMEOUT);
+    var merged = Object.assign({}, opts, { signal: ctrl.signal });
+    return fetch(url, merged).then(function (r) { clearTimeout(timer); return r; },
+      function (err) {
+        clearTimeout(timer);
+        // Don't auto-retry a timeout: unlike a refused connection, the request
+        // may well have reached the server and been applied, so retrying a
+        // write could duplicate it. Fail fast and let the user check.
+        if (err && err.name === 'AbortError') { var e = new Error('API_TIMEOUT'); e.noRetry = true; throw e; }
+        throw err;
+      });
+  }
   function fetchWithRetry(url, opts, attempt, onRetry) {
     attempt = attempt || 0;
-    return fetch(url, opts).catch(function (err) {
-      if (attempt >= API_BACKOFF.length) throw err;
+    return fetchWithTimeout(url, opts).catch(function (err) {
+      if ((err && err.noRetry) || attempt >= API_BACKOFF.length) throw err;
       if (onRetry) onRetry(attempt + 1, API_BACKOFF.length + 1);
       return new Promise(function (resolve) { setTimeout(resolve, API_BACKOFF[attempt]); })
         .then(function () { return fetchWithRetry(url, opts, attempt + 1, onRetry); });
@@ -342,6 +361,9 @@
     return p.catch(function (err) {
       var msg = String(err && err.message || '');
       if (msg.indexOf('CHARGE_EMPTY') === 0) { handleChargeEmpty(msg); throw err; }
+      if (msg === 'API_TIMEOUT') {
+        throw new Error('The server took too long to respond. Pull to refresh and check whether it saved before trying again.');
+      }
       // Reword the raw browser network-failure strings (meaningless to a user)
       // into something actionable — this only fires once retries are exhausted.
       if (/^(load failed|failed to fetch|networkerror|typeerror)/i.test(msg) || /network/i.test(msg)) {
@@ -4343,24 +4365,37 @@
       renderFasting();
     };
     var fail = function (msg) { toast(msg); btn.disabled = false; btn.textContent = 'Save fast'; };
-    api('logPastFast', { startAt: startIso, endAt: endIso }).then(done).catch(function (err) {
+    var step = function (t) { btn.textContent = t; };
+    // Each Apps Script call is a slow round-trip, so say which one is in flight
+    // rather than sitting on a silent "Saving…".
+    var onRetry = function (n, total) { step('Retrying ' + n + '/' + total + '…'); };
+    // The old two-call fallback needs THREE round-trips including the probe.
+    // Once we've learned this deployment lacks the action, skip straight to it.
+    var legacy = function () {
+      step('Saving (legacy)…');
+      api('startFast', { startAt: startIso }, onRetry).then(function (data) {
+        var f = data && data.fast;
+        if (!f || f.startAt !== startIso || f.endAt) {
+          fail('Update the Apps Script backend to log past fasts — a fast is already running, so it isn’t safe to log this one on the old version.');
+          return;
+        }
+        step('Finishing…');
+        api('updateFast', { id: f.id, startAt: startIso, endAt: endIso }, onRetry).then(function () {
+          if (state.activeFast && state.activeFast.id === f.id) { state.activeFast = null; cacheActiveFast(null); }
+          done();
+        }).catch(function (e2) { fail(e2.message); });
+      }).catch(function (e2) { fail(e2.message); });
+    };
+    if (state.noLogPastFast) { legacy(); return; }
+    api('logPastFast', { startAt: startIso, endAt: endIso }, onRetry).then(done).catch(function (err) {
       if (!/unknown action/i.test(err.message || '')) { fail(err.message); return; }
       // The deployed backend predates logPastFast. Fall back to the old
       // startFast+updateFast pair — but ONLY when startFast actually hands
       // back a brand-new row. If it returns an already-running fast instead
       // (its dedup behaviour), bail out untouched: continuing is exactly the
       // bug that used to overwrite and end a real in-progress fast.
-      api('startFast', { startAt: startIso }).then(function (data) {
-        var f = data && data.fast;
-        if (!f || f.startAt !== startIso || f.endAt) {
-          fail('Update the Apps Script backend to log past fasts — a fast is already running, so it isn’t safe to log this one on the old version.');
-          return;
-        }
-        api('updateFast', { id: f.id, startAt: startIso, endAt: endIso }).then(function () {
-          if (state.activeFast && state.activeFast.id === f.id) { state.activeFast = null; cacheActiveFast(null); }
-          done();
-        }).catch(function (e2) { fail(e2.message); });
-      }).catch(function (e2) { fail(e2.message); });
+      state.noLogPastFast = true;
+      legacy();
     });
   }
 
