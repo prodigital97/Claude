@@ -4336,11 +4336,32 @@
     // updateFast would silently overwrite (and end) it with these past dates.
     // Also never touch state.activeFast here — logging a past fast has no
     // bearing on whether one is currently running.
-    api('logPastFast', { startAt: fromLocalInput(s), endAt: fromLocalInput(e) }).then(function () {
+    var startIso = fromLocalInput(s), endIso = fromLocalInput(e);
+    var done = function () {
       var mark = milestoneInfo((eT - sT) / 3600000).reached;
       toast(mark ? 'Past fast logged — ' + mark + 'h mark 🎉' : 'Past fast logged ✓');
       renderFasting();
-    }).catch(function (err) { toast(err.message); btn.disabled = false; btn.textContent = 'Save fast'; });
+    };
+    var fail = function (msg) { toast(msg); btn.disabled = false; btn.textContent = 'Save fast'; };
+    api('logPastFast', { startAt: startIso, endAt: endIso }).then(done).catch(function (err) {
+      if (!/unknown action/i.test(err.message || '')) { fail(err.message); return; }
+      // The deployed backend predates logPastFast. Fall back to the old
+      // startFast+updateFast pair — but ONLY when startFast actually hands
+      // back a brand-new row. If it returns an already-running fast instead
+      // (its dedup behaviour), bail out untouched: continuing is exactly the
+      // bug that used to overwrite and end a real in-progress fast.
+      api('startFast', { startAt: startIso }).then(function (data) {
+        var f = data && data.fast;
+        if (!f || f.startAt !== startIso || f.endAt) {
+          fail('Update the Apps Script backend to log past fasts — a fast is already running, so it isn’t safe to log this one on the old version.');
+          return;
+        }
+        api('updateFast', { id: f.id, startAt: startIso, endAt: endIso }).then(function () {
+          if (state.activeFast && state.activeFast.id === f.id) { state.activeFast = null; cacheActiveFast(null); }
+          done();
+        }).catch(function (e2) { fail(e2.message); });
+      }).catch(function (e2) { fail(e2.message); });
+    });
   }
 
   // Month calendar of fasts (colored by duration tier, keyed to the START date).
