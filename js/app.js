@@ -464,6 +464,12 @@
       if (action === 'moneyAddAccount') { var acc = Object.assign({ id: 'a_' + Date.now().toString(36) }, p.account); mm.accounts.push(acc); saveDb(d); return { account: acc }; }
       if (action === 'moneyDeleteAccount') { mm.accounts = mm.accounts.filter(function (a) { return a.id !== p.id; }); saveDb(d); return { deleted: p.id }; }
       if (action === 'moneyAddCategory') { var mc = Object.assign({ id: 'c_' + Date.now().toString(36) }, p.category); mm.categories.push(mc); saveDb(d); return { category: mc }; }
+      if (action === 'moneyUpdateCategory') {
+        var uc = mm.categories.filter(function (c) { return c.id === (p.category || {}).id; })[0];
+        if (!uc) throw new Error('Category not found.');
+        ['name', 'group', 'kind', 'icon', 'color'].forEach(function (f) { if (p.category[f] !== undefined) uc[f] = p.category[f]; });
+        saveDb(d); return { category: uc };
+      }
       if (action === 'moneyDeleteCategory') { mm.categories = mm.categories.filter(function (c) { return c.id !== p.id; }); saveDb(d); return { deleted: p.id }; }
       if (action === 'moneyGetTxns') { var lim = Number(p.limit) || 0; var list = mm.txns.slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; }); return { transactions: lim ? list.slice(0, lim) : list }; }
       if (action === 'moneyAddTxn') { var tx = Object.assign({ id: 't_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), date: todayStr() }, p.transaction); mm.txns.push(tx); saveDb(d); return { transaction: tx, status: moneyStatus() }; }
@@ -8257,28 +8263,103 @@
     });
   }
 
+  // Every group already in use, so a category can be filed under an existing
+  // one by picking it rather than re-typing it (and mis-typing it into a new
+  // near-duplicate group).
+  function moneyGroupNames() {
+    var seen = {};
+    (state.money.categories || []).forEach(function (c) { if (c.group) seen[c.group] = 1; });
+    return Object.keys(seen).sort();
+  }
+  var MONEY_KINDS = [['need', 'Need'], ['want', 'Want'], ['saving', 'Saving']];
+  function moneyGroupSelect(id, sel) {
+    var groups = moneyGroupNames();
+    if (sel && groups.indexOf(sel) < 0) groups.push(sel);
+    return '<select id="' + id + '">' +
+      groups.map(function (g) {
+        return '<option value="' + esc(g) + '"' + (g === sel ? ' selected' : '') + '>' + esc(g) + '</option>';
+      }).join('') +
+      '<option value="__new">＋ New group…</option></select>' +
+      '<input id="' + id + '-new" class="hidden" placeholder="New group name" maxlength="30" />';
+  }
+  function moneyKindSelect(id, sel) {
+    return '<select id="' + id + '">' + MONEY_KINDS.map(function (k) {
+      return '<option value="' + k[0] + '"' + (k[0] === sel ? ' selected' : '') + '>' + k[1] + '</option>';
+    }).join('') + '</select>';
+  }
+  function moneyBindGroupSelect(id) {
+    var s = $('#' + id), i = $('#' + id + '-new'); if (!s || !i) return;
+    var sync = function () {
+      var isNew = s.value === '__new';
+      i.classList.toggle('hidden', !isNew);
+      if (isNew) i.focus();
+    };
+    s.addEventListener('change', sync); sync();
+  }
+  function moneyGroupValue(id) {
+    var s = $('#' + id), i = $('#' + id + '-new');
+    if (s && s.value === '__new') return ((i && i.value) || '').trim().slice(0, 30) || 'Other';
+    return (s && s.value) || 'Other';
+  }
   function moneyRenderCategories() {
     var box = $('#money-categories'); if (!box) return;
     var cats = state.money.categories || [];
+    var editId = state.money.editCat || '';
     var groups = {}; cats.forEach(function (c) { (groups[c.group] = groups[c.group] || []).push(c); });
     box.innerHTML =
       '<div class="card"><div class="eyebrow">Add custom category</div>' +
         '<div class="manual-grid">' +
           '<label>Name<input id="ct-name" placeholder="e.g. Side project" /></label>' +
-          '<label>Group<input id="ct-group" placeholder="e.g. Other" /></label>' +
-          '<label>Kind<select id="ct-kind"><option value="need">Need</option><option value="want" selected>Want</option><option value="saving">Saving</option></select></label>' +
+          '<label>Group' + moneyGroupSelect('ct-group', '') + '</label>' +
+          '<label>Kind' + moneyKindSelect('ct-kind', 'want') + '</label>' +
           '<label>Icon (emoji)<input id="ct-icon" placeholder="📦" maxlength="4" /></label>' +
         '</div><button id="ct-add-btn" class="btn primary block">Add category</button></div>' +
       Object.keys(groups).sort().map(function (g) {
         return '<div class="card"><div class="eyebrow">' + esc(g) + '</div>' + groups[g].map(function (c) {
-          return '<div class="list-row"><span>' + c.icon + ' ' + esc(c.name) + ' <span class="cat-kind">' + c.kind + '</span></span><button class="list-del" data-ct-del="' + c.id + '">✕</button></div>';
+          if (c.id === editId) {
+            return '<div class="ct-edit">' +
+              '<div class="manual-grid">' +
+                '<label>Name<input id="ce-name" value="' + esc(c.name) + '" /></label>' +
+                '<label>Group' + moneyGroupSelect('ce-group', c.group) + '</label>' +
+                '<label>Kind' + moneyKindSelect('ce-kind', c.kind) + '</label>' +
+                '<label>Icon (emoji)<input id="ce-icon" value="' + esc(c.icon || '') + '" maxlength="4" /></label>' +
+              '</div>' +
+              '<div class="ct-edit-btns">' +
+                '<button id="ce-save" class="btn primary">Save</button>' +
+                '<button id="ce-cancel" class="btn">Cancel</button>' +
+              '</div></div>';
+          }
+          return '<div class="list-row"><span>' + c.icon + ' ' + esc(c.name) + ' <span class="cat-kind">' + c.kind + '</span></span>' +
+            '<button class="icon-mini ct-editbtn" data-ct-edit="' + c.id + '" title="Edit">✎</button>' +
+            '<button class="list-del" data-ct-del="' + c.id + '">✕</button></div>';
         }).join('') + '</div>';
       }).join('');
+    moneyBindGroupSelect('ct-group');
     $('#ct-add-btn').addEventListener('click', function () {
       var name = $('#ct-name').value.trim(); if (!name) { toast('Enter a name'); return; }
-      api('moneyAddCategory', { category: { name: name, group: $('#ct-group').value.trim() || 'Other', kind: $('#ct-kind').value, icon: $('#ct-icon').value.trim() || '📦' } })
+      api('moneyAddCategory', { category: { name: name, group: moneyGroupValue('ct-group'), kind: $('#ct-kind').value, icon: $('#ct-icon').value.trim() || '📦' } })
         .then(function (d) { state.money.categories.push(d.category); toast('Added ✓'); moneyRenderCategories(); }).catch(function (e) { toast(e.message); });
     });
+    box.querySelectorAll('[data-ct-edit]').forEach(function (b) {
+      b.addEventListener('click', function () { state.money.editCat = b.getAttribute('data-ct-edit'); moneyRenderCategories(); });
+    });
+    if (editId) {
+      moneyBindGroupSelect('ce-group');
+      var cancel = function () { state.money.editCat = ''; moneyRenderCategories(); };
+      $('#ce-cancel').addEventListener('click', cancel);
+      $('#ce-save').addEventListener('click', function () {
+        var name = $('#ce-name').value.trim(); if (!name) { toast('Enter a name'); return; }
+        var patch = { id: editId, name: name, group: moneyGroupValue('ce-group'), kind: $('#ce-kind').value, icon: $('#ce-icon').value.trim() || '📦' };
+        var btn = $('#ce-save'); btn.disabled = true; btn.textContent = 'Saving…';
+        api('moneyUpdateCategory', { category: patch }).then(function (d) {
+          var i = state.money.categories.findIndex(function (c) { return c.id === editId; });
+          if (i >= 0) state.money.categories[i] = d.category || Object.assign(state.money.categories[i], patch);
+          state.money.editCat = ''; toast('Category updated ✓'); moneyRenderCategories();
+        }).catch(function (e) {
+          toast(e.message); btn.disabled = false; btn.textContent = 'Save';
+        });
+      });
+    }
     box.querySelectorAll('[data-ct-del]').forEach(function (b) {
       b.addEventListener('click', function () {
         var id = b.getAttribute('data-ct-del');

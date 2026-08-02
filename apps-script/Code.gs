@@ -167,6 +167,7 @@ function doPost(e) {
       case 'moneyUpdateAccount': data = handleMoneyUpdateAccount(body); break;
       case 'moneyDeleteAccount': data = handleMoneyDeleteAccount(body); break;
       case 'moneyAddCategory':   data = handleMoneyAddCategory(body);   break;
+      case 'moneyUpdateCategory':data = handleMoneyUpdateCategory(body);break;
       case 'moneyDeleteCategory':data = handleMoneyDeleteCategory(body);break;
       case 'moneyGetTxns':       data = handleMoneyGetTxns(body);       break;
       case 'moneyAddTxn':        data = handleMoneyAddTxn(body);        break;
@@ -2080,6 +2081,21 @@ function handleMoneyAddCategory(body) {
   };
   getSheet(MONEY_CAT_SHEET, MONEY_CAT_HEADERS).appendRow(MONEY_CAT_HEADERS.map(function (h) { return rec[h]; }));
   return { category: moneyCatFromRow(MONEY_CAT_HEADERS.map(function (h) { return rec[h]; }), colIndex(MONEY_CAT_HEADERS)) };
+}
+function handleMoneyUpdateCategory(body) {
+  var user = authUser(body);
+  var c = body.category || {}; var id = String(c.id || '');
+  var sheet = getSheet(MONEY_CAT_SHEET, MONEY_CAT_HEADERS);
+  var values = sheet.getDataRange().getValues(); var idx = colIndex(MONEY_CAT_HEADERS);
+  for (var i = 1; i < values.length; i++) {
+    if (String(values[i][idx.id]) === id && normalizeUsername(values[i][idx.username]) === user.username) {
+      ['name', 'group', 'kind', 'icon', 'color'].forEach(function (f) {
+        if (c[f] !== undefined) sheet.getRange(i + 1, idx[f] + 1).setValue(c[f]);
+      });
+      return { category: moneyCatFromRow(sheet.getRange(i + 1, 1, 1, MONEY_CAT_HEADERS.length).getValues()[0], idx) };
+    }
+  }
+  throw new Error('Category not found.');
 }
 function handleMoneyDeleteCategory(body) {
   var user = authUser(body); var id = String(body.id || '');
