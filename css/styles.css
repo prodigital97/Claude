@@ -753,6 +753,13 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .review-row { border-top: 1px solid var(--line); padding: 10px 0; }
 .review-row:first-child { border-top: 0; }
 .cat-kind { font-family: var(--mono); font-size: 9px; color: var(--muted); text-transform: uppercase; margin-left: 4px; }
+/* Money → Recurring payments & instalments */
+.rc-item { border-top: 1px solid var(--line); padding-top: 4px; }
+.rc-item:first-child { border-top: 0; }
+.rc-item.off { opacity: .55; }
+.rc-item .rc-bar { margin: 0 0 12px; height: 6px; }
+.rc-due { border-left: 3px solid var(--amber); padding-left: 10px; }
+.rc-due.late { border-left-color: var(--red); }
 /* Inline category editor (Money → Categories) */
 .ct-edit { border-top: 1px solid var(--line); padding: 12px 0 4px; }
 .ct-edit:first-child { border-top: 0; }

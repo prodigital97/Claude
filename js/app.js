@@ -7982,6 +7982,7 @@
     else if (t === 'history') moneyRenderHistory();
     else if (t === 'accounts') moneyRenderAccounts();
     else if (t === 'categories') moneyRenderCategories();
+    else if (t === 'recurring') moneyRenderRecurring();
     else if (t === 'budget') moneyRenderBudget();
   }
 
@@ -8421,6 +8422,221 @@
         var id = b.getAttribute('data-ct-del');
         api('moneyDeleteCategory', { id: id }).then(function () { state.money.categories = state.money.categories.filter(function (c) { return c.id !== id; }); moneyRenderCategories(); });
       });
+    });
+  }
+
+  /* ================= Recurring payments & installments =================
+     Covers both shapes of "the same payment, again and again":
+       · a subscription / bill — open-ended, `count` = 0
+       · an EMI / instalment plan — a fixed `count` of payments, then done
+     Rules live in the profile blob (saveGoals), which round-trips as free-form
+     JSON — no new sheet column and no Apps Script redeploy needed. Marking one
+     paid writes a REAL transaction through the normal moneyAddTxn path, so
+     recurring spend lands in the dashboard, budget and Penny's context exactly
+     like anything else. Nothing is auto-charged: a rule is a schedule, and only
+     you confirm that money actually moved. */
+  function moneyRules() { return (state.profile && state.profile.moneyRecurring) || []; }
+  function moneySaveRules(rules, cb) {
+    var p = Object.assign({}, state.profile, { moneyRecurring: rules });
+    state.profile = p;
+    return api('saveGoals', { profile: p }).then(function (d) {
+      if (d && d.profile) state.profile = d.profile;
+      if (cb) cb();
+    });
+  }
+  function ymKey(date) { return String(date).slice(0, 7); }
+  function daysInMonthOf(y, m) { return new Date(y, m + 1, 0).getDate(); }
+  // The n-th due date of a rule, clamped into short months: a rule due on the
+  // 31st falls on the 30th in April and the 28th/29th in February.
+  function ruleDueDate(rule, n) {
+    var start = parse(rule.startDate || todayStr());
+    var day = Number(rule.dayOfMonth) || start.getDate();
+    var d = new Date(start.getFullYear(), start.getMonth(), 1);
+    if (rule.freq === 'yearly') d.setFullYear(d.getFullYear() + n); else d.setMonth(d.getMonth() + n);
+    var dim = daysInMonthOf(d.getFullYear(), d.getMonth());
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(Math.min(day, dim));
+  }
+  function rulePaidList(rule) { return Array.isArray(rule.paid) ? rule.paid : []; }
+  // Instalments are finite; a subscription just keeps going.
+  function ruleTotalCount(rule) { return Math.max(0, Number(rule.count) || 0); }
+  function ruleIsDone(rule) {
+    var total = ruleTotalCount(rule);
+    return total > 0 && rulePaidList(rule).length >= total;
+  }
+  // The next unpaid instalment — index + its due date. null once a plan is finished.
+  function ruleNext(rule) {
+    var paid = rulePaidList(rule), total = ruleTotalCount(rule);
+    var limit = total > 0 ? total : rulePaidList(rule).length + 240;
+    for (var n = 0; n < limit; n++) {
+      var due = ruleDueDate(rule, n);
+      if (paid.indexOf(due) < 0) return { n: n, due: due };
+    }
+    return null;
+  }
+  function ruleMonthlyCost(rule) {
+    var a = Number(rule.amount) || 0;
+    return rule.freq === 'yearly' ? a / 12 : a;
+  }
+  function daysBetween(a, b) { return Math.round((parse(b) - parse(a)) / 86400000); }
+  function moneyRenderRecurring() {
+    var box = $('#money-recurring'); if (!box) return;
+    var rules = moneyRules();
+    var today = todayStr();
+    var live = rules.filter(function (r) { return truthy(r.active) && !ruleIsDone(r); });
+    var burn = live.reduce(function (s, r) { return s + ruleMonthlyCost(r); }, 0);
+    // Everything already due (or due within a week), soonest first.
+    var upcoming = [];
+    rules.forEach(function (r) {
+      if (!truthy(r.active) || ruleIsDone(r)) return;
+      var nx = ruleNext(r); if (!nx) return;
+      upcoming.push({ rule: r, due: nx.due, n: nx.n, days: daysBetween(today, nx.due) });
+    });
+    upcoming.sort(function (a, b) { return a.due < b.due ? -1 : 1; });
+    var dueNow = upcoming.filter(function (u) { return u.days <= 7; });
+
+    box.innerHTML =
+      '<div class="card"><div class="eyebrow">Committed each month</div>' +
+        '<div class="metric-big"><b>' + rupee(Math.round(burn)) + '</b> <span class="muted">/mo</span></div>' +
+        '<div class="muted tiny">' + live.length + ' active · ' + rupee(Math.round(burn * 12)) + ' a year</div></div>' +
+      (dueNow.length
+        ? '<div class="card"><div class="eyebrow" style="margin-bottom:8px">⏰ Due now</div>' + dueNow.map(function (u) {
+            var late = u.days < 0;
+            return '<div class="list-row rc-due' + (late ? ' late' : '') + '">' +
+              '<div><b>' + esc(u.rule.name) + '</b> <span class="muted tiny">' + rupee(u.rule.amount) + '</span>' +
+                '<div class="muted tiny">' + (late ? Math.abs(u.days) + 'd overdue' : u.days === 0 ? 'due today' : 'in ' + u.days + 'd') +
+                ' · ' + shortDate(u.due) + moneyRuleProgress(u.rule, u.n) + '</div></div>' +
+              '<button class="btn fr-mini" data-rc-pay="' + u.rule.id + '">Mark paid</button></div>';
+          }).join('') + '</div>'
+        : '') +
+      '<div class="card"><div class="eyebrow">Add recurring payment</div>' +
+        '<label>Name<input id="rc-name" placeholder="e.g. Netflix, Bike EMI" /></label>' +
+        '<div class="manual-grid">' +
+          '<label>Amount (₹)<input id="rc-amt" type="number" inputmode="numeric" /></label>' +
+          '<label>Every<select id="rc-freq"><option value="monthly">Month</option><option value="yearly">Year</option></select></label>' +
+          '<label>First payment<input id="rc-start" type="date" value="' + today + '" /></label>' +
+          '<label>Instalments <span class="muted tiny">blank = ongoing</span><input id="rc-count" type="number" inputmode="numeric" placeholder="e.g. 12" /></label>' +
+          '<label>Card / account<select id="rc-acct">' + moneyAcctOptions() + '</select></label>' +
+          '<label>Category<select id="rc-cat">' + moneyCatOptions() + '</select></label>' +
+        '</div>' +
+        '<button id="rc-add" class="btn primary block">Add recurring payment</button></div>' +
+      (rules.length
+        ? '<div class="card"><div class="eyebrow" style="margin-bottom:8px">All recurring · ' + rules.length + '</div>' +
+          rules.map(function (r) { return moneyRuleRow(r, today); }).join('') + '</div>'
+        : '<div class="card"><p class="muted tiny" style="margin:0">Nothing recurring yet. Add a subscription, a bill, or an EMI above and it’ll show up here with its next due date.</p></div>');
+
+    $('#rc-add').addEventListener('click', function () {
+      var name = $('#rc-name').value.trim();
+      var amt = Number($('#rc-amt').value) || 0;
+      if (!name) { toast('Enter a name'); return; }
+      if (amt <= 0) { toast('Enter an amount'); return; }
+      var start = $('#rc-start').value || today;
+      var rule = {
+        id: 'r_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        name: name.slice(0, 40), amount: amt, freq: $('#rc-freq').value,
+        startDate: start, dayOfMonth: parse(start).getDate(),
+        count: Math.max(0, Number($('#rc-count').value) || 0),
+        accountId: $('#rc-acct').value, categoryId: $('#rc-cat').value,
+        paid: [], active: true
+      };
+      var btn = $('#rc-add'); btn.disabled = true; btn.textContent = 'Saving…';
+      moneySaveRules(moneyRules().concat([rule])).then(function () {
+        toast('Added ✓'); moneyRenderRecurring();
+      }).catch(function (e) { toast(e.message); btn.disabled = false; btn.textContent = 'Add recurring payment'; });
+    });
+
+    box.querySelectorAll('[data-rc-pay]').forEach(function (b) {
+      b.addEventListener('click', function () { moneyPayRule(b.getAttribute('data-rc-pay'), b); });
+    });
+    box.querySelectorAll('[data-rc-toggle]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var id = b.getAttribute('data-rc-toggle');
+        var rules2 = moneyRules().map(function (r) { return r.id === id ? Object.assign({}, r, { active: !truthy(r.active) }) : r; });
+        moneySaveRules(rules2).then(moneyRenderRecurring).catch(function (e) { toast(e.message); });
+      });
+    });
+    box.querySelectorAll('[data-rc-del]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var id = b.getAttribute('data-rc-del');
+        if (!confirm('Delete this recurring payment? Transactions already logged from it are kept.')) return;
+        moneySaveRules(moneyRules().filter(function (r) { return r.id !== id; })).then(moneyRenderRecurring).catch(function (e) { toast(e.message); });
+      });
+    });
+    box.querySelectorAll('[data-rc-undo]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var id = b.getAttribute('data-rc-undo');
+        var rules2 = moneyRules().map(function (r) {
+          if (r.id !== id) return r;
+          var paid = rulePaidList(r).slice(); paid.pop();
+          return Object.assign({}, r, { paid: paid });
+        });
+        // Only the schedule is rewound — the transaction it created stays put,
+        // so delete that from History if it shouldn't have been logged.
+        moneySaveRules(rules2).then(function () { toast('Marked unpaid — the transaction is still in History'); moneyRenderRecurring(); })
+          .catch(function (e) { toast(e.message); });
+      });
+    });
+  }
+  function moneyRuleProgress(rule, n) {
+    var total = ruleTotalCount(rule);
+    if (!total) return '';
+    return ' · instalment ' + (n + 1) + ' of ' + total;
+  }
+  function moneyRuleRow(rule, today) {
+    var done = ruleIsDone(rule), on = truthy(rule.active);
+    var nx = done ? null : ruleNext(rule);
+    var total = ruleTotalCount(rule), paidN = rulePaidList(rule).length;
+    var acct = moneyAcctById(rule.accountId), cat = moneyCatById(rule.categoryId);
+    var sub = [];
+    if (done) sub.push('✅ all ' + total + ' paid');
+    else if (!on) sub.push('paused');
+    else if (nx) {
+      var d = daysBetween(today, nx.due);
+      sub.push(d < 0 ? '⚠️ ' + Math.abs(d) + 'd overdue' : d === 0 ? 'due today' : 'next ' + shortDate(nx.due));
+    }
+    if (total) sub.push(paidN + '/' + total + ' paid');
+    if (acct) sub.push(esc(acct.name));
+    if (cat) sub.push(cat.icon + ' ' + esc(cat.name));
+    var pct = total ? Math.min(100, Math.round(paidN / total * 100)) : 0;
+    return '<div class="rc-item' + (on && !done ? '' : ' off') + '">' +
+      '<div class="list-row">' +
+        '<div><b>' + esc(rule.name) + '</b> <span class="muted tiny">' + rupee(rule.amount) + '/' + (rule.freq === 'yearly' ? 'yr' : 'mo') + '</span>' +
+          '<div class="muted tiny">' + sub.join(' · ') + '</div></div>' +
+        '<span class="fr-acts">' +
+          (paidN ? '<button class="btn fr-mini" data-rc-undo="' + rule.id + '" title="Undo last payment">↶</button>' : '') +
+          (done ? '' : '<button class="btn fr-mini" data-rc-toggle="' + rule.id + '">' + (on ? 'Pause' : 'Resume') + '</button>') +
+          '<button class="list-del" data-rc-del="' + rule.id + '">✕</button></span>' +
+      '</div>' +
+      (total ? '<div class="fc-bar rc-bar"><span style="width:' + pct + '%"></span></div>' : '') +
+    '</div>';
+  }
+  // Marking paid logs a genuine transaction, then records that instalment as
+  // settled. The rule is only advanced once the transaction is confirmed —
+  // otherwise a failed save would silently skip a payment.
+  function moneyPayRule(id, btn) {
+    var rule = moneyRules().filter(function (r) { return r.id === id; })[0];
+    if (!rule) return;
+    var nx = ruleNext(rule); if (!nx) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Logging…'; }
+    var txn = {
+      date: nx.due > todayStr() ? todayStr() : nx.due,
+      amount: Number(rule.amount) || 0, type: 'expense',
+      categoryId: rule.categoryId || '', accountId: rule.accountId || '',
+      merchant: rule.name, note: ruleTotalCount(rule) ? 'Instalment ' + (nx.n + 1) + ' of ' + ruleTotalCount(rule) : 'Recurring payment',
+      source: 'recurring'
+    };
+    api('moneyAddTxn', { transaction: txn }).then(function (d) {
+      state.money.status = d.status || state.money.status;
+      var rules = moneyRules().map(function (r) {
+        return r.id === id ? Object.assign({}, r, { paid: rulePaidList(r).concat([nx.due]) }) : r;
+      });
+      return moneySaveRules(rules).then(function () {
+        var after = rules.filter(function (r) { return r.id === id; })[0];
+        toast(ruleIsDone(after) ? rule.name + ' — final instalment paid 🎉' : rule.name + ' logged ✓');
+        moneyRenderRecurring(); moneyRefreshSilently();
+      });
+    }).catch(function (e) {
+      toast(e.message);
+      if (btn) { btn.disabled = false; btn.textContent = 'Mark paid'; }
     });
   }
 
