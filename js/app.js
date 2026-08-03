@@ -892,6 +892,8 @@
       b.addEventListener('click', function () { pickMode(b.dataset.mode); });
     });
     $('#save-mode').addEventListener('click', saveMode);
+    $('#set-ch-open').addEventListener('click', function () { switchView('challenges'); });
+    $('#set-ch-browse').addEventListener('click', function () { switchView('challenges'); });
     $('#acct-username-btn').addEventListener('click', acctChangeUsername);
     $('#acct-pw-btn').addEventListener('click', acctChangePassword);
     $('#save-startdate').addEventListener('click', saveStartDate);
@@ -1126,6 +1128,7 @@
     else { st.textContent = count + ' / ' + TOTAL_ITEMS + ' done' + (soft ? ' · need ' + softNeeded() : ''); st.className = 'status-chip pending'; }
 
     $('#streak-line').textContent = '🔥 ' + streakOf(state.logs) + ' day streak · ' + activeCh().emoji + ' ' + esc(activeCh().name);
+    renderTodayExtras();
   }
 
   /* ----- Journal (mood check-in + note) ----- */
@@ -2084,6 +2087,8 @@
   function renderHabitsApp() {
     var bar = $('#habits-daybar');
     if (bar) { bar.innerHTML = dayBarHtml(); bindDayBar(bar, renderHabitsApp); }
+    var slot = $('#habit-emoji-slot');
+    if (slot) { slot.innerHTML = emojiFieldHtml('habit-emoji', '📌'); bindEmojiField('habit-emoji'); }
     renderExtraTasks(appDay());
   }
   // Streak of consecutive days this habit was done (ending today or yesterday).
@@ -2105,13 +2110,69 @@
     var m = String(name).match(/^(\p{Extended_Pictographic}(?:️)?)\s*/u);
     return m ? m[1] : null;
   }
-  function renderExtraTasks(d) {
-    var list = $('#extra-tasks'); if (!list) return;
+  /* ---- Shared emoji picker ----
+     Used by habits and the challenge builder. Typing an emoji first in the
+     name used to be the only way to set an icon — undiscoverable, and awkward
+     on a phone keyboard. A stored `emoji` field now wins, with the old
+     name-prefix kept as the fallback so existing items keep their icon. */
+  var EMOJI_PALETTE = [
+    '📌','✅','🔥','⭐','🎯','💪','🏃','🚶','🧘','🏋️','🚴','🏊','🤸','🧗','⚽',
+    '📚','✍️','💻','🧠','🎨','🎸','🎧','📷','🗣️','🌐',
+    '💧','🥗','🍎','🥦','☕','🚭','🍺','💊','🩺','🦷','😴','🛏️',
+    '☀️','🌙','⏰','📵','🧹','🧴','🙏','🌱','💰','📈','❤️','🐕','👨‍👩‍👧','🧾','🎵'
+  ];
+  function emojiFieldHtml(id, current) {
+    return '<div class="emoji-field">' +
+      '<button type="button" class="emoji-btn" id="' + id + '-btn" title="Choose an icon">' + (current || '📌') + '</button>' +
+      '<div class="emoji-grid hidden" id="' + id + '-grid">' +
+        EMOJI_PALETTE.map(function (e) {
+          return '<button type="button" class="emoji-opt" data-emoji="' + e + '">' + e + '</button>';
+        }).join('') +
+      '</div></div>';
+  }
+  function bindEmojiField(id, onPick) {
+    var btn = $('#' + id + '-btn'), grid = $('#' + id + '-grid');
+    if (!btn || !grid) return;
+    btn.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      if (!grid.classList.contains('hidden')) { grid.classList.add('hidden'); return; }
+      // Close any other open picker, then flip up only if there's no room below.
+      document.querySelectorAll('.emoji-grid').forEach(function (g) { g.classList.add('hidden'); });
+      grid.classList.remove('up', 'hidden');
+      var r = grid.getBoundingClientRect();
+      if (r.bottom > window.innerHeight - 8 && btn.getBoundingClientRect().top > r.height + 16) grid.classList.add('up');
+    });
+    grid.querySelectorAll('[data-emoji]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var em = b.getAttribute('data-emoji');
+        btn.textContent = em;
+        grid.classList.add('hidden');
+        if (onPick) onPick(em);
+      });
+    });
+  }
+  function emojiFieldValue(id, fallback) {
+    var b = $('#' + id + '-btn');
+    var v = b ? String(b.textContent || '').trim() : '';
+    return v || fallback || '📌';
+  }
+  // An item's icon: the picked emoji, else a legacy emoji typed into the name.
+  function habitIcon(h) { return (h && h.emoji) || habitEmoji(h && h.name) || '📌'; }
+  function habitLabel(h) {
+    var n = (h && h.name) || '';
+    return habitEmoji(n) ? n.replace(/^(\p{Extended_Pictographic}(?:️)?)\s*/u, '') : n;
+  }
+  // Rendered into the Habits mini-app AND (compactly) onto Today, so extra
+  // things you're doing on top of the challenge are tickable where you
+  // already are each morning.
+  function renderExtraTasks(d, mountSel, compact) {
+    var list = $(mountSel || '#extra-tasks'); if (!list) return;
     if (!d.extra) d.extra = {};
     var habits = (state.profile && state.profile.customTasks) || [];
     list.innerHTML = '';
 
-    if (habits.length) {
+    if (habits.length && !compact) {
       // Week header: completion across all habits over the last 7 days.
       var hits = 0, slots = 0, today = todayStr();
       for (var i = 0; i < 7; i++) {
@@ -2129,8 +2190,8 @@
     habits.forEach(function (h) {
       var done = !!d.extra[h.id];
       var streak = habitStreak(h.id);
-      var em = habitEmoji(h.name) || '📌';
-      var title = habitEmoji(h.name) ? h.name.replace(/^(\p{Extended_Pictographic}(?:️)?)\s*/u, '') : h.name;
+      var em = habitIcon(h);
+      var title = habitLabel(h);
       // Last-7-days dot strip (Loop/Streaks-style).
       var dots = '';
       for (var i = 6; i >= 0; i--) {
@@ -2144,31 +2205,32 @@
         '<div class="t-emoji">' + em + '</div>' +
         '<div class="t-body"><div class="t-title">' + esc(title) +
           (streak > 1 ? ' <span class="hstreak">🔥' + streak + '</span>' : '') + '</div>' +
-        '<div class="hdots">' + dots + '</div></div>' +
-        '<button class="habit-del" title="Remove">✕</button>';
+        (compact ? '' : '<div class="hdots">' + dots + '</div>') + '</div>' +
+        (compact ? '' : '<button class="habit-del" title="Remove">✕</button>');
       row.addEventListener('click', function (e) {
         if (e.target.classList.contains('habit-del')) return;
         d.extra[h.id] = !d.extra[h.id];
-        renderExtraTasks(d);
+        renderExtraTasks(d, mountSel, compact);
         queueSaveDay(d);
       });
-      row.querySelector('.habit-del').addEventListener('click', function (e) {
+      if (!compact) row.querySelector('.habit-del').addEventListener('click', function (e) {
         e.stopPropagation();
         removeHabit(h.id);
       });
       list.appendChild(row);
     });
 
-    if (!habits.length) {
+    if (!habits.length && !compact) {
       var empty = el('div', 'card');
-      empty.innerHTML = '<p class="muted tiny" style="margin:0 0 10px">No habits yet — start with one of these, or add your own below. Tip: start a habit name with an emoji to make it the icon.</p>' +
+      empty.innerHTML = '<p class="muted tiny" style="margin:0 0 10px">No habits yet — start with one of these, or add your own below.</p>' +
         '<div class="starter-chips">' + HABIT_STARTERS.map(function (s) {
           return '<button type="button" class="starter-chip" data-starter="' + esc(s) + '">' + s + '</button>';
         }).join('') + '</div>';
       empty.querySelectorAll('[data-starter]').forEach(function (b) {
         b.addEventListener('click', function () {
+          var raw = b.getAttribute('data-starter');
           var next = (state.profile.customTasks || []).slice();
-          next.push({ id: 'h_' + Date.now().toString(36), name: b.getAttribute('data-starter') });
+          next.push({ id: 'h_' + Date.now().toString(36), name: habitLabel({ name: raw }), emoji: habitEmoji(raw) || '📌' });
           saveHabits(next);
         });
       });
@@ -2177,11 +2239,17 @@
   }
 
   function addHabit() {
-    var name = $('#new-habit').value.trim();
-    if (!name) return;
+    var raw = $('#new-habit').value.trim();
+    if (!raw) return;
+    var picked = emojiFieldValue('habit-emoji', '');
     var habits = (state.profile.customTasks || []).slice();
-    habits.push({ id: 'h_' + Date.now().toString(36), name: name });
+    habits.push({
+      id: 'h_' + Date.now().toString(36),
+      name: habitLabel({ name: raw }),
+      emoji: picked || habitEmoji(raw) || '📌'
+    });
     $('#new-habit').value = '';
+    var btn = $('#habit-emoji-btn'); if (btn) btn.textContent = '📌';
     saveHabits(habits);
   }
   function removeHabit(id) {
@@ -2192,9 +2260,42 @@
     var profile = Object.assign({}, state.profile, { customTasks: habits });
     state.profile = profile;
     renderExtraTasks(appDay());
+    if (!$('#view-today').classList.contains('hidden')) renderTodayExtras();
     api('saveGoals', { profile: profile }).then(function (data) {
       if (data && data.profile) state.profile = data.profile;
     }).catch(function (e) { toast(e.message); });
+  }
+  // The Today-page copy: your extra habits, tickable alongside the challenge
+  // checklist, plus a one-line add so you can start something *today*.
+  function renderTodayExtras() {
+    var wrap = $('#today-extra'); if (!wrap) return;
+    var d = appDay();
+    var habits = (state.profile && state.profile.customTasks) || [];
+    var doneN = habits.filter(function (h) { return d.extra && d.extra[h.id]; }).length;
+    wrap.innerHTML =
+      '<div class="tx-head"><span class="eyebrow">Extra · not part of the challenge</span>' +
+        (habits.length ? '<span class="muted tiny">' + doneN + '/' + habits.length + '</span>' : '') + '</div>' +
+      '<div id="today-extra-list" class="tasklist"></div>' +
+      '<div class="add-habit tx-add">' + emojiFieldHtml('tx-emoji', '📌') +
+        '<input id="tx-new" placeholder="Add something you did today" maxlength="40" />' +
+        '<button id="tx-add-btn" class="btn">Add</button></div>' +
+      (habits.length ? '' : '<p class="muted tiny" style="margin:8px 2px 0">Anything you want to track on top of the challenge — it won’t affect your challenge score.</p>');
+    renderExtraTasks(d, '#today-extra-list', true);
+    bindEmojiField('tx-emoji');
+    var add = function () {
+      var raw = $('#tx-new').value.trim(); if (!raw) return;
+      var habits2 = (state.profile.customTasks || []).slice();
+      habits2.push({
+        id: 'h_' + Date.now().toString(36),
+        name: habitLabel({ name: raw }),
+        emoji: emojiFieldValue('tx-emoji', '') || habitEmoji(raw) || '📌'
+      });
+      $('#tx-new').value = '';
+      saveHabits(habits2);
+      renderTodayExtras();
+    };
+    $('#tx-add-btn').addEventListener('click', add);
+    $('#tx-new').addEventListener('keydown', function (e) { if (e.key === 'Enter') add(); });
   }
 
   /* ----- Businesses: time + tasks per business per day (not part of 75 Hard) ----- */
@@ -3759,10 +3860,11 @@
     var is75 = c.id === 'hard75' || c.id === 'soft75';
     var mode = c.pass === 'all' ? 'hard' : 'soft';
     // Show a live "current challenge" line + link to the full picker.
+    var em = $('#set-ch-emoji'); if (em) em.textContent = c.emoji;
+    var nm = $('#set-ch-name'); if (nm) nm.textContent = c.name;
     var link = $('#mode-current');
-    if (link) link.innerHTML = 'Active: <b>' + c.emoji + ' ' + esc(c.name) + '</b>' +
-      (LEN ? ' · Day ' + Math.max(1, chDay()) + '/' + LEN : ' · Day ' + Math.max(1, chDay())) +
-      ' — <button class="link-btn" id="mode-open-challenges" type="button" style="display:inline;padding:0">browse all ›</button>';
+    if (link) link.textContent = (LEN ? 'Day ' + Math.max(1, chDay()) + ' of ' + LEN : 'Day ' + Math.max(1, chDay()) + ' · open-ended') +
+      ' · ' + (c.pass === 'all' ? 'all tasks daily' : 'flexible target');
     var seg = $('#mode-seg'); if (seg) seg.classList.toggle('hidden', !is75);
     var stw = $('#soft-target-wrap'); if (stw) stw.classList.toggle('hidden', !is75 || mode !== 'soft');
     var sb = $('#save-mode'); if (sb) sb.classList.toggle('hidden', !is75);
@@ -3770,7 +3872,6 @@
       document.querySelectorAll('#mode-seg [data-mode]').forEach(function (b) { b.classList.toggle('active', b.dataset.mode === mode); });
       if ($('#soft-target')) $('#soft-target').value = String(softTarget());
     }
-    var ob = $('#mode-open-challenges'); if (ob) ob.addEventListener('click', function () { switchView('challenges'); });
   }
   function pickMode(mode) {
     document.querySelectorAll('#mode-seg [data-mode]').forEach(function (b) {
@@ -7662,6 +7763,10 @@
       tasks: {}, metrics: {}, habits: {}, manual: [] };
     renderChallenges();
   }
+  // Builder items used to be plain strings; they now carry their own emoji.
+  // Read both shapes so an in-progress draft doesn't break.
+  function cbManualLabel(m) { return typeof m === 'string' ? m : (m && m.label) || ''; }
+  function cbManualEmoji(m) { return (m && typeof m === 'object' && m.emoji) || '📌'; }
   function renderChallengeBuilder(box) {
     var B = state.chBuilder;
     var habits = (state.profile && state.profile.customTasks) || [];
@@ -7669,7 +7774,7 @@
       '<button class="btn link-btn" id="cb-back">‹ Back</button>' +
       '<div class="card"><div class="manual-grid">' +
         '<label>Name<input id="cb-name" value="' + esc(B.name) + '" placeholder="e.g. My Arc" maxlength="30" /></label>' +
-        '<label>Emoji<input id="cb-emoji" value="' + esc(B.emoji) + '" maxlength="2" /></label>' +
+        '<label>Icon' + emojiFieldHtml('cb-emoji', B.emoji || '🏁') + '</label>' +
       '</div>' +
       '<div class="eyebrow" style="margin:6px 0 6px">Length</div>' +
       '<div class="seg" id="cb-days">' + [21, 30, 66, 75, 90, 0].map(function (n) {
@@ -7691,10 +7796,16 @@
           return '<label class="cb-check"><input type="checkbox" data-cbm="' + k + '"' + (on ? ' checked' : '') + ' /> ' + m.emoji + ' ' + m.label +
             ' ≥ <input class="cb-inline" type="number" inputmode="numeric" data-cbmin="' + k + '" value="' + (B.metrics[k] || (k === 'steps' ? 8000 : 10)) + '" /></label>';
         }).join('') +
-        (habits.length ? '<div class="cb-sec">Your habits</div>' + habits.map(function (h) { return cbCheck('habit_' + h.id, '🔗 ' + h.name, !!B.habits[h.id]); }).join('') : '') +
+        (habits.length ? '<div class="cb-sec">Your habits</div>' + habits.map(function (h) { return cbCheck('habit_' + h.id, habitIcon(h) + ' ' + habitLabel(h), !!B.habits[h.id]); }).join('') : '') +
         '<div class="cb-sec">Your own items</div>' +
-        (B.manual.map(function (mm, i) { return '<div class="list-row"><span>📌 ' + esc(mm) + '</span><button class="list-del" data-cbmanrm="' + i + '">✕</button></div>'; }).join('')) +
-        '<div class="add-habit" style="margin-top:8px"><input id="cb-manual" placeholder="e.g. Deep work 2h" maxlength="30" /><button id="cb-manual-add" class="btn">Add</button></div>' +
+        (B.manual.length
+          ? B.manual.map(function (mm, i) {
+              return '<div class="list-row"><span>' + cbManualEmoji(mm) + ' ' + esc(cbManualLabel(mm)) + '</span>' +
+                '<button class="list-del" data-cbmanrm="' + i + '">✕</button></div>';
+            }).join('')
+          : '<p class="muted tiny" style="margin:2px 2px 8px">Write your own daily items — anything the blocks above don’t cover.</p>') +
+        '<div class="add-habit" style="margin-top:8px">' + emojiFieldHtml('cb-emoji-pick', '📌') +
+          '<input id="cb-manual" placeholder="e.g. Deep work 2h" maxlength="30" /><button id="cb-manual-add" class="btn">Add</button></div>' +
       '</div>' +
       '<button id="cb-start" class="btn primary block">Start challenge</button>';
 
@@ -7702,7 +7813,7 @@
 
     $('#cb-back').addEventListener('click', function () { state.chBuilder = null; renderChallenges(); });
     var sync = function () {
-      B.name = $('#cb-name').value; B.emoji = $('#cb-emoji').value || '🏁';
+      B.name = $('#cb-name').value; B.emoji = emojiFieldValue('cb-emoji', '🏁');
       B.hasWater = $('#cb-water').checked; B.water = Number($('#cb-water-ml').value) || 4000;
       B.manual = B.manual; // unchanged here
       // tasks & habits
@@ -7720,7 +7831,15 @@
     };
     box.querySelectorAll('#cb-days [data-cbd]').forEach(function (b) { b.addEventListener('click', function () { sync(); B.days = Number(b.getAttribute('data-cbd')); renderChallenges(); }); });
     box.querySelectorAll('#cb-reset [data-cbr]').forEach(function (b) { b.addEventListener('click', function () { sync(); B.reset = b.getAttribute('data-cbr'); renderChallenges(); }); });
-    $('#cb-manual-add').addEventListener('click', function () { sync(); var v = $('#cb-manual').value.trim(); if (v) { B.manual.push(v.slice(0, 30)); renderChallenges(); } });
+    bindEmojiField('cb-emoji');
+    bindEmojiField('cb-emoji-pick');
+    $('#cb-manual-add').addEventListener('click', function () {
+      sync();
+      var v = $('#cb-manual').value.trim();
+      if (!v) return;
+      B.manual.push({ label: v.slice(0, 30), emoji: emojiFieldValue('cb-emoji-pick', '📌') });
+      renderChallenges();
+    });
     box.querySelectorAll('[data-cbmanrm]').forEach(function (b) { b.addEventListener('click', function () { sync(); B.manual.splice(Number(b.getAttribute('data-cbmanrm')), 1); renderChallenges(); }); });
     $('#cb-start').addEventListener('click', function () {
       sync();
@@ -7728,7 +7847,9 @@
       TASKS.forEach(function (t) { if (B.tasks[t.key]) rules.push({ t: 'task', key: t.key }); });
       Object.keys(B.metrics).forEach(function (k) { rules.push({ t: 'metric', key: k, min: B.metrics[k] }); });
       (habits).forEach(function (h) { if (B.habits[h.id]) rules.push({ t: 'habit', id: h.id }); });
-      B.manual.forEach(function (label, i) { rules.push({ t: 'manual', id: 'm' + i + '_' + Date.now().toString(36), label: label, emoji: '📌' }); });
+      B.manual.forEach(function (mm, i) {
+        rules.push({ t: 'manual', id: 'm' + i + '_' + Date.now().toString(36), label: cbManualLabel(mm), emoji: cbManualEmoji(mm) });
+      });
       if (B.hasWater) rules.push({ t: 'water' });
       if (!rules.length) { toast('Pick at least one daily rule'); return; }
       var def = { id: 'custom', name: B.name.trim() || 'My Challenge', emoji: B.emoji || '🏁',

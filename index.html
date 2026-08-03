@@ -150,6 +150,8 @@
 
         <div id="tasklist" class="tasklist"></div>
 
+        <div id="today-extra" class="today-extra"></div>
+
         <button id="save-day" class="btn primary block save-day">Save today</button>
         <p class="muted tiny center">Your progress saves automatically as you tap. The button just forces a sync.</p>
       </div>
@@ -210,6 +212,7 @@
         <p class="muted tiny" style="margin:0 2px 12px">Daily habits you want to keep — not part of 75 Hard.</p>
         <div id="extra-tasks" class="tasklist"></div>
         <div class="add-habit">
+          <span id="habit-emoji-slot"></span>
           <input id="new-habit" placeholder="Add a habit (e.g. Meditate 10 min)" maxlength="40" />
           <button id="add-habit-btn" class="btn">Add</button>
         </div>
@@ -583,41 +586,42 @@
           <button id="save-profile" class="btn block">Save name</button>
         </div>
 
-        <div class="card" id="account-card">
-          <h3>Account</h3>
+        <div class="card set-challenge">
+          <h3>Challenge</h3>
+          <button type="button" id="set-ch-open" class="set-ch-row">
+            <span class="set-ch-emoji" id="set-ch-emoji">🏁</span>
+            <span class="set-ch-body">
+              <span class="set-ch-name" id="set-ch-name">Active challenge</span>
+              <span class="muted tiny" id="mode-current">—</span>
+            </span>
+            <span class="set-ch-go">›</span>
+          </button>
+          <button id="set-ch-browse" class="btn primary block" type="button">Browse all challenges</button>
 
-          <div class="acct-block">
-            <div class="acct-label">Email <span class="muted tiny">(optional)</span></div>
-            <input id="acct-email" type="email" autocapitalize="none" placeholder="you@example.com" />
-            <button id="acct-email-btn" class="btn block">Save email</button>
+          <div class="seg" id="mode-seg" style="margin-top:12px">
+            <button data-mode="hard" class="active" type="button">💪 75 Hard</button>
+            <button data-mode="soft" type="button">🌱 75 Soft</button>
           </div>
-
-          <div class="acct-block">
-            <div class="acct-label">Change username</div>
-            <input id="acct-username" autocapitalize="none" placeholder="new username (lowercase)" />
-            <input id="acct-username-pw" type="password" autocomplete="current-password" placeholder="current password" />
-            <button id="acct-username-btn" class="btn block">Change username</button>
+          <div id="soft-target-wrap" class="hidden">
+            <label>Daily target
+              <select id="soft-target">
+                <option value="60">60% (4 of 7 tasks)</option>
+                <option value="70" selected>70% (5 of 7 tasks)</option>
+                <option value="80">80% (6 of 7 tasks)</option>
+              </select>
+            </label>
           </div>
+          <button id="save-mode" class="btn block">Save challenge mode</button>
 
-          <div class="acct-block">
-            <div class="acct-label">Change password</div>
-            <input id="acct-curpw" type="password" autocomplete="current-password" placeholder="current password" />
-            <input id="acct-newpw" type="password" autocomplete="new-password" placeholder="new password" />
-            <button id="acct-pw-btn" class="btn block">Update password</button>
+          <div class="set-ch-start">
+            <div class="acct-label">Start date <span class="muted tiny">— Day 1</span></div>
+            <p class="muted tiny" style="margin:0 0 8px">Re-aligns your Journey and day count. Nothing is deleted.</p>
+            <input type="date" id="set-startdate" min="2025-01-01" />
+            <button id="save-startdate" class="btn block">Save start date</button>
           </div>
         </div>
 
-        <div class="card">
-          <h3>Appearance</h3>
-          <p class="muted tiny">Pick a theme — it applies instantly and is remembered on this device.</p>
-          <div id="theme-grid" class="theme-grid"></div>
-        </div>
-        <div class="card">
-          <h3>Tap feedback</h3>
-          <p class="muted tiny">Confirm every tap with a little click and a buzz. Saved on this device.</p>
-          <label class="fx-toggle"><input type="checkbox" id="fx-sound" /> 🔊 Click sound</label>
-          <label class="fx-toggle"><input type="checkbox" id="fx-haptics" /> 📳 Vibration (Android; iPhone has limited support)</label>
-        </div>
+
         <div class="card">
           <h3>Diet goals</h3>
           <p class="muted tiny">Enter your details to auto-calculate a daily calorie target, or just type your own below.</p>
@@ -674,41 +678,50 @@
         </div>
 
         <div class="card">
-          <h3>Challenge</h3>
-          <p class="muted tiny" id="mode-current" style="margin-bottom:10px">Active challenge</p>
-          <div class="seg" id="mode-seg">
-            <button data-mode="hard" class="active" type="button">💪 75 Hard</button>
-            <button data-mode="soft" type="button">🌱 75 Soft</button>
+          <div class="muted tiny">Signed in as <strong id="set-username"></strong></div>
+          <button id="logout" class="btn block">Log out</button>
+        </div>
+
+        <div class="card" id="account-card">
+          <h3>Account</h3>
+
+          <div class="acct-block">
+            <div class="acct-label">Email <span class="muted tiny">(optional)</span></div>
+            <input id="acct-email" type="email" autocapitalize="none" placeholder="you@example.com" />
+            <button id="acct-email-btn" class="btn block">Save email</button>
           </div>
-          <div id="soft-target-wrap" class="hidden">
-            <label>Daily target
-              <select id="soft-target">
-                <option value="60">60% (4 of 7 tasks)</option>
-                <option value="70" selected>70% (5 of 7 tasks)</option>
-                <option value="80">80% (6 of 7 tasks)</option>
-              </select>
-            </label>
+
+          <div class="acct-block">
+            <div class="acct-label">Change username</div>
+            <input id="acct-username" autocapitalize="none" placeholder="new username (lowercase)" />
+            <input id="acct-username-pw" type="password" autocomplete="current-password" placeholder="current password" />
+            <button id="acct-username-btn" class="btn block">Change username</button>
           </div>
-          <button id="save-mode" class="btn block">Save challenge mode</button>
+
+          <div class="acct-block">
+            <div class="acct-label">Change password</div>
+            <input id="acct-curpw" type="password" autocomplete="current-password" placeholder="current password" />
+            <input id="acct-newpw" type="password" autocomplete="new-password" placeholder="new password" />
+            <button id="acct-pw-btn" class="btn block">Update password</button>
+          </div>
         </div>
 
         <div class="card">
-          <h3>Challenge start date</h3>
-          <p class="muted tiny">Day 1 of your challenge. Fixing this re-aligns your Journey and day count — it does not delete anything.</p>
-          <input type="date" id="set-startdate" min="2025-01-01" />
-          <button id="save-startdate" class="btn block">Save start date</button>
+          <h3>Appearance</h3>
+          <p class="muted tiny">Pick a theme — it applies instantly and is remembered on this device.</p>
+          <div id="theme-grid" class="theme-grid"></div>
         </div>
-
+        <div class="card">
+          <h3>Tap feedback</h3>
+          <p class="muted tiny">Confirm every tap with a little click and a buzz. Saved on this device.</p>
+          <label class="fx-toggle"><input type="checkbox" id="fx-sound" /> 🔊 Click sound</label>
+          <label class="fx-toggle"><input type="checkbox" id="fx-haptics" /> 📳 Vibration (Android; iPhone has limited support)</label>
+        </div>
         <div class="card">
           <h3>Start over</h3>
           <p class="muted tiny">Broke a rule? 75 Hard means restarting from Day 1. This resets your start date to today.</p>
           <button id="reset-challenge" class="btn danger block">I failed — restart from Day 1</button>
         </div>
-        <div class="card">
-          <div class="muted tiny">Signed in as <strong id="set-username"></strong></div>
-          <button id="logout" class="btn block">Log out</button>
-        </div>
-
         <div class="card danger-zone">
           <h3>Delete account</h3>
           <p class="muted tiny">Permanently delete your account and <strong>all</strong> your data — daily logs, food diary and fasts. This can’t be undone.</p>
