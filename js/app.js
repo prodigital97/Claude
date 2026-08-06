@@ -310,11 +310,32 @@
   // (~8s total) since an Apps Script cold start or a brief connectivity gap
   // can outlast a couple of quick retries.
   var API_BACKOFF = [600, 1200, 2200, 4000]; // ms of delay before each retry
-  var API_TIMEOUT = 20000;                   // hard ceiling for one attempt
+  // Apps Script is genuinely slow: a cold start plus a couple of full-sheet
+  // reads can run well past 20s, so a tight ceiling turns ordinary slowness
+  // into a failure. This is a backstop against a hung request, not a latency
+  // budget — keep it well above the worst honest response.
+  var API_TIMEOUT = 45000;
+  // Replaying a request is only safe if the server can recognise it as the
+  // same one. Reads always can be; writes only when they carry a clientId the
+  // backend dedups on, otherwise a retry after a timeout could double-write.
+  var SAFE_ACTIONS = {
+    getState: 1, getProfile: 1, getFasts: 1, getFood: 1, getFoodRange: 1, getFoodStats: 1,
+    moneyGetState: 1, moneyGetTxns: 1, moneyDashboard: 1, listGet: 1, friends: 1, leaderboard: 1
+  };
+  function isIdempotent(action, payload) {
+    if (SAFE_ACTIONS[action]) return true;
+    if (!payload) return false;
+    if (payload.clientId) return true;
+    if (payload.transaction && payload.transaction.clientId) return true;
+    if (Array.isArray(payload.transactions) && payload.transactions.length) {
+      return payload.transactions.every(function (t) { return t && t.clientId; });
+    }
+    return false;
+  }
   // fetch() only rejects when the connection itself fails — a server that
   // accepts the request and then stalls leaves the promise pending forever,
   // which is how a save could sit on "Saving…" indefinitely. Abort instead.
-  function fetchWithTimeout(url, opts) {
+  function fetchWithTimeout(url, opts, idempotent) {
     if (typeof AbortController === 'undefined') return fetch(url, opts);
     var ctrl = new AbortController();
     var timer = setTimeout(function () { ctrl.abort(); }, API_TIMEOUT);
@@ -322,20 +343,23 @@
     return fetch(url, merged).then(function (r) { clearTimeout(timer); return r; },
       function (err) {
         clearTimeout(timer);
-        // Don't auto-retry a timeout: unlike a refused connection, the request
-        // may well have reached the server and been applied, so retrying a
-        // write could duplicate it. Fail fast and let the user check.
-        if (err && err.name === 'AbortError') { var e = new Error('API_TIMEOUT'); e.noRetry = true; throw e; }
+        if (err && err.name === 'AbortError') {
+          var e = new Error('API_TIMEOUT');
+          // A timed-out request may already have been applied server-side, so
+          // only replay it when the backend can dedup the repeat.
+          e.noRetry = !idempotent;
+          throw e;
+        }
         throw err;
       });
   }
-  function fetchWithRetry(url, opts, attempt, onRetry) {
+  function fetchWithRetry(url, opts, attempt, onRetry, idempotent) {
     attempt = attempt || 0;
-    return fetchWithTimeout(url, opts).catch(function (err) {
+    return fetchWithTimeout(url, opts, idempotent).catch(function (err) {
       if ((err && err.noRetry) || attempt >= API_BACKOFF.length) throw err;
       if (onRetry) onRetry(attempt + 1, API_BACKOFF.length + 1);
       return new Promise(function (resolve) { setTimeout(resolve, API_BACKOFF[attempt]); })
-        .then(function () { return fetchWithRetry(url, opts, attempt + 1, onRetry); });
+        .then(function () { return fetchWithRetry(url, opts, attempt + 1, onRetry, idempotent); });
     });
   }
   // onRetry(attempt, totalAttempts) is optional — pass it to surface live
@@ -352,7 +376,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight
           body: JSON.stringify(payload)
-        }, 0, onRetry).then(function (r) { return r.json(); })
+        }, 0, onRetry, isIdempotent(action, payload)).then(function (r) { return r.json(); })
           .then(function (res) {
             if (!res.ok) throw new Error(res.error || 'Request failed');
             if (res.charge) updateCharge(res.charge);   // battery echoed back on metered calls
@@ -362,7 +386,9 @@
       var msg = String(err && err.message || '');
       if (msg.indexOf('CHARGE_EMPTY') === 0) { handleChargeEmpty(msg); throw err; }
       if (msg === 'API_TIMEOUT') {
-        throw new Error('The server took too long to respond. Pull to refresh and check whether it saved before trying again.');
+        throw new Error(isIdempotent(action, payload)
+          ? 'The server is being slow — that didn’t go through. Try again; it won’t double-save.'
+          : 'The server took too long to respond. Pull to refresh and check whether it saved before trying again.');
       }
       // Reword the raw browser network-failure strings (meaningless to a user)
       // into something actionable — this only fires once retries are exhausted.
@@ -8232,6 +8258,7 @@
     moneyInit().then(function () { if (state.money.tab === 'overview') moneyRenderOverview(); }).catch(function () {});
   }
 
+  var moneyAddKey = '';   // idempotency key for the in-progress manual add
   function moneyRenderAdd() {
     var box = $('#money-add'); if (!box) return;
     var today = todayStr();
@@ -8258,12 +8285,20 @@
     $('#mo-add-btn').addEventListener('click', function () {
       var amt = Number($('#mo-amt').value) || 0;
       if (amt <= 0) { toast('Enter an amount'); return; }
-      var t = { date: $('#mo-date').value || today, amount: amt, type: $('#mo-type').value, categoryId: $('#mo-cat').value, accountId: $('#mo-acct').value, merchant: $('#mo-merch').value.trim(), note: $('#mo-note').value.trim(), source: 'manual' };
+      // A stable key for THIS filled-in form: it survives a failed attempt so
+      // retrying can't create a second copy, and is only rotated once the save
+      // lands and the form is cleared.
+      if (!moneyAddKey) moneyAddKey = 'mo_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      var t = { date: $('#mo-date').value || today, amount: amt, type: $('#mo-type').value, categoryId: $('#mo-cat').value, accountId: $('#mo-acct').value, merchant: $('#mo-merch').value.trim(), note: $('#mo-note').value.trim(), source: 'manual', clientId: moneyAddKey };
+      var ab = $('#mo-add-btn'); ab.disabled = true; ab.textContent = 'Saving…';
       api('moneyAddTxn', { transaction: t }).then(function (d) {
         state.money.status = d.status || state.money.status;
-        toast('Added ✓'); $('#mo-amt').value = ''; $('#mo-merch').value = ''; $('#mo-note').value = '';
+        toast(d.duplicate ? 'Already saved ✓' : 'Added ✓');
+        moneyAddKey = '';
+        $('#mo-amt').value = ''; $('#mo-merch').value = ''; $('#mo-note').value = '';
         moneyRefreshSilently();
-      }).catch(function (e) { toast(e.message); });
+      }).catch(function (e) { toast(e.message); })
+        .then(function () { ab.disabled = false; ab.textContent = 'Add transaction'; });
     });
     $('#mo-scan-btn').addEventListener('click', function () { $('#mo-scan-file').click(); });
     $('#mo-scan-file').addEventListener('change', function () {
@@ -8287,11 +8322,15 @@
   function moneyRenderReview(list) {
     var box = $('#mo-review'); if (!box) return;
     if (!list.length) { box.innerHTML = ''; return; }
+    // One idempotency key per row, minted HERE rather than at save time. If a
+    // save times out and you tap again, the retry carries the same key and the
+    // backend recognises it instead of writing the transaction twice.
+    var batch = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
     box.innerHTML = '<div class="card"><div class="eyebrow">Review · ' + list.length + ' found</div>' +
       list.map(function (t, i) {
         var cat = moneyCatById(t.categoryId);
         var acctNote = t.accountId ? '<span class="muted tiny">✓ matched from label</span>' : (!state.money.accounts || !state.money.accounts.length ? '<span class="muted tiny">Add a bank/card in the Accounts tab to tag transactions</span>' : '');
-        return '<div class="review-row" data-i="' + i + '">' +
+        return '<div class="review-row" data-i="' + i + '" data-cid="rv_' + batch + '_' + i + '">' +
           '<div class="manual-grid">' +
             '<label>Amount<input class="rv-amt" type="number" value="' + t.amount + '" /></label>' +
             '<label>Category<select class="rv-cat">' + moneyCatOptions(t.categoryId) + '</select></label>' +
@@ -8314,17 +8353,22 @@
           amount: Number(r.querySelector('.rv-amt').value) || 0, categoryId: r.querySelector('.rv-cat').value,
           date: r.querySelector('.rv-date').value, type: r.querySelector('.rv-type').value,
           accountId: r.querySelector('.rv-acct').value,
-          merchant: r.querySelector('.rv-merch').value.trim(), source: 'screenshot', clientId: 'rv_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)
+          merchant: r.querySelector('.rv-merch').value.trim(), source: 'screenshot',
+          clientId: r.getAttribute('data-cid')
         });
       });
       txns = txns.filter(function (t) { return t.amount > 0; });
       if (!txns.length) { toast('Nothing to add'); return; }
+      var sb = $('#mo-review-save'); sb.disabled = true; sb.textContent = 'Saving…';
       api('moneyAddTxns', { transactions: txns }).then(function (d) {
         state.money.status = d.status || state.money.status;
         toast('Added ' + d.added + ' transaction' + (d.added === 1 ? '' : 's') + ' ✓');
         box.innerHTML = '';
         moneyRefreshSilently();
-      }).catch(function (e) { toast(e.message); });
+      }).catch(function (e) {
+        toast(e.message);
+        sb.disabled = false; sb.textContent = 'Add all to Money';
+      });
     });
   }
 

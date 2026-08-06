@@ -2160,13 +2160,18 @@ function handleMoneyAddTxn(body) {
   var user = authUser(body);
   var t = body.transaction || {};
   var sheet = getSheet(MONEY_TXN_SHEET, MONEY_TXN_HEADERS); var idx = colIndex(MONEY_TXN_HEADERS);
+  // Read the sheet once and reuse it for both the dedup check and the budget
+  // recompute below.
+  var values = sheet.getDataRange().getValues();
   if (t.clientId) {
-    var dup = moneyFindByClientId(sheet.getDataRange().getValues(), idx, user.username, String(t.clientId));
-    if (dup) return { transaction: dup, status: moneyComputeBudgetStatus(user.username), duplicate: true };
+    var dup = moneyFindByClientId(values, idx, user.username, String(t.clientId));
+    if (dup) return { transaction: dup, status: moneyComputeBudgetStatus(user.username, values), duplicate: true };
   }
   var rec = moneyBuildTxn(user.username, t);
-  sheet.appendRow(MONEY_TXN_HEADERS.map(function (h) { return rec[h]; }));
-  return { transaction: moneyTxnFromRow(MONEY_TXN_HEADERS.map(function (h) { return rec[h]; }), idx), status: moneyComputeBudgetStatus(user.username) };
+  var row = MONEY_TXN_HEADERS.map(function (h) { return rec[h]; });
+  sheet.appendRow(row);
+  values.push(row);   // keep the in-memory copy current for the status pass
+  return { transaction: moneyTxnFromRow(row, idx), status: moneyComputeBudgetStatus(user.username, values) };
 }
 function handleMoneyAddTxns(body) {
   var user = authUser(body);
@@ -2182,7 +2187,8 @@ function handleMoneyAddTxns(body) {
     objs.push(moneyTxnFromRow(MONEY_TXN_HEADERS.map(function (h) { return rec[h]; }), idx));
   });
   if (rows.length) sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, MONEY_TXN_HEADERS.length).setValues(rows);
-  return { added: rows.length, transactions: objs, status: moneyComputeBudgetStatus(user.username) };
+  rows.forEach(function (r) { existing.push(r); });
+  return { added: rows.length, transactions: objs, status: moneyComputeBudgetStatus(user.username, existing) };
 }
 function handleMoneyUpdateTxn(body) {
   var user = authUser(body);
@@ -2197,7 +2203,9 @@ function handleMoneyUpdateTxn(body) {
         sheet.getRange(i + 1, idx[f] + 1).setValue(v);
       });
       sheet.getRange(i + 1, idx.updatedAt + 1).setValue(new Date().toISOString());
-      return { transaction: moneyTxnFromRow(sheet.getRange(i + 1, 1, 1, MONEY_TXN_HEADERS.length).getValues()[0], idx), status: moneyComputeBudgetStatus(user.username) };
+      var fresh = sheet.getRange(i + 1, 1, 1, MONEY_TXN_HEADERS.length).getValues()[0];
+      values[i] = fresh;   // reuse the rows we already read for the status pass
+      return { transaction: moneyTxnFromRow(fresh, idx), status: moneyComputeBudgetStatus(user.username, values) };
     }
   }
   throw new Error('Transaction not found.');
@@ -2208,7 +2216,9 @@ function handleMoneyDeleteTxn(body) {
   var values = sheet.getDataRange().getValues(); var idx = colIndex(MONEY_TXN_HEADERS);
   for (var i = 1; i < values.length; i++) {
     if (String(values[i][idx.id]) === id && normalizeUsername(values[i][idx.username]) === user.username) {
-      sheet.deleteRow(i + 1); return { deleted: id, status: moneyComputeBudgetStatus(user.username) };
+      sheet.deleteRow(i + 1);
+      values.splice(i, 1);   // reuse the rows we already read for the status pass
+      return { deleted: id, status: moneyComputeBudgetStatus(user.username, values) };
     }
   }
   return { deleted: null };
@@ -2328,12 +2338,15 @@ function handleMoneySaveBudget(body) {
 }
 
 /* Budget guard-ladder: month-to-date spend vs limit, pace, safe-to-spend/day. */
-function moneyComputeBudgetStatus(username) {
+// `values` is optional: pass the transaction rows in when the caller has
+// already read them. Reading the whole sheet twice per write was doubling the
+// slowest part of an add, which is what pushed saves past the client timeout.
+function moneyComputeBudgetStatus(username, values) {
   var budget = moneyGetBudget(username);
   var limit = budget.limit;
   var from = moneyMonthStart(), to = todayStr();
-  var sheet = getSheet(MONEY_TXN_SHEET, MONEY_TXN_HEADERS);
-  var values = sheet.getDataRange().getValues(); var idx = colIndex(MONEY_TXN_HEADERS);
+  var idx = colIndex(MONEY_TXN_HEADERS);
+  if (!values) values = getSheet(MONEY_TXN_SHEET, MONEY_TXN_HEADERS).getDataRange().getValues();
   var spent = 0, todaySpent = 0, perCat = {};
   var today = todayStr();
   for (var i = 1; i < values.length; i++) {
