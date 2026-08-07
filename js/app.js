@@ -9195,18 +9195,38 @@
     if (state.token && state.username) {
       // optimistic: show cached immediately, then refresh
       var cache = JSON.parse(localStorage.getItem('hard_cache') || 'null');
+      var before = null;
       if (cache && cache.user) {
         state.user = cache.user; state.logs = cache.logs || [];
         state.today = Object.assign(emptyDay(todayStr()), logFor(todayStr()) || {});
+        before = bootSignature();
         enterApp();
       }
-      loadState().then(function () { if (state.user) { if (!cache) enterApp(); renderAll(); } })
-        .catch(function () { if (!cache) showAuth(); });
+      loadState().then(function () {
+        if (!state.user) return;
+        if (!cache) { enterApp(); renderAll(); return; }
+        // Re-render only when the fetch actually brought something new.
+        // Repainting identical data was a visible flash on every launch.
+        if (bootSignature() !== before) renderAll();
+      }).catch(function () { if (!cache) showAuth(); });
     } else {
       showAuth();
     }
   }
   function showAuth() { show('#auth-screen'); }
+  // Cheap fingerprint of everything the first screen draws from, so boot can
+  // tell "the server agreed with the cache" from "there's new data".
+  function bootSignature() {
+    var p = state.profile || {};
+    return [
+      (state.logs || []).length,
+      JSON.stringify(logFor(todayStr()) || {}),
+      state.user && state.user.startDate,
+      state.user && state.user.displayName,
+      JSON.stringify(p.challenge || ''),
+      (p.customTasks || []).length
+    ].join('|');
+  }
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
@@ -9216,10 +9236,16 @@
       }).catch(function () {});
     });
     // When a new service worker takes control (a fresh build shipped), reload
-    // once so the page runs the new code instead of the stale cached version.
+    // so the page runs the new code instead of the stale cached version — but
+    // only in the first few seconds, while you're still looking at the splash.
+    // Yanking the page out from under someone mid-tap reads as the app
+    // glitching; a build that lands later simply applies on the next launch.
     var swReloaded = false;
+    var bootedAt = Date.now();
     navigator.serviceWorker.addEventListener('controllerchange', function () {
-      if (swReloaded) return; swReloaded = true;
+      if (swReloaded) return;
+      if (Date.now() - bootedAt > 5000) return;   // mid-session: wait for next launch
+      swReloaded = true;
       window.location.reload();
     });
   }

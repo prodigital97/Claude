@@ -12,8 +12,17 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="assets/icon-180.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" />
+  <!-- Fonts load async: as a normal stylesheet this blocked first paint on the
+       webfont round-trip, so a slow connection showed nothing at all for
+       hundreds of ms. media="print" makes it non-blocking, then onload
+       promotes it. --font/--mono already fall back to system faces, so text is
+       readable immediately and swaps in when the webfont lands. -->
+  <link rel="stylesheet" media="print" onload="this.media='all';this.onload=null"
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" />
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" /></noscript>
+  <link rel="preload" as="script" href="js/app.js" />
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
