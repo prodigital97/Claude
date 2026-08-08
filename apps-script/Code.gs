@@ -2744,13 +2744,25 @@ function parseJsonObj(v) {
   try { return JSON.parse(v || '{}'); } catch (e) { return {}; }
 }
 
+// Every saveDay call — i.e. every field edit anywhere in the app, on any
+// day — used to read the ENTIRE Logs sheet just to locate one row, including
+// the extra/metrics/biz JSON blob columns (gym sets, habits, business data)
+// for every OTHER row too. With weeks of daily logs that's a lot of wasted
+// data pulled over the Apps Script/Sheets round-trip on every single save,
+// and was pushing ordinary saves past the client's timeout. username and
+// date are the first two columns, so one narrow 2-column read locates the
+// row; the (possibly large) full row is only fetched for the match.
 function findLogRow(sheet, username, date) {
-  var values = sheet.getDataRange().getValues();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
   var idx = colIndex(LOG_HEADERS);
-  for (var i = 1; i < values.length; i++) {
-    if (normalizeUsername(values[i][idx.username]) === username &&
-        formatDate(values[i][idx.date]) === date) {
-      return { row: i + 1, values: values[i] };
+  var col0 = Math.min(idx.username, idx.date), col1 = Math.max(idx.username, idx.date);
+  var key = sheet.getRange(2, col0 + 1, lastRow - 1, col1 - col0 + 1).getValues();
+  var uOff = idx.username - col0, dOff = idx.date - col0;
+  for (var i = 0; i < key.length; i++) {
+    if (normalizeUsername(key[i][uOff]) === username && formatDate(key[i][dOff]) === date) {
+      var row = i + 2;
+      return { row: row, values: sheet.getRange(row, 1, 1, LOG_HEADERS.length).getValues()[0] };
     }
   }
   return null;
