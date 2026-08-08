@@ -554,20 +554,30 @@ function getProfile(username) {
   return {};
 }
 
+// The client shows cached data instantly on launch, before the fresh profile
+// has come back from the server, so it can be mid-render against a STALE or
+// even empty profile snapshot. If a save fired from that snapshot fully
+// replaced the stored record, every field the client didn't happen to know
+// about yet (meds, habits, gym exercises, custom challenge, ...) would be
+// silently erased. Merging onto whatever is already stored means a field is
+// only ever changed when the client explicitly sends a new value for it —
+// normal edits and deletions still work (the field IS present, just with a
+// new value), but a stale/incomplete snapshot can no longer wipe the rest.
 function handleSaveGoals(body) {
   var user = authUser(body);
-  var profile = body.profile || {};
+  var incoming = body.profile || {};
   var sheet = getSheet(PROFILE_SHEET, PROFILE_HEADERS);
   var values = sheet.getDataRange().getValues();
-  var json = JSON.stringify(profile);
   for (var i = 1; i < values.length; i++) {
     if (normalizeUsername(values[i][0]) === user.username) {
-      sheet.getRange(i + 1, 1, 1, 3).setValues([[user.username, json, new Date().toISOString()]]);
-      return { profile: profile };
+      var existing = {}; try { existing = JSON.parse(values[i][1] || '{}'); } catch (e) {}
+      var merged = Object.assign({}, existing, incoming);
+      sheet.getRange(i + 1, 1, 1, 3).setValues([[user.username, JSON.stringify(merged), new Date().toISOString()]]);
+      return { profile: merged };
     }
   }
-  sheet.appendRow([user.username, json, new Date().toISOString()]);
-  return { profile: profile };
+  sheet.appendRow([user.username, JSON.stringify(incoming), new Date().toISOString()]);
+  return { profile: incoming };
 }
 
 function handleGetFood(body) {

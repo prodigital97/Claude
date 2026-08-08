@@ -579,7 +579,12 @@
       return { deleted: p.id };
     }
     if (action === 'saveGoals') {
-      d.profiles = d.profiles || {}; d.profiles[me.username] = p.profile || {}; saveDb(d);
+      // Mirrors the real backend: merge onto the stored profile rather than
+      // replacing it, so a stale/partial client snapshot can't wipe fields
+      // (meds, habits, ...) it doesn't happen to mention.
+      d.profiles = d.profiles || {};
+      d.profiles[me.username] = Object.assign({}, d.profiles[me.username] || {}, p.profile || {});
+      saveDb(d);
       return { profile: d.profiles[me.username] };
     }
     if (action === 'getFood') {
