@@ -901,7 +901,7 @@ function handleScanLabel(body) {
     generationConfig: {
       temperature: 0,
       responseMimeType: 'application/json',
-      maxOutputTokens: 300,          // the JSON panel is tiny; cap runaway output
+      maxOutputTokens: 600,          // the 17-field schema pretty-printed (one field/line) needs headroom beyond a bare compact estimate, or Gemini truncates mid-object and JSON.parse fails
       thinkingConfig: { thinkingBudget: 0 }   // disable billed "thinking" tokens (Gemini 2.5)
     }
   };
@@ -936,7 +936,26 @@ function handleScanLabel(body) {
 
   var p;
   try { p = JSON.parse(txt); }
-  catch (e) { var m = txt.match(/\{[\s\S]*\}/); p = m ? JSON.parse(m[0]) : {}; }
+  catch (e) {
+    var m = txt.match(/\{[\s\S]*\}/);
+    if (m) { try { p = JSON.parse(m[0]); } catch (e2) { p = null; } }
+    // Still broken -> the response was very likely truncated mid-object (hit
+    // maxOutputTokens before the closing brace). Repair it by dropping the
+    // last, incomplete field and re-closing, retrying from the end backwards
+    // until something parses, instead of surfacing a raw JSON.parse error.
+    if (!p) {
+      var open = txt.indexOf('{');
+      if (open >= 0) {
+        var body = txt.slice(open);
+        var cut = body.lastIndexOf(',');
+        while (cut > 0 && !p) {
+          try { p = JSON.parse(body.slice(0, cut) + '}'); }
+          catch (e3) { body = body.slice(0, cut); cut = body.lastIndexOf(','); }
+        }
+      }
+    }
+    if (!p) throw new Error('AI response was cut off — please try again.');
+  }
   function n(x) { return Number(x) || 0; }
   // Values are reported as-printed for a column of `basisGrams` grams (e.g. 40 g serve).
   // Convert everything to per-100 g deterministically here (don't trust the model's math).
