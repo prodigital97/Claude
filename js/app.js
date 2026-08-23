@@ -6763,47 +6763,58 @@
     if (gymIsTimed(e)) return (Number(st.s) || 0) / GYM_SEC_PER_REP;
     return Number(st.r) || 0;
   }
-  function gymEntryVol(e, bw) {
+  /* One exercise's tonnage, kept in TWO parts that are never summed for you.
+     `lifted` is weight you put on the bar; `body` is the share of bodyweight
+     the movement carried. They measure different things — 75 push-ups and 30
+     bench reps can total the same tonnage at completely different relative
+     intensities — so the app reports them side by side rather than adding
+     them into one figure that swings on which movement you happened to pick. */
+  function gymEntryParts(e, bw) {
     if (bw == null) bw = bodyWeightAsOf(todayStr());
-    return gymSetsOf(e).reduce(function (s, x) {
-      return s + gymSetReps(e, x) * gymSetLoad(e, x, bw);
-    }, 0);
+    var lifted = 0, body = 0, factor = 0;
+    gymSetsOf(e).forEach(function (st) {
+      var reps = gymSetReps(e, st);
+      var added = Number(st.w) || 0;
+      var carried = gymSetLoad(e, st, bw) - added;
+      lifted += reps * added;
+      body += reps * carried;
+      if (carried > 0 && bw > 0) factor = carried / bw;
+    });
+    return { lifted: lifted, body: body, factor: factor };
   }
+  function gymEntryVol(e, bw) { return gymEntryParts(e, bw).lifted; }
   function gymEntryBest(e) {
     return gymSetsOf(e).reduce(function (m, x) { return Math.max(m, Number(x.w) || 0); }, 0);
   }
-  // Where a day's volume actually came from, split into the weight you loaded
-  // and the share of bodyweight the movements carried. Keeps the old
-  // weights-only figure visible instead of folding it into one number that
-  // jumps for reasons you can't see.
+  // A day's two tonnage figures plus the per-exercise rows behind them.
   function gymVolSplit(list, bw) {
-    var weights = 0, body = 0, rows = [];
+    var lifted = 0, body = 0, rows = [];
     (list || []).forEach(function (e) {
-      var wv = 0, bv = 0, factor = 0;
-      gymSetsOf(e).forEach(function (st) {
-        // Derive both halves from gymSetLoad itself, so the split can never
-        // disagree with the volume total it's explaining.
-        var reps = gymSetReps(e, st);
-        var added = Number(st.w) || 0;
-        var carried = gymSetLoad(e, st, bw) - added;
-        wv += reps * added;
-        bv += reps * carried;
-        if (carried > 0 && bw > 0) factor = carried / bw;
-      });
-      weights += wv; body += bv;
-      if (wv + bv > 0) rows.push({ n: e.n, vol: wv + bv, body: bv, factor: factor });
+      var p = gymEntryParts(e, bw);
+      lifted += p.lifted; body += p.body;
+      if (p.lifted + p.body > 0) {
+        rows.push({ n: e.n, lifted: p.lifted, body: p.body, factor: p.factor });
+      }
     });
-    rows.sort(function (a, b) { return b.vol - a.vol; });
-    return { weights: weights, body: body, total: weights + body, rows: rows };
+    rows.sort(function (a, b) { return (b.lifted + b.body) - (a.lifted + a.body); });
+    return { lifted: lifted, body: body, rows: rows };
   }
   // Longest set of a timed exercise, in seconds — the PR that matters for holds.
   function gymEntryBestHold(e) {
     return gymSetsOf(e).reduce(function (m, x) { return Math.max(m, Number(x.s) || 0); }, 0);
   }
+  // Tonnage you loaded onto a bar/machine — the figure "volume" has always
+  // meant, unaffected by how much bodyweight work sits alongside it.
   function gymVolOf(l) {
     if (!l || !l.metrics || !l.metrics.gym) return 0;
     var bw = bodyWeightAsOf(l.date);
-    return l.metrics.gym.reduce(function (s, e) { return s + gymEntryVol(e, bw); }, 0);
+    return l.metrics.gym.reduce(function (s, e) { return s + gymEntryParts(e, bw).lifted; }, 0);
+  }
+  // Tonnage your own body carried, reported separately.
+  function gymBodyVolOf(l) {
+    if (!l || !l.metrics || !l.metrics.gym) return 0;
+    var bw = bodyWeightAsOf(l.date);
+    return l.metrics.gym.reduce(function (s, e) { return s + gymEntryParts(e, bw).body; }, 0);
   }
   function gymSetCountOf(l) {
     if (!l || !l.metrics || !l.metrics.gym) return 0;
@@ -6863,16 +6874,17 @@
   // is unchanged — "1,250 kg vol".
   function gymEntrySummary(e, bw) {
     var sets = gymSetsOf(e);
-    var vol = gymEntryVol(e, bw);
-    var volTxt = vol > 0 ? Math.round(vol).toLocaleString() + ' kg vol' : '';
+    var p = gymEntryParts(e, bw);
+    // Bodyweight tonnage is labelled "bw" so it never reads as bar weight.
+    var tail = p.lifted > 0 ? Math.round(p.lifted).toLocaleString() + ' kg vol'
+      : (p.body > 0 ? Math.round(p.body).toLocaleString() + ' kg bw' : '');
     if (gymIsTimed(e)) {
       var secs = sets.reduce(function (s, x) { return s + (Number(x.s) || 0); }, 0);
-      return fmtDur(secs) + (volTxt ? ' · ' + volTxt : '');
+      return fmtDur(secs) + (tail ? ' · ' + tail : '');
     }
     var reps = sets.reduce(function (s, x) { return s + (Number(x.r) || 0); }, 0);
-    var lifted = sets.some(function (x) { return (Number(x.w) || 0) > 0; });
-    if (lifted) return volTxt || (reps + ' rep' + (reps === 1 ? '' : 's'));
-    return reps + ' rep' + (reps === 1 ? '' : 's') + (volTxt ? ' · ' + volTxt : '');
+    if (p.lifted > 0) return tail;
+    return reps + ' rep' + (reps === 1 ? '' : 's') + (tail ? ' · ' + tail : '');
   }
   // Matches "Push-ups", "Push ups", "Diamond push-ups", etc. — any variant,
   // not just the exact library spelling — so the daily count tile doesn't
@@ -6960,7 +6972,7 @@
     if (rs.mode !== 'day') { renderGymRange(box, rs); return; }
     var day = appDay();
     var list = gymOf(day);
-    var vol = gymVolOf(day), setCount = gymSetCountOf(day);
+    var setCount = gymSetCountOf(day);
     var dayBw = bodyWeightAsOf(day.date);
     var split = gymVolSplit(list, dayBw);
     var pushups = gymPushupTotal(list);
@@ -6989,20 +7001,19 @@
       '<div class="card"><div class="gym-stats">' +
         '<div class="js-stat"><b>' + list.length + '</b><span>exercises</span></div>' +
         '<div class="js-stat"><b>' + setCount + '</b><span>sets</span></div>' +
-        '<div class="js-stat"><b>' + (vol ? kgTxt(vol) : '0') + '</b><span>volume</span></div>' +
+        '<div class="js-stat"><b>' + (split.lifted ? kgTxt(split.lifted) : '0') + '</b><span>volume</span></div>' +
+        '<div class="js-stat"><b>' + (split.body ? kgTxt(split.body) : '0') + '</b><span>bodyweight</span></div>' +
         '<div class="js-stat"><b>' + pushups + '</b><span>push-ups</span></div>' +
         '<div class="js-stat"><b>' + weekDays + '/7</b><span>this week</span></div>' +
       '</div>' +
-      (vol ? '<details class="gx-vsplit"><summary>' +
-          '<span class="mono">' + kgTxt(split.weights) + ' lifted</span> + ' +
-          '<span class="mono">' + kgTxt(split.body) + ' bodyweight</span>' +
-        '</summary>' +
-        '<p class="muted tiny" style="margin:6px 0 8px">Bodyweight moves are scored at the share of your ' +
-          Math.round(dayBw) + ' kg they actually lift. Tap any exercise to see its share.</p>' +
+      (split.rows.length ? '<details class="gx-vsplit"><summary>Where these came from</summary>' +
+        '<p class="muted tiny" style="margin:6px 0 8px">Kept apart on purpose: the same tonnage from ' +
+          'bodyweight reps and from a loaded bar are not the same training stress. Bodyweight moves ' +
+          'are scored at the share of your ' + Math.round(dayBw) + ' kg they actually lift.</p>' +
         split.rows.map(function (r) {
           return '<div class="gx-vrow"><span>' + esc(r.n) + '</span>' +
             '<span class="muted">' + (r.factor ? Math.round(r.factor * 100) + '% BW' : 'loaded') + '</span>' +
-            '<span class="mono">' + kgTxt(r.vol) + '</span></div>';
+            '<span class="mono">' + kgTxt(r.lifted || r.body) + (r.lifted ? '' : ' bw') + '</span></div>';
         }).join('') +
       '</details>' : '') +
       '</div>' +
@@ -7202,8 +7213,14 @@
   function renderGymRange(box, rs) {
     var r = rangeSpan(rs.mode, rs.anchor);
     var agg = rangeAgg(r.from, r.to, gymVolOf);
+    var bodyAgg = rangeAgg(r.from, r.to, gymBodyVolOf);
     var setsAgg = rangeAgg(r.from, r.to, gymSetCountOf);
-    var trained = agg.perDay.filter(function (p) { return p.v > 0; }).length;
+    // Count a day as trained if anything was logged — a bodyweight-only
+    // session has no bar tonnage but is still a session.
+    var trainedAgg = rangeAgg(r.from, r.to, function (l) {
+      return (l && l.metrics && l.metrics.gym && l.metrics.gym.length) ? 1 : 0;
+    });
+    var trained = trainedAgg.perDay.filter(function (p) { return p.v > 0; }).length;
 
     var exNames = gymAllExerciseNames();
     if (state.gymExSel && exNames.indexOf(state.gymExSel) < 0) state.gymExSel = '';
@@ -7231,9 +7248,12 @@
         '<div class="js-stat"><b>' + trained + '/' + agg.days + '</b><span>days trained</span></div>' +
         '<div class="js-stat"><b>' + Math.round(setsAgg.sum) + '</b><span>total sets</span></div>' +
         '<div class="js-stat"><b>' + kgTxt(agg.sum) + '</b><span>total volume</span></div>' +
+        '<div class="js-stat"><b>' + kgTxt(bodyAgg.sum) + '</b><span>bodyweight</span></div>' +
         '<div class="js-stat"><b>' + kgTxt(agg.avg) + '</b><span>avg/day</span></div>' +
       '</div></div>' +
-      '<div class="card"><div class="eyebrow">Volume per day</div>' + rangeBarChart(agg.perDay, 'var(--body-c)', ' kg') + '</div>' +
+      '<div class="card"><div class="eyebrow">Volume per day · loaded</div>' + rangeBarChart(agg.perDay, 'var(--body-c)', ' kg') + '</div>' +
+      (bodyAgg.sum > 0 ? '<div class="card"><div class="eyebrow">Bodyweight per day</div>' +
+        rangeBarChart(bodyAgg.perDay, 'var(--body-c)', ' kg') + '</div>' : '') +
       (exNames.length ? '<div class="card"><div class="eyebrow" style="margin-bottom:8px">📈 Trend for one exercise</div>' +
         '<select id="gym-ex-sel" class="gym-ex-select">' +
           '<option value="">Pick an exercise…</option>' +
