@@ -1237,6 +1237,19 @@ label > .emoji-field .emoji-btn { width: 100%; }
 .gx-prev { font-size: 11px; color: var(--muted); }
 .gx-in { padding: 9px 4px; text-align: center; font-size: 15px; font-weight: 700; border-radius: 10px; }
 .gx-sdel { font-size: 13px; padding: 2px; }
+/* Reps ⇄ seconds toggle. Sits in the card head next to rename; lights up in
+   the accent colour while the exercise is being logged as a timed hold. */
+.gx-timebtn {
+  font-size: 12px; font-weight: 800; line-height: 1; padding: 4px 6px;
+  border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--muted);
+}
+.gx-timebtn.on { color: var(--body-c); border-color: var(--body-c); }
+/* Echo of a long hold under its row ("90" -> 1:30). Sits between set rows, so
+   the right padding lines it up under the seconds input rather than the ✕. */
+.gx-hint {
+  text-align: right; padding-right: 38px;
+  font-size: 10px; color: var(--muted); margin-top: -2px;
+}
 .gx-addset {
   width: 100%; margin-top: 8px; border: 1px dashed var(--line); background: transparent;
   color: var(--body-c); padding: 9px; border-radius: 11px; font-weight: 700; font-size: 13px; cursor: pointer;

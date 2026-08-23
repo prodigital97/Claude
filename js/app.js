@@ -6629,29 +6629,51 @@
   }
 
   /* ================= Gym Log (Body) =================
-     Hevy/Strong-style per-set logging. Entry shape: { n, sets: [{r, w}, …], bw }.
-     `bw` = bodyweight move (track reps, no weight). Legacy entries
-     ({ n, sets: 3, reps: 10, kg: 40 }) are normalized on read. */
-  // Categorised exercise library (like the food database). bw: true = bodyweight.
+     Hevy/Strong-style per-set logging. Entry shape: { n, sets: [{r, w, s}, …], tm }.
+     `r` = reps, `w` = added weight in kg, `s` = seconds (held/worked) for
+     time-based moves. `tm` on the entry forces time mode (1) or rep mode (0),
+     overriding the library default, so any exercise can be timed. Legacy
+     entries ({ n, sets: 3, reps: 10, kg: 40 }) are normalized on read. */
+  // Categorised exercise library (like the food database).
+  // Row shape: [name, bodyweight?, timeBased?]
   var GYM_LIBRARY = {
     'Chest':     [['Bench Press'], ['Incline Bench Press'], ['Dumbbell Press'], ['Incline Dumbbell Press'], ['Chest Fly'], ['Cable Fly'], ['Push-ups', 1], ['Dips', 1], ['Machine Chest Press']],
-    'Back':      [['Deadlift'], ['Barbell Row'], ['Pull-ups', 1], ['Chin-ups', 1], ['Lat Pulldown'], ['Seated Row'], ['T-Bar Row'], ['Dumbbell Row'], ['Face Pulls'], ['Back Extension', 1]],
+    'Back':      [['Deadlift'], ['Barbell Row'], ['Pull-ups', 1], ['Chin-ups', 1], ['Lat Pulldown'], ['Seated Row'], ['T-Bar Row'], ['Dumbbell Row'], ['Face Pulls'], ['Back Extension', 1], ['Dead Hang', 1, 1]],
     'Shoulders': [['Overhead Press'], ['Shoulder Press'], ['Arnold Press'], ['Lateral Raise'], ['Front Raise'], ['Rear Delt Fly'], ['Upright Row'], ['Shrugs']],
     'Arms':      [['Bicep Curl'], ['Hammer Curl'], ['Preacher Curl'], ['Concentration Curl'], ['Tricep Pushdown'], ['Overhead Tricep Extension'], ['Skull Crushers'], ['Close-grip Bench Press'], ['Cable Curl']],
-    'Legs':      [['Squat'], ['Front Squat'], ['Leg Press'], ['Romanian Deadlift'], ['Lunges'], ['Bulgarian Split Squat'], ['Leg Extension'], ['Leg Curl'], ['Calf Raise'], ['Hip Thrust'], ['Goblet Squat']],
-    'Core':      [['Plank', 1], ['Crunches', 1], ['Sit-ups', 1], ['Leg Raise', 1], ['Russian Twist', 1], ['Cable Crunch'], ['Hanging Knee Raise', 1], ['Mountain Climbers', 1]],
-    'Cardio':    [['Running', 1], ['Cycling', 1], ['Rowing', 1], ['Jump Rope', 1], ['Elliptical', 1], ['Stair Climber', 1], ['Walking', 1], ['Swimming', 1]],
-    'Full Body': [['Clean & Press'], ['Kettlebell Swing'], ['Burpees', 1], ['Thrusters'], ['Farmer Carry'], ['Battle Ropes', 1], ['Box Jumps', 1]]
+    'Legs':      [['Squat'], ['Front Squat'], ['Leg Press'], ['Romanian Deadlift'], ['Lunges'], ['Bulgarian Split Squat'], ['Leg Extension'], ['Leg Curl'], ['Calf Raise'], ['Hip Thrust'], ['Goblet Squat'], ['Wall Sit', 1, 1]],
+    'Core':      [['Plank', 1, 1], ['Side Plank', 1, 1], ['Hollow Hold', 1, 1], ['Crunches', 1], ['Sit-ups', 1], ['Leg Raise', 1], ['Russian Twist', 1], ['Cable Crunch'], ['Hanging Knee Raise', 1], ['Mountain Climbers', 1]],
+    'Cardio':    [['Running', 1, 1], ['Cycling', 1, 1], ['Rowing', 1, 1], ['Jump Rope', 1, 1], ['Elliptical', 1, 1], ['Stair Climber', 1, 1], ['Walking', 1, 1], ['Swimming', 1, 1]],
+    'Full Body': [['Clean & Press'], ['Kettlebell Swing'], ['Burpees', 1], ['Thrusters'], ['Farmer Carry', 0, 1], ['Battle Ropes', 1, 1], ['Box Jumps', 1]]
   };
-  // Flat lookup: name -> { cat, bw }
+  // Flat lookup: name -> { cat, bw, tm }
   var GYM_INDEX = (function () {
     var idx = {};
     Object.keys(GYM_LIBRARY).forEach(function (cat) {
-      GYM_LIBRARY[cat].forEach(function (row) { idx[row[0]] = { cat: cat, bw: !!row[1] }; });
+      GYM_LIBRARY[cat].forEach(function (row) { idx[row[0]] = { cat: cat, bw: !!row[1], tm: !!row[2] }; });
     });
     return idx;
   })();
   function gymIsBodyweight(name) { var i = GYM_INDEX[name]; return i ? i.bw : false; }
+  // Time mode: the entry's own `tm` wins (set by the ⏱ toggle), else the
+  // library default, else fall back to name-matching so custom-typed names
+  // like "Plank hold" or "Wall sit 60s" still log in seconds.
+  function gymIsTimedName(name) {
+    var i = GYM_INDEX[name];
+    if (i) return i.tm;
+    return /plank|wall ?sit|hold|hang|carry|jump ?rope|run|cycl|row(ing)?\b|swim|walk|elliptical|stair/i.test(String(name || ''));
+  }
+  function gymIsTimed(e) {
+    if (e && e.tm != null) return !!e.tm;
+    return gymIsTimedName(e && e.n);
+  }
+  // "45s" / "1:30" / "1:05:00" — compact, readable hold durations.
+  function fmtDur(sec) {
+    sec = Math.max(0, Math.round(Number(sec) || 0));
+    if (sec < 60) return sec + 's';
+    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    return h ? h + ':' + pad(m) + ':' + pad(s) : m + ':' + pad(s);
+  }
   function gymOf(d) { var m = metricsOf(d); if (!m.gym) m.gym = []; return m.gym; }
   function gymExercises() { return (state.profile && state.profile.gymExercises) || []; }
   function gymSetsOf(e) {
@@ -6662,15 +6684,89 @@
   }
   // Migrate a legacy entry in place so set edits stick.
   function gymEnsureSets(e) { if (!Array.isArray(e.sets)) { e.sets = gymSetsOf(e); delete e.reps; delete e.kg; } return e.sets; }
-  function gymEntryVol(e) {
-    return gymSetsOf(e).reduce(function (s, x) { return s + (Number(x.r) || 0) * (Number(x.w) || 0); }, 0);
+  /* ---- Bodyweight load ----
+     A push-up moves real weight, but the bar is your own body, so logging it
+     with kg = 0 made every bodyweight session count as 0 volume. Each movement
+     lifts a known FRACTION of bodyweight (a push-up ≈ 64% — the rest is carried
+     by your feet), so effective load = bodyweight × fraction + any added weight
+     (vest, belt, dumbbell). These are the standard biomechanics estimates.
+     Volume is derived at read time, never stored, so every past workout is
+     recalculated the moment this ships — no backfill needed. */
+  var GYM_BW_LOAD = {
+    'push-ups': 0.64, 'dips': 0.95, 'pull-ups': 1, 'chin-ups': 1, 'dead hang': 1,
+    'squat': 0.65, 'lunges': 0.65, 'bulgarian split squat': 0.85, 'wall sit': 0.65,
+    'box jumps': 0.65, 'burpees': 0.65, 'mountain climbers': 0.6,
+    'crunches': 0.3, 'sit-ups': 0.35, 'russian twist': 0.3, 'leg raise': 0.35,
+    'hanging knee raise': 0.35, 'plank': 0.6, 'side plank': 0.55, 'hollow hold': 0.45,
+    'back extension': 0.45, 'battle ropes': 0.15, 'jump rope': 0.35,
+    'running': 0.35, 'walking': 0.2, 'cycling': 0.15, 'rowing': 0.25,
+    'swimming': 0.25, 'elliptical': 0.2, 'stair climber': 0.4
+  };
+  // Isometric holds have no reps, so convert time to rep-equivalents at a
+  // steady 3 s per rep — the usual convention for scoring a hold against
+  // rep-based work, and what keeps one "volume" number in consistent units.
+  var GYM_SEC_PER_REP = 3;
+  function gymBodyLoadFactor(name) {
+    var k = String(name || '').trim().toLowerCase();
+    if (GYM_BW_LOAD[k] != null) return GYM_BW_LOAD[k];
+    // Normalize punctuation/spacing so "Push ups"/"pushups"/"Diamond Push-Ups"
+    // all resolve, then fall back to a substring match for prefixed variants.
+    var flat = k.replace(/[^a-z]/g, '');
+    var keys = Object.keys(GYM_BW_LOAD);
+    for (var i = 0; i < keys.length; i++) {
+      var kf = keys[i].replace(/[^a-z]/g, '');
+      if (flat === kf || flat.indexOf(kf) >= 0) return GYM_BW_LOAD[keys[i]];
+    }
+    return 0.65;   // unknown bodyweight move — assume a compound, most are
+  }
+  // Bodyweight as of a given date: what you actually weighed then, so old
+  // sessions aren't rescored using today's weight. Falls back forward to the
+  // earliest weigh-in, then the profile value, then a neutral 70 kg.
+  function bodyWeightAsOf(date) {
+    var logs = state.logs || [], best = 0;
+    for (var i = 0; i < logs.length; i++) {
+      var v = logs[i].metrics && Number(logs[i].metrics.weight);
+      if (!v) continue;
+      if (logs[i].date <= date) best = v;          // logs are date-sorted
+      else if (!best) { best = v; break; }         // only ever weighed in later
+    }
+    return best || Number(state.profile && state.profile.weightKg) || 70;
+  }
+  // Does this movement carry bodyweight? Library moves say so directly; a
+  // custom-typed name counts as bodyweight only while no kg has been entered,
+  // so "Sled Push @ 60kg" isn't inflated by a phantom bodyweight component.
+  function gymCarriesBodyweight(name, added) {
+    if (gymIsBodyweight(name)) return true;
+    return GYM_INDEX[name] == null && !added;
+  }
+  // Effective load for one set: added weight plus the share of bodyweight the
+  // movement actually lifts (0 for machine/barbell work, where kg IS the load).
+  function gymSetLoad(e, st, bw) {
+    var added = Number(st.w) || 0;
+    return gymCarriesBodyweight(e.n, added) ? added + bw * gymBodyLoadFactor(e.n) : added;
+  }
+  // Reps, or rep-equivalents for a timed hold.
+  function gymSetReps(e, st) {
+    if (gymIsTimed(e)) return (Number(st.s) || 0) / GYM_SEC_PER_REP;
+    return Number(st.r) || 0;
+  }
+  function gymEntryVol(e, bw) {
+    if (bw == null) bw = bodyWeightAsOf(todayStr());
+    return gymSetsOf(e).reduce(function (s, x) {
+      return s + gymSetReps(e, x) * gymSetLoad(e, x, bw);
+    }, 0);
   }
   function gymEntryBest(e) {
     return gymSetsOf(e).reduce(function (m, x) { return Math.max(m, Number(x.w) || 0); }, 0);
   }
+  // Longest set of a timed exercise, in seconds — the PR that matters for holds.
+  function gymEntryBestHold(e) {
+    return gymSetsOf(e).reduce(function (m, x) { return Math.max(m, Number(x.s) || 0); }, 0);
+  }
   function gymVolOf(l) {
     if (!l || !l.metrics || !l.metrics.gym) return 0;
-    return l.metrics.gym.reduce(function (s, e) { return s + gymEntryVol(e); }, 0);
+    var bw = bodyWeightAsOf(l.date);
+    return l.metrics.gym.reduce(function (s, e) { return s + gymEntryVol(e, bw); }, 0);
   }
   function gymSetCountOf(l) {
     if (!l || !l.metrics || !l.metrics.gym) return 0;
@@ -6724,15 +6820,22 @@
     });
     return f;
   }
-  // Total volume label for an exercise, adaptive: weighted -> "1,250 kg vol",
-  // bodyweight (or all sets weightless) -> total reps. Fixes the "0 kg" /
-  // "why 10kg into 10" confusion — volume load only shows when weight is used.
-  function gymEntrySummary(e) {
+  // Headline label for an exercise, adaptive to how it's logged: a timed hold
+  // leads with total time, a bodyweight move with total reps, and both append
+  // the volume load now that bodyweight counts toward it. Barbell/machine work
+  // is unchanged — "1,250 kg vol".
+  function gymEntrySummary(e, bw) {
     var sets = gymSetsOf(e);
-    var vol = gymEntryVol(e);
+    var vol = gymEntryVol(e, bw);
+    var volTxt = vol > 0 ? Math.round(vol).toLocaleString() + ' kg vol' : '';
+    if (gymIsTimed(e)) {
+      var secs = sets.reduce(function (s, x) { return s + (Number(x.s) || 0); }, 0);
+      return fmtDur(secs) + (volTxt ? ' · ' + volTxt : '');
+    }
     var reps = sets.reduce(function (s, x) { return s + (Number(x.r) || 0); }, 0);
-    if (vol > 0) return Math.round(vol).toLocaleString() + ' kg vol';
-    return reps + ' rep' + (reps === 1 ? '' : 's');
+    var lifted = sets.some(function (x) { return (Number(x.w) || 0) > 0; });
+    if (lifted) return volTxt || (reps + ' rep' + (reps === 1 ? '' : 's'));
+    return reps + ' rep' + (reps === 1 ? '' : 's') + (volTxt ? ' · ' + volTxt : '');
   }
   // Matches "Push-ups", "Push ups", "Diamond push-ups", etc. — any variant,
   // not just the exact library spelling — so the daily count tile doesn't
@@ -6762,15 +6865,29 @@
     });
     return !hasWeight;
   }
-  // Per-day value for one exercise across a range: total reps if it's a
-  // bodyweight movement, total volume (kg × reps) otherwise.
-  function gymExerciseMetricOf(name, bw) {
+  // Whether an exercise is logged in seconds — checks the library/name default
+  // AND what's actually on record, so an entry the user flipped to ⏱ still
+  // charts as time.
+  function gymExerciseIsTimed(name) {
+    if (gymIsTimedName(name)) return true;
+    var timed = false;
+    (state.logs || []).forEach(function (l) {
+      ((l.metrics && l.metrics.gym) || []).forEach(function (e) {
+        if (e.n === name && e.tm) timed = true;
+      });
+    });
+    return timed;
+  }
+  // Per-day value for one exercise across a range: total seconds for a timed
+  // hold, total reps for a bodyweight movement, total volume load otherwise.
+  function gymExerciseMetricOf(name, bw, timed) {
     return function (l) {
       if (!l || !l.metrics || !l.metrics.gym) return 0;
       var entries = l.metrics.gym.filter(function (e) { return e.n === name; });
       if (!entries.length) return 0;
-      if (bw) return entries.reduce(function (s, e) { return s + gymSetsOf(e).reduce(function (s2, st) { return s2 + (Number(st.r) || 0); }, 0); }, 0);
-      return entries.reduce(function (s, e) { return s + gymEntryVol(e); }, 0);
+      var key = timed ? 's' : 'r';
+      if (timed || bw) return entries.reduce(function (s, e) { return s + gymSetsOf(e).reduce(function (s2, st) { return s2 + (Number(st[key]) || 0); }, 0); }, 0);
+      return entries.reduce(function (s, e) { return s + gymEntryVol(e, bodyWeightAsOf(l.date)); }, 0);
     };
   }
   // Exercises the user has ever logged, most-frequent first — powers the
@@ -6807,10 +6924,16 @@
     var day = appDay();
     var list = gymOf(day);
     var vol = gymVolOf(day), setCount = gymSetCountOf(day);
+    var dayBw = bodyWeightAsOf(day.date);
     var pushups = gymPushupTotal(list);
-    var weekDays = 0, today = todayStr();
-    for (var i = 0; i < 7; i++) {
-      var l = logFor(addDays(today, -i));
+    // "This week" = the calendar week (Mon-first) the viewed day sits in,
+    // counted only up to today — NOT a rolling 7-day window, which used to
+    // bleed in last week's sessions and could read 6/7 on a Wednesday.
+    var today = todayStr(), wk = rangeWeekOf(day.date);
+    var wkEnd = wk.to < today ? wk.to : today;
+    var weekDays = 0;
+    for (var d = wk.from; d <= wkEnd; d = addDays(d, 1)) {
+      var l = logFor(d);
       if (l && l.metrics && l.metrics.gym && l.metrics.gym.length) weekDays++;
     }
     var prs = gymPRs();
@@ -6831,7 +6954,10 @@
         '<div class="js-stat"><b>' + (vol ? (vol >= 1000 ? (vol / 1000).toFixed(1) + 't' : Math.round(vol) + 'kg') : '0') + '</b><span>volume</span></div>' +
         '<div class="js-stat"><b>' + pushups + '</b><span>push-ups</span></div>' +
         '<div class="js-stat"><b>' + weekDays + '/7</b><span>this week</span></div>' +
-      '</div></div>' +
+      '</div>' +
+      (vol ? '<p class="muted tiny" style="margin:8px 0 0">Volume counts bodyweight moves at ' + Math.round(dayBw) + ' kg body weight — a push-up is ' +
+        Math.round(GYM_BW_LOAD['push-ups'] * 100) + '% of it, a pull-up 100%.</p>' : '') +
+      '</div>' +
       (isToday ?
         '<div class="card gym-rest">' +
           (gymRest.left > 0
@@ -6843,36 +6969,52 @@
       // Workout — one card per exercise, one row per set
       (list.length ? list.map(function (e, i) {
         var sets = gymSetsOf(e);
+        var timed = gymIsTimed(e);
         var best = gymEntryBest(e);
         var pr = prs[e.n] && best >= prs[e.n].kg && best > 0;
         var last = gymLastEntry(e.n, day.date);
-        // PREV = last session's AVERAGE across all its sets (avg weight × avg reps),
-        // shown identically for every row — a single "last time" benchmark.
+        // PREV = last session's AVERAGE across all its sets — avg weight ×
+        // avg reps, or the avg hold for a timed move. One "last time" benchmark,
+        // shown identically on every row.
         var pv = '—';
         if (last) {
           var ls = gymSetsOf(last);
           if (ls.length) {
-            var sw = 0, sr = 0;
-            ls.forEach(function (s) { sw += Number(s.w) || 0; sr += Number(s.r) || 0; });
-            var aw = Math.round(sw / ls.length), ar = Math.round(sr / ls.length);
-            pv = (aw ? aw : '—') + '×' + ar;
+            if (timed) {
+              var ss = 0;
+              ls.forEach(function (s) { ss += Number(s.s) || 0; });
+              pv = ss ? fmtDur(ss / ls.length) : '—';
+            } else {
+              var sw = 0, sr = 0;
+              ls.forEach(function (s) { sw += Number(s.w) || 0; sr += Number(s.r) || 0; });
+              var aw = Math.round(sw / ls.length), ar = Math.round(sr / ls.length);
+              pv = (aw ? aw : '—') + '×' + ar;
+            }
           }
         }
         return '<div class="card gx-card">' +
           '<div class="gx-head">' +
             '<b class="gx-name" data-gxedit="' + i + '">' + esc(e.n) + '</b>' + (pr ? ' <span class="pr-badge">PR 🏅</span>' : '') +
-            '<span class="gx-vol mono">' + gymEntrySummary(e) + '</span>' +
+            '<span class="gx-vol mono">' + gymEntrySummary(e, dayBw) + '</span>' +
+            '<button class="icon-mini gx-timebtn' + (timed ? ' on' : '') + '" data-gxtime="' + i + '" title="' +
+              (timed ? 'Switch to reps' : 'Switch to timed (seconds)') + '">' + (timed ? '⏱' : '#') + '</button>' +
             '<button class="icon-mini gx-editbtn" data-gxedit="' + i + '" title="Rename">✎</button>' +
             '<button class="list-del" data-gxdel="' + i + '">✕</button></div>' +
-          '<div class="gx-row gx-lbls"><span>SET</span><span>PREV avg</span><span>KG</span><span>REPS</span><span></span></div>' +
+          '<div class="gx-row gx-lbls"><span>SET</span><span>PREV avg</span><span>KG</span><span>' +
+            (timed ? 'SECS' : 'REPS') + '</span><span></span></div>' +
           sets.map(function (st, j) {
+            var held = Number(st.s) || 0;
             return '<div class="gx-row">' +
               '<span class="gx-num mono">' + (j + 1) + '</span>' +
               '<span class="gx-prev mono">' + pv + '</span>' +
               '<input class="gx-in" type="number" inputmode="decimal" value="' + (st.w || '') + '" placeholder="0" data-gx="' + i + ':' + j + ':w" />' +
-              '<input class="gx-in" type="number" inputmode="numeric" value="' + (st.r || '') + '" placeholder="0" data-gx="' + i + ':' + j + ':r" />' +
+              (timed
+                ? '<input class="gx-in" type="number" inputmode="numeric" value="' + (held || '') + '" placeholder="0" data-gx="' + i + ':' + j + ':s" />'
+                : '<input class="gx-in" type="number" inputmode="numeric" value="' + (st.r || '') + '" placeholder="0" data-gx="' + i + ':' + j + ':r" />') +
               '<button class="list-del gx-sdel" data-sdel="' + i + ':' + j + '">✕</button>' +
-            '</div>';
+            '</div>' +
+            // Anything past a minute is hard to read as raw seconds — echo it back.
+            (timed && held >= 60 ? '<div class="gx-hint mono">' + fmtDur(held) + '</div>' : '');
           }).join('') +
           '<button class="gx-addset" data-addset="' + i + '">＋ Add set</button>' +
         '</div>';
@@ -6897,8 +7039,15 @@
       name = String(name || '').trim().slice(0, 40);
       if (!name) return;
       var last = gymLastEntry(name, day.date);
-      var sets = last ? gymSetsOf(last).map(function (s) { return { r: Number(s.r) || 0, w: Number(s.w) || 0 }; }) : [{ r: 10, w: 0 }];
-      gymOf(day).push({ n: name, sets: sets });
+      var timed = last ? gymIsTimed(last) : gymIsTimedName(name);
+      var sets = last
+        ? gymSetsOf(last).map(function (s) { return { r: Number(s.r) || 0, w: Number(s.w) || 0, s: Number(s.s) || 0 }; })
+        : [timed ? { r: 0, w: 0, s: 30 } : { r: 10, w: 0, s: 0 }];
+      var entry = { n: name, sets: sets };
+      // Carry the previous entry's explicit rep/time choice forward.
+      if (last && last.tm != null) entry.tm = last.tm;
+      else if (timed) entry.tm = 1;
+      gymOf(day).push(entry);
       gymRememberExercise(name);
       queueSaveDay(day);
       toast(last ? name + ' added — last session loaded, beat it 🔥' : name + ' added');
@@ -6927,7 +7076,23 @@
       });
     });
 
-    // Per-set weight/rep edits — save on change (blur), PR toast when beaten.
+    // Flip one exercise between reps and timed seconds. Seeds a sensible first
+    // hold so the row isn't blank, and remembers the choice on the entry.
+    box.querySelectorAll('[data-gxtime]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var e = list[Number(b.getAttribute('data-gxtime'))]; if (!e) return;
+        var now = gymIsTimed(e);
+        e.tm = now ? 0 : 1;
+        var sets = gymEnsureSets(e);
+        if (!now) sets.forEach(function (st) { if (!(Number(st.s) || 0)) st.s = 30; });
+        else sets.forEach(function (st) { if (!(Number(st.r) || 0)) st.r = 10; });
+        queueSaveDay(day);
+        toast(e.n + (now ? ' → reps' : ' → timed (seconds) ⏱'));
+        renderGym();
+      });
+    });
+
+    // Per-set weight/rep/time edits — save on change (blur), PR toast when beaten.
     box.querySelectorAll('[data-gx]').forEach(function (inp) {
       inp.addEventListener('change', function () {
         var pk = inp.getAttribute('data-gx').split(':');
@@ -6936,9 +7101,13 @@
         var st = sets[Number(pk[1])]; if (!st) return;
         var v = Math.max(0, Number(inp.value) || 0);
         var prevBest = prs[e.n] ? prs[e.n].kg : 0;
-        if (pk[2] === 'w') st.w = v; else st.r = v;
+        var prevHold = gymEntryBestHold(e);
+        if (pk[2] === 'w') st.w = v;
+        else if (pk[2] === 's') st.s = v;
+        else st.r = v;
         queueSaveDay(day);
         if (pk[2] === 'w' && v > 0 && v > prevBest) toast('New PR on ' + e.n + ' — ' + v + ' kg! 🏅');
+        if (pk[2] === 's' && v > 0 && v > prevHold) toast('Longest ' + e.n + ' yet — ' + fmtDur(v) + '! 🏅');
         renderGym();
       });
     });
@@ -6946,8 +7115,8 @@
       b.addEventListener('click', function () {
         var e = list[Number(b.getAttribute('data-addset'))]; if (!e) return;
         var sets = gymEnsureSets(e);
-        var lastSet = sets[sets.length - 1] || { r: 10, w: 0 };
-        sets.push({ r: Number(lastSet.r) || 0, w: Number(lastSet.w) || 0 });
+        var lastSet = sets[sets.length - 1] || { r: 10, w: 0, s: 0 };
+        sets.push({ r: Number(lastSet.r) || 0, w: Number(lastSet.w) || 0, s: Number(lastSet.s) || 0 });
         queueSaveDay(day); renderGym();
       });
     });
@@ -6975,7 +7144,9 @@
     var copyBtn = $('#gym-copy');
     if (copyBtn) copyBtn.addEventListener('click', function () {
       prev.metrics.gym.forEach(function (e) {
-        gymOf(day).push({ n: e.n, sets: gymSetsOf(e).map(function (s) { return { r: Number(s.r) || 0, w: Number(s.w) || 0 }; }) });
+        var copy = { n: e.n, sets: gymSetsOf(e).map(function (s) { return { r: Number(s.r) || 0, w: Number(s.w) || 0, s: Number(s.s) || 0 }; }) };
+        if (e.tm != null) copy.tm = e.tm;
+        gymOf(day).push(copy);
       });
       queueSaveDay(day); toast('Workout copied — beat it today 🔥'); renderGym();
     });
@@ -6992,17 +7163,19 @@
 
     var exBlock = '';
     if (sel) {
+      var timedEx = gymExerciseIsTimed(sel);
       var bw = gymExerciseIsBodyweight(sel);
-      var exAgg = rangeAgg(r.from, r.to, gymExerciseMetricOf(sel, bw));
-      var unit = bw ? ' reps' : ' kg';
+      var exAgg = rangeAgg(r.from, r.to, gymExerciseMetricOf(sel, bw, timedEx));
+      var unit = timedEx ? ' s' : (bw ? ' reps' : ' kg');
+      var noun = timedEx ? 'time' : (bw ? 'reps' : 'volume');
       var sessions = exAgg.hits;
       var avgSession = sessions ? Math.round(exAgg.sum / sessions) : 0;
       exBlock = '<div class="card"><div class="gym-stats">' +
           '<div class="js-stat"><b>' + sessions + '</b><span>sessions</span></div>' +
-          '<div class="js-stat"><b>' + Math.round(exAgg.sum).toLocaleString() + '</b><span>total' + (bw ? ' reps' : ' kg') + '</span></div>' +
-          '<div class="js-stat"><b>' + avgSession + '</b><span>avg/session</span></div>' +
+          '<div class="js-stat"><b>' + (timedEx ? fmtDur(exAgg.sum) : Math.round(exAgg.sum).toLocaleString()) + '</b><span>total' + (timedEx ? ' time' : (bw ? ' reps' : ' kg')) + '</span></div>' +
+          '<div class="js-stat"><b>' + (timedEx ? fmtDur(avgSession) : avgSession) + '</b><span>avg/session</span></div>' +
         '</div></div>' +
-        '<div class="card"><div class="eyebrow">' + esc(sel) + ' — ' + (bw ? 'reps' : 'volume') + ' per day</div>' + rangeBarChart(exAgg.perDay, 'var(--body-c)', unit) + '</div>';
+        '<div class="card"><div class="eyebrow">' + esc(sel) + ' — ' + noun + ' per day</div>' + rangeBarChart(exAgg.perDay, 'var(--body-c)', unit) + '</div>';
     }
 
     box.innerHTML = rangeBarHtml('gym') +
@@ -7094,7 +7267,8 @@
     box.innerHTML = items.slice(0, 90).map(function (x) {
       return '<button type="button" class="gym-res" data-gpick="' + esc(x.n) + '">' +
         '<span class="gr-name">' + esc(x.n) + (x.freq ? ' <span class="gr-star">★</span>' : '') + '</span>' +
-        '<span class="gr-cat">' + esc(x.cat) + (x.bw ? ' · bodyweight' : '') + '</span></button>';
+        '<span class="gr-cat">' + esc(x.cat) + (x.bw ? ' · bodyweight' : '') +
+          (gymIsTimedName(x.n) ? ' · timed ⏱' : '') + '</span></button>';
     }).join('');
     box.querySelectorAll('[data-gpick]').forEach(function (b) {
       b.addEventListener('click', function () {
