@@ -1244,6 +1244,21 @@ label > .emoji-field .emoji-btn { width: 100%; }
   border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--muted);
 }
 .gx-timebtn.on { color: var(--body-c); border-color: var(--body-c); }
+/* Volume breakdown under the stat row — collapsed to a "X lifted + Y bodyweight"
+   summary, expanding to the per-exercise contributions behind the total. */
+.gx-vsplit { margin-top: 9px; border-top: 1px solid var(--line); padding-top: 8px; }
+.gx-vsplit summary {
+  cursor: pointer; font-size: 11px; color: var(--muted); list-style: none;
+}
+.gx-vsplit summary::-webkit-details-marker { display: none; }
+.gx-vsplit summary::after { content: ' ▾'; opacity: .6; }
+.gx-vsplit[open] summary::after { content: ' ▴'; }
+.gx-vrow {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 10px;
+  font-size: 12px; padding: 3px 0; align-items: baseline;
+}
+.gx-vrow span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gx-vrow .muted { font-size: 10px; }
 /* Echo of a long hold under its row ("90" -> 1:30). Sits between set rows, so
    the right padding lines it up under the seconds input rather than the ✕. */
 .gx-hint {

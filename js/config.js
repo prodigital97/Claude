@@ -15,5 +15,5 @@ window.APP_CONFIG = {
   WATER_GOAL_ML: 4000,  // 4 L — comfortably meets the 1-gallon (3.8 L) rule
   GLASS_ML: 500,        // one tap = 500 ml (8 taps = 4 L)
   DEFAULT_THEME: "midnight",
-  APP_VERSION: "2.57.0"
+  APP_VERSION: "2.58.0"
 };
