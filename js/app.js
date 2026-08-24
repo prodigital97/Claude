@@ -6671,7 +6671,10 @@
     return gymIsTimedName(e && e.n);
   }
   // "45s" / "1:30" / "1:05:00" — compact, readable hold durations.
-  function fmtDur(sec) {
+  // Takes SECONDS. Deliberately not named fmtDur: that one already exists for
+  // the fasting timer and takes milliseconds, and a second declaration of the
+  // same name in this shared scope silently replaces it.
+  function fmtSecs(sec) {
     sec = Math.max(0, Math.round(Number(sec) || 0));
     if (sec < 60) return sec + 's';
     var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
@@ -6880,7 +6883,7 @@
       : (p.body > 0 ? Math.round(p.body).toLocaleString() + ' kg bw' : '');
     if (gymIsTimed(e)) {
       var secs = sets.reduce(function (s, x) { return s + (Number(x.s) || 0); }, 0);
-      return fmtDur(secs) + (tail ? ' · ' + tail : '');
+      return fmtSecs(secs) + (tail ? ' · ' + tail : '');
     }
     var reps = sets.reduce(function (s, x) { return s + (Number(x.r) || 0); }, 0);
     if (p.lifted > 0) return tail;
@@ -7042,7 +7045,7 @@
             if (timed) {
               var ss = 0;
               ls.forEach(function (s) { ss += Number(s.s) || 0; });
-              pv = ss ? fmtDur(ss / ls.length) : '—';
+              pv = ss ? fmtSecs(ss / ls.length) : '—';
             } else {
               var sw = 0, sr = 0;
               ls.forEach(function (s) { sw += Number(s.w) || 0; sr += Number(s.r) || 0; });
@@ -7073,7 +7076,7 @@
               '<button class="list-del gx-sdel" data-sdel="' + i + ':' + j + '">✕</button>' +
             '</div>' +
             // Anything past a minute is hard to read as raw seconds — echo it back.
-            (timed && held >= 60 ? '<div class="gx-hint mono">' + fmtDur(held) + '</div>' : '');
+            (timed && held >= 60 ? '<div class="gx-hint mono">' + fmtSecs(held) + '</div>' : '');
           }).join('') +
           '<button class="gx-addset" data-addset="' + i + '">＋ Add set</button>' +
         '</div>';
@@ -7166,7 +7169,7 @@
         else st.r = v;
         queueSaveDay(day);
         if (pk[2] === 'w' && v > 0 && v > prevBest) toast('New PR on ' + e.n + ' — ' + v + ' kg! 🏅');
-        if (pk[2] === 's' && v > 0 && v > prevHold) toast('Longest ' + e.n + ' yet — ' + fmtDur(v) + '! 🏅');
+        if (pk[2] === 's' && v > 0 && v > prevHold) toast('Longest ' + e.n + ' yet — ' + fmtSecs(v) + '! 🏅');
         renderGym();
       });
     });
@@ -7237,8 +7240,8 @@
       var avgSession = sessions ? Math.round(exAgg.sum / sessions) : 0;
       exBlock = '<div class="card"><div class="gym-stats">' +
           '<div class="js-stat"><b>' + sessions + '</b><span>sessions</span></div>' +
-          '<div class="js-stat"><b>' + (timedEx ? fmtDur(exAgg.sum) : Math.round(exAgg.sum).toLocaleString()) + '</b><span>total' + (timedEx ? ' time' : (bw ? ' reps' : ' kg')) + '</span></div>' +
-          '<div class="js-stat"><b>' + (timedEx ? fmtDur(avgSession) : avgSession) + '</b><span>avg/session</span></div>' +
+          '<div class="js-stat"><b>' + (timedEx ? fmtSecs(exAgg.sum) : Math.round(exAgg.sum).toLocaleString()) + '</b><span>total' + (timedEx ? ' time' : (bw ? ' reps' : ' kg')) + '</span></div>' +
+          '<div class="js-stat"><b>' + (timedEx ? fmtSecs(avgSession) : avgSession) + '</b><span>avg/session</span></div>' +
         '</div></div>' +
         '<div class="card"><div class="eyebrow">' + esc(sel) + ' — ' + noun + ' per day</div>' + rangeBarChart(exAgg.perDay, 'var(--body-c)', unit) + '</div>';
     }
