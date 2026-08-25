@@ -169,10 +169,10 @@
     state.profile = profile; state._ch = def; syncChallenge();
     // Re-evaluate today's completion under the new rules.
     if (state.today) { state.today.completed = goalMet(state.today); upsertLocal(state.today); }
-    api('saveGoals', { profile: profile }).then(function (data) {
-      if (data && data.profile) { state.profile = data.profile; state._ch = data.profile.challenge || def; syncChallenge(); }
+    commitProfile(profile, function () {
+      state._ch = (state.profile && state.profile.challenge) || def; syncChallenge();
       if (cb) cb();
-    }).catch(function (e) { toast(e.message); if (cb) cb(); });
+    }, function (e) { toast(e.message); if (cb) cb(); });
   }
   var ADMIN_USERS = ['pronoy']; // who sees the admin dashboard (backend enforces too)
   function isAdmin() { return !!state.user && ADMIN_USERS.indexOf(String(state.user.username || '').toLowerCase()) >= 0; }
@@ -857,6 +857,10 @@
       reconcileDetoxSession();   // sync an in-progress detox timer with the server, either direction
       var t = logFor(todayStr());
       state.today = t ? Object.assign(emptyDay(todayStr()), t) : emptyDay(todayStr());
+      // The sheet normalises dates in the SCRIPT's timezone, which needn't match
+      // the phone's. Pin the date to the device's own idea of today so a row
+      // that comes back a day off can't send every save down the past-day path.
+      state.today.date = todayStr();
       lastXpLevel = levelInfo(xpTotals().total).level;   // seed baseline once data is ready
       cacheState();
       // Safe to run only here: state.logs/profile are freshly loaded from the
@@ -1131,11 +1135,16 @@
         (v.metric ? progress : '<div class="t-sub">' + esc(v.sub) + '</div>') + '</div>';
       row.addEventListener('click', function () {
         if (v.metric && v.app) { switchView(v.app); return; }   // deep-link, not toggle
-        var before = dayXp(d).total;
-        ruleToggle(d, rule);
-        var delta = dayXp(d).total - before;
+        // Re-read the day at TAP time. The `d` captured when this row was
+        // rendered can be a different object by now — midnight rolls state.today
+        // over to a new day, and a reload replaces it — and writing to the stale
+        // one left the tile grey while the tap silently landed on yesterday.
+        var day = appDay();
+        var before = dayXp(day).total;
+        ruleToggle(day, rule);
+        var delta = dayXp(day).total - before;
         renderToday();
-        queueSaveDay(d);
+        queueSaveDay(day);
         gamifyAfterToggle(delta);                                // floater + level-up
       });
       list.appendChild(row);
@@ -1535,7 +1544,7 @@
       state.profile = profile;
       renderRelDates();
       if (!$('#view-home').classList.contains('hidden')) renderHome();
-      api('saveGoals', { profile: profile }).then(function (data) { if (data && data.profile) state.profile = data.profile; toast('Saved'); }).catch(function (e) { toast(e.message); });
+      commitProfile(profile, function () { toast('Saved'); });
     });
   }
 
@@ -1712,7 +1721,7 @@
     var profile = Object.assign({}, state.profile, { relDiary: entries });
     state.profile = profile;
     renderRelDiary();
-    api('saveGoals', { profile: profile }).then(function (data) { if (data && data.profile) state.profile = data.profile; }).catch(function (e) { toast(e.message); });
+    commitProfile(profile);
   }
 
   /* ----- Small Acts — a daily, low-effort connection prompt -----
@@ -2289,12 +2298,9 @@
   }
   function saveHabits(habits) {
     var profile = Object.assign({}, state.profile, { customTasks: habits });
-    state.profile = profile;
+    commitProfile(profile);
     renderExtraTasks(appDay());
     if (!$('#view-today').classList.contains('hidden')) renderTodayExtras();
-    api('saveGoals', { profile: profile }).then(function (data) {
-      if (data && data.profile) state.profile = data.profile;
-    }).catch(function (e) { toast(e.message); });
   }
   // The Today-page copy: your extra habits, tickable alongside the challenge
   // checklist, plus a one-line add so you can start something *today*.
@@ -2456,12 +2462,9 @@
   }
   function saveBusinesses(list) {
     var profile = Object.assign({}, state.profile, { businesses: list });
-    state.profile = profile;
+    commitProfile(profile);
     renderBusinesses(appDay());
     renderBizSettings();
-    api('saveGoals', { profile: profile }).then(function (data) {
-      if (data && data.profile) state.profile = data.profile;
-    }).catch(function (e) { toast(e.message); });
   }
   function renderBizSettings() {
     var box = $('#biz-settings-list'); if (!box) return;
@@ -2508,7 +2511,7 @@
       if (w) w.style.transform = 'translateY(' + jarYFor(pct, 90) + 'px)';
     }); });
     lastJarPctMini = pct;
-    bindWaterQuick(wrap, d);
+    bindWaterQuick(wrap);
     return wrap;
   }
 
@@ -2533,10 +2536,21 @@
       if (state.today.completed && !wasComplete) refreshCharge();   // a newly-completed day earns Charge
     }, 700);
   }
+  // Keep the canonical day object for a date IDENTICAL across state.logs,
+  // state.today and anything a render handed to an event handler.
+  //
+  // This used to store Object.assign({}, day) — a fresh copy — which orphaned
+  // whatever object a click handler had already captured. After the first save
+  // the tile handlers were writing to a detached day while the next render read
+  // the new one, so a tap could leave the tile grey (tap twice) and a later
+  // write of the stale snapshot could clobber a task that had since been
+  // ticked (a green tile going grey). Storing the object itself removes the
+  // divergence entirely rather than papering over it at each call site.
   function upsertLocal(day) {
     var i = state.logs.findIndex(function (l) { return l.date === day.date; });
-    var copy = Object.assign({}, day);
-    if (i >= 0) state.logs[i] = copy; else state.logs.push(copy);
+    if (i >= 0) {
+      if (state.logs[i] !== day) Object.assign(state.logs[i], day);
+    } else state.logs.push(day);
     cacheState();
   }
   function pushToday(announce) {
@@ -2545,6 +2559,25 @@
       if (announce) toast(state.today.completed ? (challengeMode() === 'soft' ? 'Goal met — nice! 🔥' : 'Day complete — beast! 🔥') : 'Saved ✓');
     }).catch(function (err) {
       toast('Saved locally · ' + err.message);
+    });
+  }
+  /* Profile saves: last write wins, and only the LAST one may publish.
+     Every saveGoals caller writes the server's echoed profile back over
+     state.profile. Two saves overlapping — trivially easy by tapping a habit
+     or a skill point twice quickly — meant the FIRST response landed after the
+     SECOND local edit and reverted it. That is the "I tapped one and another
+     went back to grey" / "had to tap twice" behaviour. Stamp each request and
+     let a response apply only while no newer save has been issued since. */
+  var profileSaveSeq = 0;
+  function commitProfile(profile, onDone, onFail) {
+    state.profile = profile;
+    var seq = ++profileSaveSeq;
+    return api('saveGoals', { profile: profile }).then(function (data) {
+      if (seq === profileSaveSeq && data && data.profile) state.profile = data.profile;
+      if (onDone) onDone(data);
+      return data;
+    }).catch(function (e) {
+      if (onFail) onFail(e); else toast(e.message);
     });
   }
   // Fire any queued (debounced) save right now. Called before a sync/reload and
@@ -2566,9 +2599,24 @@
      Every mini-app reads/writes appDay() instead of state.today. A shared date
      bar (‹ date ›, tap for a month picker) sets state.appDate; null = today. */
   function appDate() { return state.appDate || todayStr(); }
+  // state.today is built once, at load, for whatever the date was THEN. Left
+  // open across midnight — normal for a phone app that lives on the home
+  // screen — it goes on pointing at yesterday while the screen still says
+  // "Today": taps land on the wrong day and every save falls through to the
+  // past-day branch (the stray "Saved <date> ✓" toast). Roll it over here, at
+  // the one chokepoint every render and handler goes through.
+  function ensureTodayFresh() {
+    var t = todayStr();
+    if (state.today && state.today.date === t) return false;
+    if (state.today) flushPendingSaves();     // finish writing the day that just ended
+    state.today = Object.assign(emptyDay(t), logFor(t) || {});
+    state.today.date = t;   // never let a server-supplied date override the real one
+    upsertLocal(state.today);
+    return true;
+  }
   function appDay() {
     var date = appDate();
-    if (date === todayStr()) return state.today;
+    if (date === todayStr()) { ensureTodayFresh(); return state.today; }
     var found = logFor(date);
     if (!found) {
       found = emptyDay(date);
@@ -3200,8 +3248,7 @@
   function saveAvatar(patch) {
     var av = Object.assign({}, avatarProfile(), patch);
     var profile = Object.assign({}, state.profile, { avatar: av });
-    state.profile = profile;
-    api('saveGoals', { profile: profile }).then(function (data) { if (data && data.profile) state.profile = data.profile; }).catch(function (e) { toast(e.message); });
+    commitProfile(profile);
   }
   function avatarAllocSet(key, delta) {
     var a = Object.assign({}, avatarAlloc());
@@ -5848,9 +5895,12 @@
     if (was < WATER_GOAL && d.waterMl >= WATER_GOAL) toast('4 L done — goal smashed! 💧👑');
     afterWaterChange(d);
   }
-  function bindWaterQuick(scope, d) {
+  // Both callers render for appDay(), so resolve the day at TAP time rather than
+  // holding the object from render time — that one can be superseded by a
+  // midnight rollover or a reload, sending the water onto the wrong date.
+  function bindWaterQuick(scope) {
     scope.querySelectorAll('[data-w]').forEach(function (b) {
-      b.addEventListener('click', function () { waterQuickAdd(d, Number(b.getAttribute('data-w'))); });
+      b.addEventListener('click', function () { waterQuickAdd(appDay(), Number(b.getAttribute('data-w'))); });
     });
   }
   function renderWaterApp() {
@@ -5889,7 +5939,7 @@
       if (w) w.style.transform = 'translateY(' + jarYFor(pct, 150) + 'px)';
     }); });
     lastJarPct = pct;
-    bindWaterQuick(card, d);
+    bindWaterQuick(card);
   }
   function renderWaterRange(box, rs) {
     var r = rangeSpan(rs.mode, rs.anchor);
@@ -6621,9 +6671,7 @@
         heightCm: Number($('#bd-height').value) || 0
       });
       queueSaveDay(day);   // reports its own "Saved ✓" once the day metrics are confirmed
-      api('saveGoals', { profile: state.profile }).then(function (d) {
-        if (d && d.profile) state.profile = d.profile;
-      }).catch(function (e) { toast('Profile fields didn’t save: ' + e.message); });
+      commitProfile(state.profile, null, function (e) { toast('Profile fields didn’t save: ' + e.message); });
       renderBody();
     });
   }
@@ -7456,7 +7504,7 @@
   function detoxPersistStart(ts) {
     var p = Object.assign({}, state.profile, { detoxActiveSince: ts });
     state.profile = p;
-    api('saveGoals', { profile: p }).then(function (d) { if (d && d.profile) state.profile = d.profile; }).catch(function () {});
+    commitProfile(p, null, function () {});
   }
   function detoxPersistEnd() {
     var p = Object.assign({}, state.profile, { detoxActiveSince: 0 });
@@ -8302,7 +8350,7 @@
   function rupee(v) { return '₹' + (Math.round(Number(v) || 0)).toLocaleString('en-IN'); }
   function saveProfileKey(key, val, cb) {
     var p = Object.assign({}, state.profile); p[key] = val; state.profile = p;
-    api('saveGoals', { profile: p }).then(function (d) { if (d && d.profile) state.profile = d.profile; toast('Saved ✓'); if (cb) cb(); }).catch(function (e) { toast(e.message); });
+    commitProfile(p, function () { toast('Saved ✓'); if (cb) cb(); });
   }
   function truthy(v) { return v === true || v === 1 || String(v).toLowerCase() === 'true'; }
 
@@ -8853,11 +8901,7 @@
   function moneyRules() { return (state.profile && state.profile.moneyRecurring) || []; }
   function moneySaveRules(rules, cb) {
     var p = Object.assign({}, state.profile, { moneyRecurring: rules });
-    state.profile = p;
-    return api('saveGoals', { profile: p }).then(function (d) {
-      if (d && d.profile) state.profile = d.profile;
-      if (cb) cb();
-    });
+    return commitProfile(p, function () { if (cb) cb(); });
   }
   function ymKey(date) { return String(date).slice(0, 7); }
   function daysInMonthOf(y, m) { return new Date(y, m + 1, 0).getDate(); }
