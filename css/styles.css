@@ -242,20 +242,46 @@ main#views { padding: 4px 16px 24px; max-width: 560px; margin: 0 auto; }
 .task {
   display: flex; align-items: center; gap: 14px; padding: 15px 16px;
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
-  cursor: pointer; transition: border-color .2s, background .2s;
+  cursor: pointer;
+  /* Press must be instant, release can settle — a tap that only answers after
+     the network round-trip is what made these tiles feel broken. */
+  transition: transform .18s cubic-bezier(.2,.9,.3,1), border-color .2s, background .2s;
 }
-.task:active { transform: scale(.995); }
-.task.done { background: linear-gradient(135deg, rgba(47,212,122,.12), var(--card)); border-color: rgba(47,212,122,.45); }
+/* This used to be scale(.995) — a half-percent nudge, invisible on a phone —
+   and being later in the file it beat the global scale(.96) press state. */
+.task:active { transform: scale(.97); background: var(--card-2); transition-duration: .06s; }
+/* Tinted from the theme's own --green so the done state matches the check in
+   every theme; it was pinned to one hard-coded green regardless of theme. */
+.task.done {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--green) 13%, transparent), var(--card));
+  border-color: color-mix(in srgb, var(--green) 45%, transparent);
+}
 .task .check {
   width: 30px; height: 30px; flex: none; border-radius: 50%;
   border: 2px solid var(--line); display: grid; place-items: center;
-  font-size: 16px; color: transparent; transition: all .2s;
+  font-size: 16px; color: transparent;
+  transition: background .2s, border-color .2s, color .2s, transform .2s;
 }
-.task.done .check { background: var(--green); border-color: var(--green); color: #06210f; }
+.task.done .check { background: var(--green); border-color: var(--green); color: var(--on-primary); }
+/* Only the tile you just tapped pops, and only for that one render — enough
+   to confirm the tap landed without every done tile twitching on repaint. */
+@keyframes checkPop {
+  0%   { transform: scale(.6); }
+  55%  { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+.task.pop .check { animation: checkPop .34s cubic-bezier(.2,.9,.3,1); }
 .task .t-emoji { font-size: 22px; }
 .task .t-body { flex: 1; min-width: 0; }
-.task .t-title { font-weight: 700; font-size: 15px; }
-.task .t-sub { font-size: 12px; color: var(--muted); }
+.task .t-title { font-weight: 700; font-size: 15px; letter-spacing: -.01em; }
+.task .t-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+/* A finished task should recede, not keep shouting for attention. */
+.task.done .t-title { color: color-mix(in srgb, var(--text) 82%, transparent); }
+@media (prefers-reduced-motion: reduce) {
+  .task, .task .check { transition: none; }
+  .task.pop .check { animation: none; }
+  .task:active { transform: none; }
+}
 
 /* Water task */
 .water-task { display: block; cursor: default; }

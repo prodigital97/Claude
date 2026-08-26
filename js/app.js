@@ -152,6 +152,9 @@
   // broken — right for counting, wrong for a checkbox: it drew a never-ticked
   // tile green, so the first tap changed nothing visible and the second one
   // turned it grey. The tile now shows the same state ruleToggle flips.
+  // Identity of a rule, for "which tile did I just tap".
+  function ruleKey(rule) { return rule.t + ':' + (rule.key || rule.id || rule.label || ''); }
+  var justTicked = '';
   function ruleChecked(d, rule) {
     if (rule.t === 'task') { var t = TASK_BY_KEY[rule.key]; return t ? taskDone(d, t) : false; }
     return ruleMet(d, rule);
@@ -1140,11 +1143,17 @@
     // Rules of the active challenge (rendered in order; water gets its widget).
     var list = $('#tasklist');
     list.innerHTML = '';
+    // Consume the flag: the pop plays on the very next render and never again,
+    // so a later repaint (a save landing, a sync) doesn't replay it.
+    var popKey = justTicked; justTicked = '';
     chRules().forEach(function (rule) {
       if (rule.t === 'water') { list.appendChild(renderWaterCompact(d)); return; }
       var v = ruleView(rule);
       var done = ruleChecked(d, rule);
-      var row = el('div', 'task' + (done ? ' done' : '') + (v.metric ? ' task-metric' : ''));
+      // Pop only the tile just tapped, and only on the render that follows it,
+      // so confirming a tap doesn't make every done tile twitch on every repaint.
+      var pop = done && ruleKey(rule) === popKey;
+      var row = el('div', 'task' + (done ? ' done' : '') + (pop ? ' pop' : '') + (v.metric ? ' task-metric' : ''));
       var progress = '';
       if (v.metric) {
         var cur = Number((d.metrics || {})[rule.key]) || 0;
@@ -1165,6 +1174,7 @@
         var day = appDay();
         var before = dayXp(day).total;
         ruleToggle(day, rule);
+        justTicked = ruleChecked(day, rule) ? ruleKey(rule) : '';
         var delta = dayXp(day).total - before;
         renderToday();
         queueSaveDay(day);
