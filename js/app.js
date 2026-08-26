@@ -147,6 +147,15 @@
     }
     return false;
   }
+  // What the user has actually TICKED. ruleMet is the SCORING view, where a
+  // task a day predates counts as satisfied so old streaks aren't retroactively
+  // broken — right for counting, wrong for a checkbox: it drew a never-ticked
+  // tile green, so the first tap changed nothing visible and the second one
+  // turned it grey. The tile now shows the same state ruleToggle flips.
+  function ruleChecked(d, rule) {
+    if (rule.t === 'task') { var t = TASK_BY_KEY[rule.key]; return t ? taskDone(d, t) : false; }
+    return ruleMet(d, rule);
+  }
   function ruleToggle(d, rule) {
     if (rule.t === 'task') { var t = TASK_BY_KEY[rule.key]; if (t) taskSetDone(d, t, !taskDone(d, t)); }
     else if (rule.t === 'habit') { if (!d.extra) d.extra = {}; d.extra[rule.id] = !d.extra[rule.id]; }
@@ -764,6 +773,22 @@
       reading: false, photo: false, diet: false, noAlcohol: false, completed: false, notes: '',
       extra: { noCig: false }, mood: 0, gut: 0, biz: {}, metrics: {} };
   }
+  // Build a full day object from a stored/served row.
+  //
+  // `extra` is a nested blob, so a plain Object.assign lets the stored row's
+  // `extra` REPLACE the defaults emptyDay seeds above. Any task added after
+  // that row was written then comes back undefined — and undefined renders as
+  // ticked (taskSat treats a task that did not exist yet as satisfied, so old
+  // streaks aren't broken) while a tap reads it as unticked. That mismatch is
+  // why a green tile could swallow the first tap and go grey on the second.
+  function hydrateDay(date, src) {
+    var base = emptyDay(date);
+    var seeded = base.extra;
+    var out = Object.assign(base, src || {});
+    out.date = date;
+    out.extra = Object.assign({}, seeded, (src && src.extra) || {});
+    return out;
+  }
   function logFor(date) {
     return state.logs.filter(function (l) { return l.date === date; })[0];
   }
@@ -855,12 +880,10 @@
       state.activeFast = data.activeFast || null;
       reconcilePendingFast();    // push a locally-started fast the server never got, if any
       reconcileDetoxSession();   // sync an in-progress detox timer with the server, either direction
-      var t = logFor(todayStr());
-      state.today = t ? Object.assign(emptyDay(todayStr()), t) : emptyDay(todayStr());
-      // The sheet normalises dates in the SCRIPT's timezone, which needn't match
-      // the phone's. Pin the date to the device's own idea of today so a row
-      // that comes back a day off can't send every save down the past-day path.
-      state.today.date = todayStr();
+      // hydrateDay pins the date to the DEVICE's today (the sheet normalises in
+      // the script's timezone, which needn't match the phone's) and preserves the
+      // seeded `extra` flags the stored row predates.
+      state.today = hydrateDay(todayStr(), logFor(todayStr()));
       lastXpLevel = levelInfo(xpTotals().total).level;   // seed baseline once data is ready
       cacheState();
       // Safe to run only here: state.logs/profile are freshly loaded from the
@@ -1120,7 +1143,7 @@
     chRules().forEach(function (rule) {
       if (rule.t === 'water') { list.appendChild(renderWaterCompact(d)); return; }
       var v = ruleView(rule);
-      var done = ruleMet(d, rule);
+      var done = ruleChecked(d, rule);
       var row = el('div', 'task' + (done ? ' done' : '') + (v.metric ? ' task-metric' : ''));
       var progress = '';
       if (v.metric) {
@@ -2609,8 +2632,7 @@
     var t = todayStr();
     if (state.today && state.today.date === t) return false;
     if (state.today) flushPendingSaves();     // finish writing the day that just ended
-    state.today = Object.assign(emptyDay(t), logFor(t) || {});
-    state.today.date = t;   // never let a server-supplied date override the real one
+    state.today = hydrateDay(t, logFor(t));
     upsertLocal(state.today);
     return true;
   }
@@ -3504,7 +3526,7 @@
 
   /* ----- Day editor (edit any date from Journey) ----- */
   function openDayEditor(date) {
-    state.editDay = Object.assign(emptyDay(date), logFor(date) || {});
+    state.editDay = hydrateDay(date, logFor(date));
     state.editDay.date = date;
     $('#day-modal-title').textContent = 'Day ' + dayNumber(state.user.startDate, date) + ' · ' + prettyDate(date);
     renderDayEditorBody();
@@ -3628,7 +3650,7 @@
       if (i >= 0) state.logs[i] = copy; else state.logs.push(copy);
       state.logs.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
       cacheState();
-      if (d.date === todayStr()) { state.today = Object.assign(emptyDay(todayStr()), d); }
+      if (d.date === todayStr()) { state.today = hydrateDay(todayStr(), d); }
       hide('#day-modal');
       renderCalendar(); renderAll();
       toast('Saved ' + shortDate(d.date) + ' ✓');
@@ -9492,7 +9514,7 @@
       var before = null;
       if (cache && cache.user) {
         state.user = cache.user; state.logs = cache.logs || [];
-        state.today = Object.assign(emptyDay(todayStr()), logFor(todayStr()) || {});
+        state.today = hydrateDay(todayStr(), logFor(todayStr()));
         before = bootSignature();
         enterApp();
       }
