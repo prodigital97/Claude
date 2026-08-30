@@ -1079,6 +1079,13 @@ label > .emoji-field .emoji-btn { width: 100%; }
 .hdot.on { background: var(--life-c); border-color: var(--life-c); }
 .hdot.td { outline: 1.5px solid var(--amber); outline-offset: 1px; }
 .hstreak { font-size: 12px; font-weight: 800; color: var(--amber); margin-left: 4px; }
+/* Marks a habit the active challenge already owns, in the Habits app where the
+   row is still listed so you can manage it. */
+.hchip {
+  font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--primary); border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
+  border-radius: 6px; padding: 1px 5px; margin-left: 6px; vertical-align: 1px; white-space: nowrap;
+}
 .starter-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .starter-chip {
   border: 1px dashed var(--line); background: var(--bg-soft); color: var(--text);

@@ -127,13 +127,25 @@
   function chWaterGoal() { var c = activeCh(); var w = c && Number(c.water); return w > 0 ? w : (CFG.WATER_GOAL_ML || 4000); }
   function chRules() { var c = activeCh(); return (c && c.rules) || []; }
   function chHasWater() { return chRules().some(function (r) { return r.t === 'water'; }); }
+  // Habits the active challenge already shows as its own rows. Today must not
+  // ALSO list them under "Extra": same habit, same d.extra[id] key, two tiles.
+  function chHabitIds() {
+    var m = {};
+    chRules().forEach(function (r) { if (r.t === 'habit' && r.id) m[r.id] = true; });
+    return m;
+  }
   function chDay() { return dayNumber(chStart(), todayStr()); }
   // Human label/emoji/sub for any rule (drives Today rows + Stats bars).
   function ruleView(rule) {
     if (rule.t === 'water') return { emoji: '💧', title: 'Drink ' + litres(chWaterGoal()) + ' L of water', sub: 'Tap a glass each time you drink' };
     if (rule.t === 'task') { var t = TASK_BY_KEY[rule.key] || {}; return { emoji: t.emoji || '✅', title: t.title || rule.key, sub: t.sub || '' }; }
     if (rule.t === 'metric') { var m = CH_METRICS[rule.key] || { label: rule.key, emoji: '📊' }; return { emoji: m.emoji, title: rule.label || (rule.min + ' ' + m.label), sub: 'Logged in the ' + (m.app || rule.key) + ' app', app: m.app, metric: true }; }
-    if (rule.t === 'habit') { var h = ((state.profile && state.profile.customTasks) || []).filter(function (x) { return x.id === rule.id; })[0]; return { emoji: '🔗', title: (h && h.name) || 'Habit', sub: 'Custom habit' }; }
+    if (rule.t === 'habit') {
+      var h = ((state.profile && state.profile.customTasks) || []).filter(function (x) { return x.id === rule.id; })[0];
+      // Use the habit's OWN emoji — a hard-coded 🔗 made the same habit look like
+      // two unrelated rows when it also appeared in the Extra list.
+      return { emoji: (h && habitIcon(h)) || '🔗', title: (h && habitLabel(h)) || 'Habit', sub: 'Part of your challenge' };
+    }
     if (rule.t === 'manual') return { emoji: rule.emoji || '📌', title: rule.label || 'Task', sub: 'Tap when done' };
     return { emoji: '•', title: '?', sub: '' };
   }
@@ -2242,7 +2254,13 @@
   function renderExtraTasks(d, mountSel, compact) {
     var list = $(mountSel || '#extra-tasks'); if (!list) return;
     if (!d.extra) d.extra = {};
-    var habits = (state.profile && state.profile.customTasks) || [];
+    var allHabits = (state.profile && state.profile.customTasks) || [];
+    // On Today (compact) drop anything the challenge already lists above, so a
+    // habit used as a challenge rule isn't shown twice writing to one key. The
+    // Habits app keeps showing everything — it's where you manage them — and
+    // tags the ones the challenge owns.
+    var inCh = chHabitIds();
+    var habits = compact ? allHabits.filter(function (h) { return !inCh[h.id]; }) : allHabits;
     list.innerHTML = '';
 
     if (habits.length && !compact) {
@@ -2277,7 +2295,8 @@
         '<div class="check">✓</div>' +
         '<div class="t-emoji">' + em + '</div>' +
         '<div class="t-body"><div class="t-title">' + esc(title) +
-          (streak > 1 ? ' <span class="hstreak">🔥' + streak + '</span>' : '') + '</div>' +
+          (streak > 1 ? ' <span class="hstreak">🔥' + streak + '</span>' : '') +
+          (!compact && inCh[h.id] ? ' <span class="hchip">in challenge</span>' : '') + '</div>' +
         (compact ? '' : '<div class="hdots">' + dots + '</div>') + '</div>' +
         (compact ? '' : '<button class="habit-del" title="Remove">✕</button>');
       row.addEventListener('click', function (e) {
@@ -2340,7 +2359,11 @@
   function renderTodayExtras() {
     var wrap = $('#today-extra'); if (!wrap) return;
     var d = appDay();
-    var habits = (state.profile && state.profile.customTasks) || [];
+    // Same filter the list below uses, so the count can't claim rows that
+    // aren't shown (it read "0/3" above a single visible habit).
+    var inCh = chHabitIds();
+    var habits = ((state.profile && state.profile.customTasks) || [])
+      .filter(function (h) { return !inCh[h.id]; });
     var doneN = habits.filter(function (h) { return d.extra && d.extra[h.id]; }).length;
     wrap.innerHTML =
       '<div class="tx-head"><span class="eyebrow">Extra · not part of the challenge</span>' +
