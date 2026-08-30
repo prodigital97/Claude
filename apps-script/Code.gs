@@ -1469,7 +1469,15 @@ function handleSaveDay(body) {
     biz: JSON.stringify(day.biz || {}),
     metrics: JSON.stringify(day.metrics || {})
   };
-  record.completed = isDayComplete(record);
+  // Honour the client's own verdict when it sends one. isDayComplete is the
+  // hard-coded original 75 Hard predicate (all 7 tasks + 4 L), which cannot
+  // score any other challenge: it ignores noCig (an `extra` flag it never
+  // reads), assumes a 4 L water goal, and knows nothing about habit, manual or
+  // metric rules or a pass-threshold. Being the ONLY writer of this column, it
+  // was silently re-scoring every saved day — including days from a finished
+  // run under a different rule set — against a challenge that may never have
+  // applied. Older clients that omit the field still fall back to it.
+  record.completed = (day.completed != null) ? !!day.completed : isDayComplete(record);
   record.updatedAt = new Date().toISOString();
 
   var rowValues = LOG_HEADERS.map(function (h) { return record[h]; });

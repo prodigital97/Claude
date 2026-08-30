@@ -2344,9 +2344,33 @@
     var btn = $('#habit-emoji-btn'); if (btn) btn.textContent = '📌';
     saveHabits(habits);
   }
+  // Deleting a habit is destructive in a way that isn't obvious: XP is DERIVED
+  // from the current habit list (dayXp walks customTasks), so removing one
+  // retroactively un-scores every past day it was ticked — total XP drops and
+  // the level can fall, silently. The d.extra ticks survive, but re-adding the
+  // habit mints a fresh id, so nothing reconnects to them. If the habit is also
+  // a challenge rule, deleting it leaves a rule pointing at nothing: a row that
+  // still ticks and still counts toward the day, but scores no XP and can't be
+  // named. So: warn, and take the orphaned rule with it in the same write.
   function removeHabit(id) {
-    var habits = (state.profile.customTasks || []).filter(function (h) { return h.id !== id; });
-    saveHabits(habits);
+    var h = ((state.profile && state.profile.customTasks) || []).filter(function (x) { return x.id === id; })[0];
+    var name = (h && habitLabel(h)) || 'this habit';
+    var inCh = chHabitIds()[id];
+    var msg = 'Remove ' + name + '?\n\nIts past ticks stay in your history, but they stop earning XP — your total will drop.';
+    if (inCh) msg += '\n\nIt is also a rule in your current challenge, so it will be removed from the challenge too.';
+    if (!confirm(msg)) return;
+    var habits = (state.profile.customTasks || []).filter(function (x) { return x.id !== id; });
+    var profile = Object.assign({}, state.profile, { customTasks: habits });
+    if (inCh) {
+      var ch = Object.assign({}, activeCh());
+      ch.rules = (ch.rules || []).filter(function (r) { return !(r.t === 'habit' && r.id === id); });
+      profile.challenge = ch;
+      state._ch = ch;
+    }
+    commitProfile(profile);
+    if (inCh) syncChallenge();
+    renderExtraTasks(appDay());
+    if (!$('#view-today').classList.contains('hidden')) { renderTodayExtras(); renderToday(); }
   }
   function saveHabits(habits) {
     var profile = Object.assign({}, state.profile, { customTasks: habits });
@@ -3676,7 +3700,12 @@
   }
   function saveDayEditor() {
     var d = state.editDay;
-    d.completed = isComplete(d);
+    // goalMet, not isComplete: isComplete is chAllMet — ALL rules of whatever
+    // challenge is active NOW, with no start-date guard and no pass-threshold.
+    // Opening a day from a finished run and saving it re-scored that day under
+    // the new challenge's rules. goalMet keeps the stored verdict for days
+    // before the current run began, exactly as every other save path does.
+    d.completed = goalMet(d);
     api('saveDay', { day: d }).then(function () {
       var i = state.logs.findIndex(function (l) { return l.date === d.date; });
       var copy = Object.assign({}, d);
@@ -8644,7 +8673,12 @@
       if (!moneyAddKey) moneyAddKey = 'mo_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
       var t = { date: $('#mo-date').value || today, amount: amt, type: $('#mo-type').value, categoryId: $('#mo-cat').value, accountId: $('#mo-acct').value, merchant: $('#mo-merch').value.trim(), note: $('#mo-note').value.trim(), source: 'manual', clientId: moneyAddKey };
       var ab = $('#mo-add-btn'); ab.disabled = true; ab.textContent = 'Saving…';
-      api('moneyAddTxn', { transaction: t }).then(function (d) {
+      // api() retries a timed-out idempotent call up to 5 times at 45s each —
+      // nearly four minutes during which the button just said "Saving…" and the
+      // user had no way to tell a slow save from a hung one. The fasting flow
+      // already threads this callback; the money form simply never passed it.
+      var onRetry = function (n, total) { ab.textContent = 'Slow — retry ' + n + '/' + total + '…'; };
+      api('moneyAddTxn', { transaction: t }, onRetry).then(function (d) {
         state.money.status = d.status || state.money.status;
         toast(d.duplicate ? 'Already saved ✓' : 'Added ✓');
         moneyAddKey = '';
