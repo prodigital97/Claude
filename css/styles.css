@@ -1611,3 +1611,17 @@ label > .emoji-field .emoji-btn { width: 100%; }
 .gut-nogo-btn { display: block; width: 100%; margin-top: 10px; padding: 10px; border-radius: 12px;
   border: 1px solid var(--line); background: var(--bg-soft); color: var(--muted); font-size: 13px; font-weight: 700; cursor: pointer; }
 .gut-nogo-btn.on { border-color: #5b6472; background: color-mix(in srgb, #5b6472 30%, var(--card)); color: var(--text); }
+
+/* ---------- Intake (cigarettes & alcohol) ---------- */
+.in-head { display: flex; align-items: center; gap: 12px; }
+.in-emoji { font-size: 26px; line-height: 1; }
+.in-title { flex: 1; min-width: 0; }
+.in-title b { font-size: 15px; }
+.in-val { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
+/* A logged zero is the win state here, so it reads green rather than neutral. */
+.in-val.zero { color: var(--green); }
+.in-quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.in-quick .btn { flex: 1 1 auto; min-width: 74px; }
+.in-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.in-actions .btn.block { flex: 1; margin: 0; }
+.in-run { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); }

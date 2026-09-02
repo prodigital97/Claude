@@ -1105,6 +1105,7 @@
     if (name === 'manifest') renderManifest();
     if (name === 'challenges') renderChallenges();
     if (name === 'meds') renderMeds();
+    if (name === 'intake') renderIntake();
     if (name === 'money') renderMoney();
     if (name === 'subs') renderSubs();
     if (name === 'savings') renderSavings();
@@ -5732,6 +5733,7 @@
     { id: 'body',      name: 'Body',      icon: '⚖️', pillar: 'body', open: function () { switchView('body'); } },
     { id: 'gym',       name: 'Gym Log',   icon: '🏋️', pillar: 'body', open: function () { switchView('gym'); } },
     { id: 'meds',      name: 'Meds',      icon: '💊', pillar: 'body', open: function () { switchView('meds'); } },
+    { id: 'intake',    name: 'Intake',    icon: '🍷', pillar: 'body', open: function () { switchView('intake'); } },
     { id: 'calc',      name: 'Calc',      icon: '🧮', pillar: 'body', open: function () { switchView('calc'); } },
     { id: 'journal',   name: 'Journal',   icon: '📓', pillar: 'mind', open: function () { switchView('journal'); } },
     { id: 'reading',   name: 'Reading',   icon: '📖', pillar: 'mind', open: function () { switchView('reading'); } },
@@ -8437,6 +8439,191 @@
     commitProfile(p, function () { toast('Saved ✓'); if (cb) cb(); });
   }
   function truthy(v) { return v === true || v === 1 || String(v).toLowerCase() === 'true'; }
+
+  /* ================= Intake — cigarettes & alcohol =================
+     Counted, not judged. 75 Hard treated these as pass/fail flags; once the
+     challenge ends you still want the number, so this tracks HOW MUCH rather
+     than whether you stayed clean.
+
+     The value lives at d.metrics.cigs / d.metrics.drinks, and PRESENCE is the
+     record: undefined means "not logged", 0 means "logged, none today". That
+     distinction is the whole point — a tracker you use occasionally is full of
+     gaps, and a gap must never be silently counted as a clean day. Alcohol is
+     stored in standard units so a beer and a large peg are comparable. */
+  var DRINK_SERVINGS = [
+    { id: 'beer',  emoji: '🍺', label: 'Beer',      sub: '330 ml · 5%',  u: 1.3 },
+    { id: 'pint',  emoji: '🍻', label: 'Pint',      sub: '500 ml · 5%',  u: 2 },
+    { id: 'wine',  emoji: '🍷', label: 'Wine',      sub: '150 ml · 12%', u: 1.4 },
+    { id: 'peg',   emoji: '🥃', label: 'Peg',       sub: '30 ml · 40%',  u: 1 },
+    { id: 'lpeg',  emoji: '🥃', label: 'Large peg', sub: '60 ml · 40%',  u: 1.9 },
+    { id: 'cock',  emoji: '🍸', label: 'Cocktail',  sub: '~2 units',     u: 2 }
+  ];
+  var INTAKE_KINDS = [
+    { key: 'cigs',   emoji: '🚬', label: 'Cigarettes', noun: 'cigarette', unit: '',   dec: 0,
+      color: '#94a3b8', clean: 'smoke-free',   quick: [1, 2, 5] },
+    { key: 'drinks', emoji: '🍷', label: 'Alcohol',    noun: 'unit',      unit: ' u', dec: 1,
+      color: '#c084fc', clean: 'alcohol-free', quick: null }
+  ];
+  function intakeKind(k) { return INTAKE_KINDS.filter(function (x) { return x.key === k; })[0]; }
+  // null = never logged. Number (incl. 0) = an answer the user actually gave.
+  function intakeCount(l, kind) {
+    if (!l || !l.metrics) return null;
+    var v = l.metrics[kind.key];
+    return (v === undefined || v === null || v === '') ? null : (Number(v) || 0);
+  }
+  function intakeSet(d, kind, v) {
+    var m = metricsOf(d);
+    if (v == null) delete m[kind.key];
+    else m[kind.key] = Math.max(0, Math.round(Number(v) * 10) / 10);
+  }
+  function intakeNum(v, kind) {
+    if (v == null) return '—';
+    return kind.dec ? String(Number(v).toFixed(1)).replace(/\.0$/, '') : String(Math.round(v));
+  }
+  function intakeFmt(v, kind) {
+    return v == null ? '—' : intakeNum(v, kind) + kind.unit;
+  }
+  // Days back to the last day with a recorded non-zero. Gaps don't break the
+  // run — an occasional tracker is mostly gaps — but they're counted and shown,
+  // so the number never pretends to know more than it does.
+  function intakeSince(kind) {
+    var d = todayStr(), n = 0, unknown = 0, known = 0;
+    for (var i = 0; i < 730; i++) {
+      var v = intakeCount(logFor(d), kind);
+      if (v > 0) break;
+      if (v == null) unknown++; else known++;
+      n++; d = addDays(d, -1);
+    }
+    // `known` gates the whole thing: with nothing ever logged the loop just
+    // runs to its 730-day ceiling, and reporting that as "730 days smoke-free"
+    // would be a number the app invented rather than one you earned.
+    return { days: n, unknown: unknown, known: known };
+  }
+  // Longest clean run on record. Days with no row are skipped rather than
+  // counted, so this understates rather than overstates.
+  function intakeBest(kind) {
+    var run = 0, best = 0;
+    (state.logs || []).forEach(function (l) {
+      if (intakeCount(l, kind) > 0) { if (run > best) best = run; run = 0; }
+      else if (intakeCount(l, kind) === 0) run++;
+    });
+    return Math.max(best, run);
+  }
+  function renderIntake() {
+    var box = $('#intake-app'); if (!box) return;
+    var rs = rangeState('intake');
+    if (rs.mode !== 'day') { renderIntakeRange(box, rs); return; }
+    var day = appDay();
+
+    box.innerHTML = rangeBarHtml('intake') + dayBarHtml() +
+      INTAKE_KINDS.map(function (k) {
+        var v = intakeCount(day, k);
+        var since = intakeSince(k), best = intakeBest(k);
+        var quick = k.quick
+          ? k.quick.map(function (n) { return '<button class="btn fr-mini" data-iadd="' + k.key + ':' + n + '">+' + n + '</button>'; }).join('')
+          : DRINK_SERVINGS.map(function (s) {
+              return '<button class="btn fr-mini" data-iadd="' + k.key + ':' + s.u + '" title="' + esc(s.label) + ' · ' + esc(s.sub) + '">' + s.emoji + ' ' + esc(s.label) + '</button>';
+            }).join('');
+        return '<div class="card">' +
+          '<div class="in-head"><span class="in-emoji">' + k.emoji + '</span>' +
+            '<div class="in-title"><b>' + k.label + '</b>' +
+              '<div class="muted tiny">' + (v == null ? 'Not logged yet today' :
+                v === 0 ? 'None today ✓' : intakeNum(v, k) + ' ' + k.noun + (v === 1 ? '' : 's')) + '</div></div>' +
+            '<span class="in-val mono' + (v === 0 ? ' zero' : '') + '">' + intakeFmt(v, k) + '</span>' +
+          '</div>' +
+          '<div class="in-quick">' + quick + '</div>' +
+          '<div class="in-actions">' +
+            '<button class="btn block" data-izero="' + k.key + '">✓ None today</button>' +
+            (v != null ? '<button class="btn fr-mini" data-idec="' + k.key + '">−</button>' +
+                         '<button class="btn fr-mini" data-iclear="' + k.key + '">Clear</button>' : '') +
+          '</div>' +
+          '<div class="muted tiny in-run">' +
+            (!since.known
+              ? 'No clean day recorded yet — tap “None today” to start a run.'
+              : since.days > 0
+                ? '🔥 ' + since.days + ' day' + (since.days === 1 ? '' : 's') + ' ' + k.clean +
+                  (best > since.days ? ' · best ' + best : (since.days >= best && best > 0 ? ' · your best yet 🏆' : '')) +
+                  (since.unknown ? ' <span class="muted">(' + since.unknown + ' of those not logged)</span>' : '')
+                : 'Logged today — the run starts again tomorrow.') +
+          '</div>' +
+        '</div>';
+      }).join('') +
+      '<div class="card"><p class="muted tiny" style="margin:0">A blank day means <b>not logged</b>, not zero. ' +
+        'Tap “None today” to record a clean day — that’s what builds the run.</p></div>';
+
+    bindRangeBar(box, 'intake', renderIntake);
+    bindDayBar(box, renderIntake);
+
+    function bump(kind, delta, absolute) {
+      var d = appDay();
+      var cur = intakeCount(d, kind);
+      var next = absolute ? delta : Math.max(0, (cur || 0) + delta);
+      intakeSet(d, kind, next);
+      queueSaveDay(d);
+      renderIntake();
+    }
+    box.querySelectorAll('[data-iadd]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var p = b.getAttribute('data-iadd').split(':');
+        bump(intakeKind(p[0]), Number(p[1]), false);
+      });
+    });
+    box.querySelectorAll('[data-izero]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var k = intakeKind(b.getAttribute('data-izero'));
+        var pv = intakeSince(k);
+        bump(k, 0, true);
+        toast(pv.known && pv.days > 0 ? (pv.days + 1) + ' days ' + k.clean + ' 🔥' : 'Logged — clean day ✓');
+      });
+    });
+    box.querySelectorAll('[data-idec]').forEach(function (b) {
+      b.addEventListener('click', function () { bump(intakeKind(b.getAttribute('data-idec')), -1, false); });
+    });
+    box.querySelectorAll('[data-iclear]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var d = appDay();
+        intakeSet(d, intakeKind(b.getAttribute('data-iclear')), null);
+        queueSaveDay(d); renderIntake();
+      });
+    });
+  }
+  // The period before this one, same length — so "vs last week" is honest.
+  function intakePrevSpan(r) {
+    var n = rangeDatesList(r.from, r.to).length;
+    return { from: addDays(r.from, -n), to: addDays(r.from, -1) };
+  }
+  function renderIntakeRange(box, rs) {
+    var r = rangeSpan(rs.mode, rs.anchor), pr = intakePrevSpan(r);
+    box.innerHTML = rangeBarHtml('intake') +
+      INTAKE_KINDS.map(function (k) {
+        var get = function (l) { return intakeCount(l, k); };
+        var a = rangeAgg(r.from, r.to, get), b = rangeAgg(pr.from, pr.to, get);
+        var cleanDays = a.logged - a.hits;
+        // Compare per LOGGED day, not per calendar day — otherwise a week you
+        // simply didn't open the app looks like a week you drank nothing.
+        var now = a.logged ? a.sum / a.logged : 0, was = b.logged ? b.sum / b.logged : 0;
+        var arrow = !b.logged ? '' : now < was ? '↓' : now > was ? '↑' : '→';
+        var deltaTxt = !b.logged ? 'no data last period'
+          : (arrow + ' ' + intakeFmt(Math.abs(now - was), k) + '/day vs last period');
+        return '<div class="card">' +
+          '<div class="in-head"><span class="in-emoji">' + k.emoji + '</span>' +
+            '<div class="in-title"><b>' + k.label + '</b>' +
+              '<div class="muted tiny">' + deltaTxt + '</div></div>' +
+            '<span class="in-val mono">' + intakeFmt(a.sum, k) + '</span></div>' +
+          '<div class="gym-stats" style="margin-top:10px">' +
+            '<div class="js-stat"><b>' + cleanDays + '</b><span>clean days</span></div>' +
+            '<div class="js-stat"><b>' + a.hits + '</b><span>days used</span></div>' +
+            '<div class="js-stat"><b>' + intakeFmt(now, k) + '</b><span>per logged day</span></div>' +
+            '<div class="js-stat"><b>' + a.logged + '/' + a.days + '</b><span>days logged</span></div>' +
+          '</div>' +
+          (a.logged < a.days ? '<p class="muted tiny" style="margin:8px 0 0">' + (a.days - a.logged) +
+            ' day' + (a.days - a.logged === 1 ? '' : 's') + ' not logged — not counted either way.</p>' : '') +
+          '<div style="margin-top:10px">' + rangeBarChart(a.perDay, k.color, k.unit || '') + '</div>' +
+        '</div>';
+      }).join('');
+    bindRangeBar(box, 'intake', renderIntake);
+  }
+
 
   /* ================= Money Manager (full) ================= */
   var GUARD_LABEL = { ok: 'On track', warn: 'Slow down', critical: 'Critical', stop: 'Over budget', none: 'No budget set' };
