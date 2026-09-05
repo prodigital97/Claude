@@ -1625,3 +1625,13 @@ label > .emoji-field .emoji-btn { width: 100%; }
 .in-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 .in-actions .btn.block { flex: 1; margin: 0; }
 .in-run { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); }
+
+/* Editing a running challenge: a retired rule stays listed (its history still
+   reads) but recedes, and days outside a rule's window show a hollow dot
+   rather than a miss. */
+.ch-rule { display: flex; align-items: center; gap: 8px; }
+.ch-rule-name { flex: 1; min-width: 0; }
+.ch-rule.retired { opacity: .55; }
+.ch-rule.retired .ch-rule-name { text-decoration: line-through; text-decoration-thickness: 1px; }
+.ch-rule-x { flex: none; font-size: 12px; padding: 3px 6px; border-radius: 7px; border: 1px solid var(--line); background: transparent; color: var(--muted); }
+.hdot.na { opacity: .25; border-style: dashed; }

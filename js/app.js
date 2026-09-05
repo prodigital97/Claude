@@ -125,13 +125,30 @@
   }
   function chStart() { var c = activeCh(); return (c && c.startDate) || (state.user ? state.user.startDate : todayStr()); }
   function chWaterGoal() { var c = activeCh(); var w = c && Number(c.water); return w > 0 ? w : (CFG.WATER_GOAL_ML || 4000); }
+  // ALL rule segments, live or retired — what the editor and history labels need.
   function chRules() { var c = activeCh(); return (c && c.rules) || []; }
-  function chHasWater() { return chRules().some(function (r) { return r.t === 'water'; }); }
+  /* Rules in force ON A GIVEN DAY.
+     Every rule may carry {on: 'YYYY-MM-DD' inclusive, off: 'YYYY-MM-DD' exclusive}.
+     Missing `on` means "since the challenge began"; missing `off` means "still
+     live". Without this, adding a rule today re-scored yesterday, day 1, the
+     streak, the calendar and XP in the same repaint — the whole run is derived
+     live, and only days BEFORE the current run's start were ever frozen.
+     Editing therefore stamps dates instead of splicing the array: add pushes a
+     segment starting today, remove sets `off` to today and keeps the object so
+     past ticks stay readable, and a rename mutates the label in place. */
+  function rulesFor(date) {
+    return chRules().filter(function (r) {
+      return (!r.on || date >= r.on) && (!r.off || date < r.off);
+    });
+  }
+  // The rules that apply to a day object (falls back to today for odd callers).
+  function rulesOf(d) { return rulesFor((d && d.date) || todayStr()); }
+  function chHasWater() { return rulesFor(todayStr()).some(function (r) { return r.t === 'water'; }); }
   // Habits the active challenge already shows as its own rows. Today must not
   // ALSO list them under "Extra": same habit, same d.extra[id] key, two tiles.
   function chHabitIds() {
     var m = {};
-    chRules().forEach(function (r) { if (r.t === 'habit' && r.id) m[r.id] = true; });
+    rulesFor(todayStr()).forEach(function (r) { if (r.t === 'habit' && r.id) m[r.id] = true; });
     return m;
   }
   function chDay() { return dayNumber(chStart(), todayStr()); }
@@ -176,16 +193,21 @@
     else if (rule.t === 'habit') { if (!d.extra) d.extra = {}; d.extra[rule.id] = !d.extra[rule.id]; }
     else if (rule.t === 'manual') { if (!d.extra) d.extra = {}; d.extra['ch_' + rule.id] = !d.extra['ch_' + rule.id]; }
   }
-  function chCount(d) { return chRules().filter(function (r) { return ruleMet(d, r); }).length; }
-  function chAllMet(d) { return chRules().every(function (r) { return ruleMet(d, r); }); }
-  function chNeeded() { var c = activeCh(); return c.pass === 'all' ? chRules().length : Math.max(1, Math.ceil(Number(c.pass) / 100 * chRules().length)); }
-  function chGoalLive(d) { var c = activeCh(); return c.pass === 'all' ? chAllMet(d) : chCount(d) >= chNeeded(); }
+  function chCount(d) { return rulesOf(d).filter(function (r) { return ruleMet(d, r); }).length; }
+  function chAllMet(d) { return rulesOf(d).every(function (r) { return ruleMet(d, r); }); }
+  // Threshold counts scale to the rules that were live THAT day, so adding an
+  // 8th rule today can't retroactively turn yesterday's 7/7 into 7/8.
+  function chNeeded(d) {
+    var c = activeCh(), n = (d ? rulesOf(d) : rulesFor(todayStr())).length;
+    return c.pass === 'all' ? n : Math.max(1, Math.ceil(Number(c.pass) / 100 * n));
+  }
+  function chGoalLive(d) { var c = activeCh(); return c.pass === 'all' ? chAllMet(d) : chCount(d) >= chNeeded(d); }
   // Keep the legacy globals in sync so the ~20 existing call sites just work.
   function syncChallenge() {
     LEN = Number(activeCh().days) || 0;
     WATER_GOAL = chWaterGoal();
     GLASS_COUNT = Math.max(1, Math.round(WATER_GOAL / GLASS));
-    TOTAL_ITEMS = chRules().length || 1;
+    TOTAL_ITEMS = rulesFor(todayStr()).length || 1;
   }
   // Set/replace the active challenge and persist to the profile.
   function setChallenge(def, cb) {
@@ -1159,7 +1181,7 @@
     // Consume the flag: the pop plays on the very next render and never again,
     // so a later repaint (a save landing, a sync) doesn't replay it.
     var popKey = justTicked; justTicked = '';
-    chRules().forEach(function (rule) {
+    rulesOf(d).forEach(function (rule) {
       if (rule.t === 'water') { list.appendChild(renderWaterCompact(d)); return; }
       var v = ruleView(rule);
       var done = ruleChecked(d, rule);
@@ -4048,6 +4070,17 @@
     var def = chInstantiate(chPreset(mode === 'soft' ? 'soft75' : 'hard75'), chStart());
     def.water = 4000;
     if (mode === 'soft') def.pass = Math.min(100, Math.max(20, target));
+    // Hard <-> Soft keeps the ORIGINAL start date, so goalMet's pre-start guard
+    // never fires and the swapped rule set would re-score the whole run in one
+    // repaint. Stamp the incoming rules as starting today: the days already
+    // banked keep the rules they were scored under, and the switch applies from
+    // here on — which is what "switch mode" should mean anyway.
+    def.rules = (def.rules || []).map(function (r) { return Object.assign({}, r, { on: todayStr() }); });
+    // Carry the outgoing rules across as retired segments so past days still
+    // resolve to the rules that governed them.
+    var prev = chRules().filter(function (r) { return !r.off || todayStr() < r.off; })
+      .map(function (r) { return Object.assign({}, r, { off: todayStr() }); });
+    def.rules = prev.concat(def.rules);
     setChallenge(def, function () {
       toast(mode === 'soft' ? 'Switched to 75 Soft (' + chNeeded() + '/' + TOTAL_ITEMS + '/day) ✓' : 'Switched to 75 Hard ✓');
       renderAll();
@@ -8078,17 +8111,31 @@
     var complete = LEN && day > LEN;
     var pctToday = pctOf(chCount(state.today || {}), TOTAL_ITEMS);
     // Active-run card
-    var rulesDots = chRules().map(function (rule) {
+    // Live rules first, then any retired ones (kept so their history is still
+    // readable and labelled rather than vanishing from the run).
+    var isBase = c.id === 'dailyLife';   // the everyday baseline, not a challenge
+    var liveRules = rulesFor(todayStr());
+    var rulesDots = chRules().map(function (rule, ri) {
       var v = ruleView(rule);
+      var retired = !!(rule.off && todayStr() >= rule.off);
       var dots = '';
       for (var i = 6; i >= 0; i--) {
         var dte = addDays(todayStr(), -i);
         var l = dte === todayStr() ? state.today : logFor(dte);
-        dots += '<i class="hdot' + (l && ruleMet(l, rule) ? ' on' : '') + (dte === todayStr() ? ' td' : '') + '"></i>';
+        var applied = (!rule.on || dte >= rule.on) && (!rule.off || dte < rule.off);
+        dots += '<i class="hdot' + (applied && l && ruleMet(l, rule) ? ' on' : '') +
+          (applied ? '' : ' na') + (dte === todayStr() ? ' td' : '') + '"></i>';
       }
-      return '<div class="ch-rule"><span class="ch-rule-name">' + v.emoji + ' ' + esc(v.title) + '</span><div class="hdots">' + dots + '</div></div>';
+      return '<div class="ch-rule' + (retired ? ' retired' : '') + '">' +
+        '<span class="ch-rule-name">' + v.emoji + ' ' + esc(v.title) +
+          (retired ? ' <span class="hchip">removed</span>'
+                   : (rule.on && rule.on > c.startDate ? ' <span class="hchip">from ' + shortDate(rule.on) + '</span>' : '')) +
+        '</span>' +
+        '<div class="hdots">' + dots + '</div>' +
+        (isBase ? '' : '<button class="icon-mini ch-rule-x" data-chruleoff="' + ri + '" title="' +
+          (retired ? 'Bring back' : 'Remove from challenge') + '">' + (retired ? '↺' : '✕') + '</button>') +
+      '</div>';
     }).join('');
-    var isBase = c.id === 'dailyLife';   // the everyday baseline, not a challenge
     var html =
       '<div class="card ch-active">' +
         '<div class="ch-active-top"><div><span class="eyebrow">' + (isBase ? 'Baseline' : 'Active challenge') + '</span>' +
@@ -8099,6 +8146,7 @@
           ' · ' + adh.hit + '/' + adh.days + ' days (' + adh.pct + '%)' +
           ' · ' + (c.reset === 'hard' ? 'resets on miss' : 'no reset') + '</div>' +
         '<div class="ch-rules">' + rulesDots + '</div>' +
+        (isBase ? '' : '<button class="gx-addset" id="ch-rule-add" type="button">＋ Add an activity</button>') +
         (complete ? '<div class="ch-done">🏆 Challenge complete — ' + adh.pct + '% adherence. Legend.</div>' : '') +
         (isBase
           ? '<div class="muted tiny" style="margin-top:12px">You’re on the everyday baseline — no streak to break. Pick a difficulty below when you’re ready to level up.</div>'
@@ -8153,6 +8201,52 @@
     $('#ch-custom-new').addEventListener('click', function () { chStartBuilder(); });
     var customCard = $('#ch-custom-card');
     if (customCard) customCard.addEventListener('click', function () { chStartBuilder(); });
+    /* ---- Editing a RUNNING challenge ----
+       Every edit stamps a date rather than splicing the array, so the days
+       already banked keep the rules they were actually scored under. */
+    function chCommitRules(rules, msg) {
+      var ch = Object.assign({}, activeCh(), { rules: rules });
+      var profile = Object.assign({}, state.profile, { challenge: ch });
+      state._ch = ch;
+      commitProfile(profile);
+      syncChallenge();
+      if (msg) toast(msg);
+      renderAll(); renderChallenges();
+    }
+    box.querySelectorAll('[data-chruleoff]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var i = Number(b.getAttribute('data-chruleoff'));
+        var rules = chRules().map(function (r) { return Object.assign({}, r); });
+        var r = rules[i]; if (!r) return;
+        var v = ruleView(r);
+        if (r.off && todayStr() >= r.off) {
+          // Bring it back as a NEW segment from today; the retired one keeps
+          // its own window so the days it governed still read correctly.
+          delete r.off; r.on = todayStr();
+          chCommitRules(rules, v.title + ' is back — counts from today');
+          return;
+        }
+        if (!confirm('Remove “' + v.title + '” from this challenge?\n\nDays you have already completed keep counting it — it just stops applying from today.')) return;
+        r.off = todayStr();
+        chCommitRules(rules, v.title + ' removed from today');
+      });
+    });
+    var addRuleBtn = $('#ch-rule-add');
+    if (addRuleBtn) addRuleBtn.addEventListener('click', function () {
+      var label = prompt('What do you want to add to this challenge?');
+      if (label == null) return;
+      label = label.trim().slice(0, 40); if (!label) return;
+      var rules = chRules().map(function (r) { return Object.assign({}, r); });
+      rules.push({
+        t: 'manual',
+        id: 'r_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+        label: label,
+        emoji: habitEmoji(label) || '📌',
+        on: todayStr()     // counts from today; yesterday is untouched
+      });
+      chCommitRules(rules, label + ' added — counts from today');
+    });
+
     var restartBtn = $('#ch-restart2');
     if (restartBtn) restartBtn.addEventListener('click', function () {
       if (!confirm('Restart this challenge from Day 1? The current run is archived.')) return;
