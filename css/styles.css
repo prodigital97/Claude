@@ -1635,3 +1635,6 @@ label > .emoji-field .emoji-btn { width: 100%; }
 .ch-rule.retired .ch-rule-name { text-decoration: line-through; text-decoration-thickness: 1px; }
 .ch-rule-x { flex: none; font-size: 12px; padding: 3px 6px; border-radius: 7px; border: 1px solid var(--line); background: transparent; color: var(--muted); }
 .hdot.na { opacity: .25; border-style: dashed; }
+
+/* Secondary action under "End fast" — ending a forgotten fast at its real time. */
+.block-link { display: block; width: 100%; margin-top: 8px; text-align: center; font-size: 13px; padding: 6px; }

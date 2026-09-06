@@ -599,7 +599,16 @@
       fa.push(nf); saveDb(d); return { fast: nf };
     }
     if (action === 'endFast') {
-      var act = activeFast(); if (act) { act.endAt = new Date().toISOString(); saveDb(d); }
+      var act = activeFast();
+      if (act) {
+        // Mirror the backend: honour an explicit endAt inside (start, now].
+        var endAt = new Date().toISOString();
+        if (p.endAt) {
+          var w = new Date(p.endAt).getTime();
+          if (!isNaN(w) && w > new Date(act.startAt).getTime() && w <= Date.now()) endAt = new Date(w).toISOString();
+        }
+        act.endAt = endAt; saveDb(d);
+      }
       return { fast: act || null };
     }
     if (action === 'logPastFast') {
@@ -4581,14 +4590,47 @@
             '<div class="row-2"><button id="fast-save-start" class="btn primary">Save</button>' +
             '<button id="fast-cancel-start" class="btn">Cancel</button></div></div>' +
           '<button id="fast-end" class="btn danger block">End fast</button>' +
+          '<button id="fast-end-at" class="link-btn block-link">End at a different time…</button>' +
+          '<div id="fast-endat-box" class="fast-edit-box hidden">' +
+            '<label>Ended at<input type="datetime-local" id="fast-end-edit"></label>' +
+            '<p class="muted tiny" id="fast-endat-note" style="margin:2px 0 8px"></p>' +
+            '<div class="row-2"><button id="fast-save-end" class="btn primary">End fast</button>' +
+            '<button id="fast-cancel-end" class="btn">Cancel</button></div></div>' +
         '</div>' +
         fastCalHtml();   // keep the dates/history box visible during a fast too
-      $('#fast-end').addEventListener('click', endFast);
+      // Wrapped, not passed directly: endFast now takes an optional end time and
+      // a bare listener would hand it the click Event.
+      $('#fast-end').addEventListener('click', function () { endFast(); });
       $('#fast-edit-start').addEventListener('click', function () {
         $('#fast-start-edit').value = toLocalInput(f.startAt);
         $('#fast-edit-box').classList.toggle('hidden');
       });
       $('#fast-cancel-start').addEventListener('click', function () { $('#fast-edit-box').classList.add('hidden'); });
+      // Forgot to close a fast? End it at the hour it actually finished rather
+      // than logging however long the app sat open before you noticed.
+      function endAtNote() {
+        var v = $('#fast-end-edit').value;
+        var el = $('#fast-endat-note'); if (!el) return;
+        if (!v) { el.textContent = ''; return; }
+        var ms = new Date(v).getTime() - new Date(f.startAt).getTime();
+        el.textContent = ms <= 0 ? 'That is before the fast started.'
+          : new Date(v).getTime() > Date.now() ? 'That is in the future.'
+          : 'Logs a ' + durLabel(ms) + ' fast (' + (milestoneInfo(ms / 3600000).reached || 0) + 'h mark).';
+      }
+      $('#fast-end-at').addEventListener('click', function () {
+        if (!$('#fast-end-edit').value) $('#fast-end-edit').value = toLocalInput(new Date().toISOString());
+        endAtNote();
+        $('#fast-endat-box').classList.toggle('hidden');
+      });
+      $('#fast-end-edit').addEventListener('input', endAtNote);
+      $('#fast-cancel-end').addEventListener('click', function () { $('#fast-endat-box').classList.add('hidden'); });
+      $('#fast-save-end').addEventListener('click', function () {
+        var v = $('#fast-end-edit').value; if (!v) return;
+        var when = new Date(v).getTime();
+        if (when > Date.now()) { toast('End time can’t be in the future'); return; }
+        if (when <= new Date(f.startAt).getTime()) { toast('End time must be after the start'); return; }
+        endFast(fromLocalInput(v));
+      });
       $('#fast-save-start').addEventListener('click', function () {
         var v = $('#fast-start-edit').value; if (!v) return;
         if (new Date(v).getTime() > Date.now()) { toast('Start time can’t be in the future'); return; }
@@ -4811,11 +4853,13 @@
       state.activeFast = data.fast; cacheActiveFast(data.fast); renderFasting(); toast('Fast started — stay strong 💪');
     }).catch(function (e) { toast('Saved locally · will sync when back online · ' + e.message); });
   }
-  function endFast() {
+  function endFast(endAtIso) {
     var f = state.activeFast; if (!f) return;
-    var elapsed = Date.now() - new Date(f.startAt).getTime();
-    if (!confirm('End your fast? You fasted ' + durLabel(elapsed) + '.')) return;
-    api('endFast', {}).then(function (data) {
+    var endMs = endAtIso ? new Date(endAtIso).getTime() : Date.now();
+    var elapsed = endMs - new Date(f.startAt).getTime();
+    if (!confirm('End your fast? You fasted ' + durLabel(elapsed) +
+      (endAtIso ? ', ending ' + clockTime(endAtIso) + ' on ' + shortDate(String(endAtIso).slice(0, 10)) : '') + '.')) return;
+    api('endFast', endAtIso ? { endAt: endAtIso } : {}).then(function (data) {
       state.activeFast = null; cacheActiveFast(null);
       var done = data.fast;
       var ms = done ? (new Date(done.endAt).getTime() - new Date(done.startAt).getTime()) : elapsed;

@@ -472,7 +472,20 @@ function handleEndFast(body) {
   var idx = colIndex(FAST_HEADERS);
   for (var i = values.length - 1; i >= 1; i--) {
     if (normalizeUsername(values[i][idx.username]) === user.username && !values[i][idx.endAt]) {
+      // Accept an explicit end time so a fast you forgot to close can be ended
+      // at the hour it actually finished, instead of being logged as however
+      // long the app happened to sit open. Clamped to the real interval: it
+      // cannot precede the start, and it cannot be in the future.
       var endAt = new Date().toISOString();
+      if (body.endAt) {
+        var want = new Date(body.endAt);
+        if (!isNaN(want.getTime())) {
+          var startMs = new Date(values[i][idx.startAt]).getTime();
+          var nowMs = Date.now();
+          var wantMs = want.getTime();
+          if (wantMs > startMs && wantMs <= nowMs) endAt = want.toISOString();
+        }
+      }
       sheet.getRange(i + 1, idx.endAt + 1).setValue(endAt);
       values[i][idx.endAt] = endAt;
       return { fast: fastFromRow(values[i], idx) };
