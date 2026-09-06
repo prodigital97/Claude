@@ -8609,23 +8609,97 @@
      distinction is the whole point — a tracker you use occasionally is full of
      gaps, and a gap must never be silently counted as a clean day. Alcohol is
      stored in standard units so a beer and a large peg are comparable. */
-  var DRINK_SERVINGS = [
-    { id: 'beer',  emoji: '🍺', label: 'Beer',      sub: '330 ml · 5%',  u: 1.3 },
-    { id: 'pint',  emoji: '🍻', label: 'Pint',      sub: '500 ml · 5%',  u: 2 },
-    { id: 'wine',  emoji: '🍷', label: 'Wine',      sub: '150 ml · 12%', u: 1.4 },
-    { id: 'peg',   emoji: '🥃', label: 'Peg',       sub: '30 ml · 40%',  u: 1 },
-    { id: 'lpeg',  emoji: '🥃', label: 'Large peg', sub: '60 ml · 40%',  u: 1.9 },
-    { id: 'cock',  emoji: '🍸', label: 'Cocktail',  sub: '~2 units',     u: 2 }
+  /* Indian pours. Spirits are sold and served by the PEG — chhota 30 ml,
+     patiala 60 ml — and beer by the 650 ml bottle, so those are the buttons.
+     ABV 42.8% is the standard strength for Indian-made spirits.
+     A 30 ml peg at 42.8% works out to ~10 g of pure alcohol, which is exactly
+     one standard drink — so a chhota peg is the natural unit to reason in. */
+  var ALC_TYPES = [
+    { id: 'whiskey', emoji: '🥃', label: 'Whiskey', abv: 42.8, spirit: true },
+    { id: 'rum',     emoji: '🍹', label: 'Rum',     abv: 42.8, spirit: true },
+    { id: 'vodka',   emoji: '🍸', label: 'Vodka',   abv: 42.8, spirit: true },
+    { id: 'gin',     emoji: '🍸', label: 'Gin',     abv: 42.8, spirit: true },
+    { id: 'brandy',  emoji: '🥃', label: 'Brandy',  abv: 42.8, spirit: true },
+    { id: 'beer',    emoji: '🍺', label: 'Beer',    abv: 5,
+      servings: [['Can 330', 330], ['Pint 500', 500], ['Bottle 650', 650]] },
+    { id: 'sbeer',   emoji: '🍻', label: 'Strong beer', abv: 8,
+      servings: [['Can 330', 330], ['Pint 500', 500], ['Bottle 650', 650]] },
+    { id: 'wine',    emoji: '🍷', label: 'Wine',    abv: 12,
+      servings: [['Glass 150', 150], ['Large 250', 250], ['Bottle 750', 750]] },
+    { id: 'cock',    emoji: '🍹', label: 'Cocktail', abv: 15,
+      servings: [['Small 150', 150], ['Regular 250', 250]] }
   ];
+  var SPIRIT_SERVINGS = [['Chhota 30', 30], ['Patiala 60', 60], ['Large 90', 90], ['Quarter 180', 180]];
+  function alcServings(t) { return t.spirit ? SPIRIT_SERVINGS : (t.servings || SPIRIT_SERVINGS); }
+  function alcType(id) { return ALC_TYPES.filter(function (t) { return t.id === id; })[0] || ALC_TYPES[0]; }
+  // Pure ethanol: ml x ABV x 0.789 g/ml. Volume alone can't be compared across
+  // drinks — 60 ml of whiskey is not 60 ml of beer — so grams is what the
+  // totals and the meter are actually built on.
+  function alcGrams(ml, abv) { return (Number(ml) || 0) * (Number(abv) || 0) / 100 * 0.789; }
+  var STD_DRINK_G = 10;               // WHO / Indian standard drink
+  function alcStd(g) { return (Number(g) || 0) / STD_DRINK_G; }
+  // Default daily reference: 2 standard drinks, the usual low-risk guidance.
+  function alcLimitStd() {
+    var c = (state.profile && state.profile.intakeCaps) || {};
+    var v = Number(c.drinksPerDay);
+    return v > 0 ? v : 2;
+  }
+  // Per-day alcohol record. `alc` is a {typeId: ml} map so the day can say WHAT
+  // was drunk, not just how much; ml and grams are derived from it so they can
+  // never drift apart. Presence still means logged — {} is a recorded zero.
+  function alcOf(l) {
+    if (!l || !l.metrics) return null;
+    var m = l.metrics;
+    if (m.alc && typeof m.alc === 'object') return m.alc;
+    if (m.alc === null || m.alc === undefined) {
+      // Legacy: the first cut stored standard units in `drinks`.
+      if (m.drinks === undefined || m.drinks === null || m.drinks === '') return null;
+      return { _legacy: Number(m.drinks) || 0 };
+    }
+    return null;
+  }
+  function alcTotals(l) {
+    var a = alcOf(l);
+    if (!a) return null;
+    var ml = 0, g = 0;
+    Object.keys(a).forEach(function (k) {
+      if (k === '_legacy') { g += (Number(a[k]) || 0) * STD_DRINK_G; return; }
+      var v = Number(a[k]) || 0;
+      ml += v; g += alcGrams(v, alcType(k).abv);
+    });
+    return { ml: ml, g: g, std: alcStd(g), map: a };
+  }
+  function alcSet(d, map) {
+    var m = metricsOf(d);
+    if (map == null) { delete m.alc; delete m.drinks; return; }
+    m.alc = map;
+    // Keep the flat mirrors so charts/aggregates and anything reading a plain
+    // number still work without knowing about the breakdown.
+    var t = alcTotals({ metrics: m });
+    m.alcMl = Math.round(t.ml);
+    m.drinks = Math.round(t.std * 10) / 10;
+  }
+  function alcAdd(d, typeId, ml) {
+    var cur = alcOf(d) || {};
+    var next = {};
+    Object.keys(cur).forEach(function (k) { if (k !== '_legacy') next[k] = cur[k]; });
+    next[typeId] = (Number(next[typeId]) || 0) + Number(ml);
+    if (next[typeId] <= 0) delete next[typeId];
+    alcSet(d, next);
+  }
   var INTAKE_KINDS = [
     { key: 'cigs',   emoji: '🚬', label: 'Cigarettes', noun: 'cigarette', unit: '',   dec: 0,
-      color: '#94a3b8', clean: 'smoke-free',   quick: [1, 2, 5] },
-    { key: 'drinks', emoji: '🍷', label: 'Alcohol',    noun: 'unit',      unit: ' u', dec: 1,
-      color: '#c084fc', clean: 'alcohol-free', quick: null }
+      color: '#94a3b8', clean: 'smoke-free',   quick: [1, 2, 5] }
   ];
+  // Alcohol is described separately (see ALC_TYPES) but shares the streak and
+  // range helpers, which key off "was anything recorded, and was it zero".
+  var ALC_KIND = { key: 'alc', emoji: '🍷', label: 'Alcohol', clean: 'alcohol-free', color: '#c084fc' };
   function intakeKind(k) { return INTAKE_KINDS.filter(function (x) { return x.key === k; })[0]; }
   // null = never logged. Number (incl. 0) = an answer the user actually gave.
+  // For alcohol the "count" is grams of pure alcohol, so the streak and range
+  // helpers below work unchanged across both kinds.
   function intakeCount(l, kind) {
+    if (kind && kind.key === 'alc') { var t = alcTotals(l); return t ? t.g : null; }
     if (!l || !l.metrics) return null;
     var v = l.metrics[kind.key];
     return (v === undefined || v === null || v === '') ? null : (Number(v) || 0);
@@ -8668,6 +8742,72 @@
     });
     return Math.max(best, run);
   }
+  var alcPickType = 'whiskey';   // last drink type tapped, remembered per session
+  // The alcohol card, built like the water tracker: a jar you fill, in ml, with
+  // the servings actually used in India. Volume alone isn't comparable across
+  // drinks, so the jar fills on PURE ALCOHOL against a daily reference while
+  // the headline still reads in ml/L — what you poured.
+  function alcCardHtml(day) {
+    var t = alcTotals(day);
+    var limitG = alcLimitStd() * STD_DRINK_G;
+    var pct = t ? Math.min(100, Math.round(t.g / limitG * 100)) : 0;
+    var over = t && t.g > limitG;
+    var type = alcType(alcPickType);
+    var poured = t && t.ml >= 1000 ? litres(t.ml) + ' L' : (t ? Math.round(t.ml) + ' ml' : '—');
+    var breakdown = t && t.map ? Object.keys(t.map).filter(function (k) { return k !== '_legacy'; }).map(function (k) {
+      var ty = alcType(k);
+      return '<span class="alc-bd">' + ty.emoji + ' ' + esc(ty.label) + ' <b>' + Math.round(t.map[k]) + ' ml</b></span>';
+    }).join('') : '';
+    return '<div class="card">' +
+      '<div class="in-head"><span class="in-emoji">🍷</span>' +
+        '<div class="in-title"><b>Alcohol</b>' +
+          '<div class="muted tiny">' + (!t ? 'Not logged yet today'
+            : t.g === 0 ? 'None today ✓'
+            : (Math.round(t.std * 10) / 10) + ' standard drink' + (Math.round(t.std * 10) / 10 === 1 ? '' : 's') +
+              ' · ' + Math.round(t.g) + ' g alcohol') + '</div></div>' +
+        '<span class="in-val mono' + (t && t.g === 0 ? ' zero' : (over ? ' over' : '')) + '">' + poured + '</span>' +
+      '</div>' +
+      '<div class="alc-body">' +
+        '<div class="alc-jar">' + jarSvgHtml(jarYFor(pct, 90), 'jar-mini alc-fill' + (over ? ' over' : ''), 'jarclip-alc') + '</div>' +
+        '<div class="alc-meta">' +
+          '<div class="muted tiny">' + (t && t.g > 0
+            ? (over ? '⚠️ over your ' + alcLimitStd() + '-drink day' : Math.round(pct) + '% of your ' + alcLimitStd() + '-drink day')
+            : 'Daily reference: ' + alcLimitStd() + ' standard drinks') +
+            ' <button class="link-btn" id="alc-limit">edit</button></div>' +
+          (breakdown ? '<div class="alc-bds">' + breakdown + '</div>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="alc-types">' + ALC_TYPES.map(function (x) {
+        return '<button class="starter-chip alc-type' + (x.id === alcPickType ? ' on' : '') +
+          '" data-alctype="' + x.id + '">' + x.emoji + ' ' + esc(x.label) + '</button>';
+      }).join('') + '</div>' +
+      '<div class="in-quick">' + alcServings(type).map(function (sv) {
+        var g = alcGrams(sv[1], type.abv);
+        return '<button class="btn fr-mini" data-alcadd="' + sv[1] + '" title="' + esc(type.label) + ' ' + sv[1] +
+          ' ml · ' + (Math.round(alcStd(g) * 10) / 10) + ' std">' + esc(sv[0]) + '</button>';
+      }).join('') + '</div>' +
+      '<p class="muted tiny" style="margin:6px 2px 0">' + type.emoji + ' ' + esc(type.label) +
+        ' at ' + type.abv + '% — a 30 ml peg is about one standard drink.</p>' +
+      '<div class="in-actions">' +
+        '<button class="btn block" data-alczero="1">✓ None today</button>' +
+        (t ? '<button class="btn fr-mini" data-alcundo="1">Undo</button>' +
+             '<button class="btn fr-mini" data-alcclear="1">Clear</button>' : '') +
+      '</div>' +
+      alcRunHtml() +
+    '</div>';
+  }
+  function alcRunHtml() {
+    var since = intakeSince(ALC_KIND), best = intakeBest(ALC_KIND);
+    return '<div class="muted tiny in-run">' +
+      (!since.known
+        ? 'No clean day recorded yet — tap “None today” to start a run.'
+        : since.days > 0
+          ? '🔥 ' + since.days + ' day' + (since.days === 1 ? '' : 's') + ' alcohol-free' +
+            (best > since.days ? ' · best ' + best : (since.days >= best && best > 0 ? ' · your best yet 🏆' : '')) +
+            (since.unknown ? ' <span class="muted">(' + since.unknown + ' of those not logged)</span>' : '')
+          : 'Logged today — the run starts again tomorrow.') +
+    '</div>';
+  }
   function renderIntake() {
     var box = $('#intake-app'); if (!box) return;
     var rs = rangeState('intake');
@@ -8678,11 +8818,9 @@
       INTAKE_KINDS.map(function (k) {
         var v = intakeCount(day, k);
         var since = intakeSince(k), best = intakeBest(k);
-        var quick = k.quick
-          ? k.quick.map(function (n) { return '<button class="btn fr-mini" data-iadd="' + k.key + ':' + n + '">+' + n + '</button>'; }).join('')
-          : DRINK_SERVINGS.map(function (s) {
-              return '<button class="btn fr-mini" data-iadd="' + k.key + ':' + s.u + '" title="' + esc(s.label) + ' · ' + esc(s.sub) + '">' + s.emoji + ' ' + esc(s.label) + '</button>';
-            }).join('');
+        var quick = k.quick.map(function (n) {
+          return '<button class="btn fr-mini" data-iadd="' + k.key + ':' + n + '">+' + n + '</button>';
+        }).join('');
         return '<div class="card">' +
           '<div class="in-head"><span class="in-emoji">' + k.emoji + '</span>' +
             '<div class="in-title"><b>' + k.label + '</b>' +
@@ -8707,11 +8845,20 @@
           '</div>' +
         '</div>';
       }).join('') +
+      alcCardHtml(day) +
       '<div class="card"><p class="muted tiny" style="margin:0">A blank day means <b>not logged</b>, not zero. ' +
         'Tap “None today” to record a clean day — that’s what builds the run.</p></div>';
 
     bindRangeBar(box, 'intake', renderIntake);
     bindDayBar(box, renderIntake);
+
+    // Animate the jar to its level after paint, exactly as the water app does.
+    requestAnimationFrame(function () { requestAnimationFrame(function () {
+      var t = alcTotals(appDay());
+      var pct = t ? Math.min(100, Math.round(t.g / (alcLimitStd() * STD_DRINK_G) * 100)) : 0;
+      var w = box.querySelector('.alc-fill .jar-water');
+      if (w) w.style.transform = 'translateY(' + jarYFor(pct, 90) + 'px)';
+    }); });
 
     function bump(kind, delta, absolute) {
       var d = appDay();
@@ -8730,9 +8877,9 @@
     box.querySelectorAll('[data-izero]').forEach(function (b) {
       b.addEventListener('click', function () {
         var k = intakeKind(b.getAttribute('data-izero'));
-        var pv = intakeSince(k);
+        var prev = intakeSince(k);
         bump(k, 0, true);
-        toast(pv.known && pv.days > 0 ? (pv.days + 1) + ' days ' + k.clean + ' 🔥' : 'Logged — clean day ✓');
+        toast(prev.known && prev.days > 0 ? (prev.days + 1) + ' days ' + k.clean + ' 🔥' : 'Logged — clean day ✓');
       });
     });
     box.querySelectorAll('[data-idec]').forEach(function (b) {
@@ -8745,7 +8892,55 @@
         queueSaveDay(d); renderIntake();
       });
     });
+
+    // ---- alcohol ----
+    box.querySelectorAll('[data-alctype]').forEach(function (b) {
+      b.addEventListener('click', function () { alcPickType = b.getAttribute('data-alctype'); renderIntake(); });
+    });
+    box.querySelectorAll('[data-alcadd]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var d = appDay();
+        var ml = Number(b.getAttribute('data-alcadd'));
+        alcAdd(d, alcPickType, ml);
+        alcLast = { type: alcPickType, ml: ml };
+        queueSaveDay(d); renderIntake();
+      });
+    });
+    var alcZero = box.querySelector('[data-alczero]');
+    if (alcZero) alcZero.addEventListener('click', function () {
+      var d = appDay();
+      var prev = intakeSince(ALC_KIND);
+      alcSet(d, {});                       // a recorded zero, not an absent day
+      queueSaveDay(d); renderIntake();
+      toast(prev.known && prev.days > 0 ? (prev.days + 1) + ' days alcohol-free 🔥' : 'Logged — clean day ✓');
+    });
+    var alcUndo = box.querySelector('[data-alcundo]');
+    if (alcUndo) alcUndo.addEventListener('click', function () {
+      if (!alcLast) { toast('Nothing to undo'); return; }
+      var d = appDay();
+      alcAdd(d, alcLast.type, -alcLast.ml);
+      alcLast = null;
+      queueSaveDay(d); renderIntake();
+    });
+    var alcClear = box.querySelector('[data-alcclear]');
+    if (alcClear) alcClear.addEventListener('click', function () {
+      var d = appDay();
+      alcSet(d, null); alcLast = null;
+      queueSaveDay(d); renderIntake();
+    });
+    var alcLimitBtn = box.querySelector('#alc-limit');
+    if (alcLimitBtn) alcLimitBtn.addEventListener('click', function () {
+      var v = prompt('Daily reference, in standard drinks (1 standard drink = one 30 ml peg = 10 g alcohol):', String(alcLimitStd()));
+      if (v == null) return;
+      var n = Number(v);
+      if (!(n > 0)) { toast('Enter a number above 0'); return; }
+      var caps = Object.assign({}, (state.profile && state.profile.intakeCaps) || {}, { drinksPerDay: n });
+      commitProfile(Object.assign({}, state.profile, { intakeCaps: caps }));
+      renderIntake();
+    });
   }
+  var alcLast = null;   // last pour, so Undo can take back exactly that one
+
   // The period before this one, same length — so "vs last week" is honest.
   function intakePrevSpan(r) {
     var n = rangeDatesList(r.from, r.to).length;
@@ -8753,33 +8948,49 @@
   }
   function renderIntakeRange(box, rs) {
     var r = rangeSpan(rs.mode, rs.anchor), pr = intakePrevSpan(r);
-    box.innerHTML = rangeBarHtml('intake') +
-      INTAKE_KINDS.map(function (k) {
-        var get = function (l) { return intakeCount(l, k); };
-        var a = rangeAgg(r.from, r.to, get), b = rangeAgg(pr.from, pr.to, get);
-        var cleanDays = a.logged - a.hits;
-        // Compare per LOGGED day, not per calendar day — otherwise a week you
-        // simply didn't open the app looks like a week you drank nothing.
-        var now = a.logged ? a.sum / a.logged : 0, was = b.logged ? b.sum / b.logged : 0;
-        var arrow = !b.logged ? '' : now < was ? '↓' : now > was ? '↑' : '→';
-        var deltaTxt = !b.logged ? 'no data last period'
-          : (arrow + ' ' + intakeFmt(Math.abs(now - was), k) + '/day vs last period');
-        return '<div class="card">' +
-          '<div class="in-head"><span class="in-emoji">' + k.emoji + '</span>' +
-            '<div class="in-title"><b>' + k.label + '</b>' +
-              '<div class="muted tiny">' + deltaTxt + '</div></div>' +
-            '<span class="in-val mono">' + intakeFmt(a.sum, k) + '</span></div>' +
-          '<div class="gym-stats" style="margin-top:10px">' +
-            '<div class="js-stat"><b>' + cleanDays + '</b><span>clean days</span></div>' +
-            '<div class="js-stat"><b>' + a.hits + '</b><span>days used</span></div>' +
-            '<div class="js-stat"><b>' + intakeFmt(now, k) + '</b><span>per logged day</span></div>' +
-            '<div class="js-stat"><b>' + a.logged + '/' + a.days + '</b><span>days logged</span></div>' +
-          '</div>' +
-          (a.logged < a.days ? '<p class="muted tiny" style="margin:8px 0 0">' + (a.days - a.logged) +
-            ' day' + (a.days - a.logged === 1 ? '' : 's') + ' not logged — not counted either way.</p>' : '') +
-          '<div style="margin-top:10px">' + rangeBarChart(a.perDay, k.color, k.unit || '') + '</div>' +
-        '</div>';
-      }).join('');
+    function card(kind, fmtVal, extraStats) {
+      var get = function (l) { return intakeCount(l, kind); };
+      var a = rangeAgg(r.from, r.to, get), b = rangeAgg(pr.from, pr.to, get);
+      var cleanDays = a.logged - a.hits;
+      // Per LOGGED day, not per calendar day — a week you didn't open the app
+      // must not read as a week you drank nothing.
+      var now = a.logged ? a.sum / a.logged : 0, was = b.logged ? b.sum / b.logged : 0;
+      var arrow = !b.logged ? '' : now < was ? '↓' : now > was ? '↑' : '→';
+      var deltaTxt = !b.logged ? 'no data last period'
+        : (arrow + ' ' + fmtVal(Math.abs(now - was)) + '/day vs last period');
+      return '<div class="card">' +
+        '<div class="in-head"><span class="in-emoji">' + kind.emoji + '</span>' +
+          '<div class="in-title"><b>' + kind.label + '</b>' +
+            '<div class="muted tiny">' + deltaTxt + '</div></div>' +
+          '<span class="in-val mono">' + fmtVal(a.sum) + '</span></div>' +
+        '<div class="gym-stats" style="margin-top:10px">' +
+          '<div class="js-stat"><b>' + cleanDays + '</b><span>clean days</span></div>' +
+          '<div class="js-stat"><b>' + a.hits + '</b><span>days used</span></div>' +
+          extraStats(a) +
+          '<div class="js-stat"><b>' + a.logged + '/' + a.days + '</b><span>days logged</span></div>' +
+        '</div>' +
+        (a.logged < a.days ? '<p class="muted tiny" style="margin:8px 0 0">' + (a.days - a.logged) +
+          ' day' + (a.days - a.logged === 1 ? '' : 's') + ' not logged — not counted either way.</p>' : '') +
+        '<div style="margin-top:10px">' + rangeBarChart(a.perDay, kind.color, '') + '</div>' +
+      '</div>';
+    }
+    var cigs = card(INTAKE_KINDS[0],
+      function (v) { return String(Math.round(v)); },
+      function (a) {
+        return '<div class="js-stat"><b>' + (a.logged ? Math.round(a.sum / a.logged) : 0) +
+          '</b><span>per logged day</span></div>';
+      });
+    // Alcohol totals are summed in GRAMS (the only comparable measure across
+    // drink types) and reported in the units you actually think in: what you
+    // poured, and how many standard drinks that came to.
+    var mlAgg = rangeAgg(r.from, r.to, function (l) { var t = alcTotals(l); return t ? t.ml : null; });
+    var alc = card(ALC_KIND,
+      function (g) { return (Math.round(alcStd(g) * 10) / 10) + ' std'; },
+      function (a) {
+        return '<div class="js-stat"><b>' + (mlAgg.sum >= 1000 ? litres(mlAgg.sum) + ' L' : Math.round(mlAgg.sum) + ' ml') +
+          '</b><span>poured</span></div>';
+      });
+    box.innerHTML = rangeBarHtml('intake') + cigs + alc;
     bindRangeBar(box, 'intake', renderIntake);
   }
 

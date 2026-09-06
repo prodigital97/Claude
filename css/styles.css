@@ -1641,3 +1641,23 @@ label > .emoji-field .emoji-btn { width: 100%; }
 
 /* Settings version line — amber when the deployed backend is behind the app. */
 .ver-stale { color: var(--amber); }
+
+/* Alcohol card — a jar you fill, like water, but against a daily reference
+   rather than a goal, so crossing it reads as a warning not an achievement. */
+.alc-body { display: flex; align-items: center; gap: 14px; margin-top: 12px; }
+/* .jar carries its own 138x184; without an explicit override here the mini jar
+   renders full size and runs over the text beside it. */
+.alc-jar { flex: none; width: 62px; }
+.alc-jar .jar { width: 62px; height: 82px; }
+.alc-meta { flex: 1; min-width: 0; }
+/* The waves set their own fill, so recolour those, not the group. */
+.alc-fill .wave { fill: #c084fc; }
+.alc-fill .wave.w2 { fill: #a855f7; }
+.alc-fill.over .wave { fill: var(--red); }
+.alc-fill.over .wave.w2 { fill: color-mix(in srgb, var(--red) 75%, #000); }
+.in-val.over { color: var(--red); }
+.alc-types { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.alc-type { font-size: 12px; padding: 6px 9px; }
+.alc-type.on { border-color: var(--primary); color: var(--text); background: color-mix(in srgb, var(--primary) 14%, transparent); }
+.alc-bds { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.alc-bd { font-size: 11px; color: var(--muted); background: var(--bg-soft); border: 1px solid var(--line); border-radius: 7px; padding: 2px 7px; }
