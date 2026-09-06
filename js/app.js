@@ -8742,6 +8742,96 @@
     });
     return Math.max(best, run);
   }
+  /* A smoke chamber, not a fill line. Water and alcohol are volumes you can
+     pour to a level; cigarettes aren't — so this fills a sealed dome with haze
+     that thickens as the count climbs, and turns from grey to a dirty amber
+     once the day is heavy. Density, not height, is the variable. */
+  function smokeSvgHtml(pct, extraClass, clipId, heavy) {
+    var d = Math.max(0, Math.min(100, Number(pct) || 0)) / 100;
+    var dome = 'M30 176 V82 A45 45 0 0 1 120 82 V176 Z';
+    var gid = 'sg-' + clipId;
+    var tint = heavy ? '#e0bd80' : '#dbe3ec';   // stale amber once the day is heavy
+    // Soft-edged puffs. Flat ellipses read as pebbles; a radial fade is what
+    // makes them look like smoke, and gradients are portable where SVG filters
+    // are not. Spread across the dome so the haze fills it rather than pooling.
+    var puffs = [
+      [56, 148, 30, 22, 0],   [96, 156, 26, 19, 1.4],
+      [74, 124, 34, 24, 2.9], [46, 108, 25, 19, 4.2],
+      [104, 116, 27, 20, 2.1], [76, 92, 31, 22, 5.0],
+      [58, 74, 24, 17, 3.6],  [98, 78, 22, 16, 6.1]
+    ].map(function (q, i) {
+      return '<ellipse class="puff p' + ((i % 6) + 1) + '" cx="' + q[0] + '" cy="' + q[1] +
+        '" rx="' + q[2] + '" ry="' + q[3] + '" fill="url(#' + gid + ')"' +
+        ' style="animation-delay:' + q[4] + 's"/>';
+    }).join('');
+    return '<svg viewBox="0 0 150 200" class="smokejar' + (extraClass ? ' ' + extraClass : '') +
+        '" style="--smoke:' + d.toFixed(2) + '" aria-hidden="true">' +
+      '<defs>' +
+        '<clipPath id="' + clipId + '"><path d="' + dome + '"/></clipPath>' +
+        '<radialGradient id="' + gid + '">' +
+          '<stop offset="0" stop-color="' + tint + '" stop-opacity="0.6"/>' +
+          '<stop offset="0.55" stop-color="' + tint + '" stop-opacity="0.28"/>' +
+          '<stop offset="1" stop-color="' + tint + '" stop-opacity="0"/>' +
+        '</radialGradient>' +
+      '</defs>' +
+      '<path class="sj-glass" d="' + dome + '"/>' +
+      '<g clip-path="url(#' + clipId + ')" class="sj-smoke">' + puffs + '</g>' +
+      '<path class="sj-line" d="' + dome + '"/>' +
+      '<rect class="sj-base" x="22" y="174" width="106" height="13" rx="5"/>' +
+    '</svg>';
+  }
+  var CIGS_PER_PACK = 20;
+  function cigLimit() {
+    var c = (state.profile && state.profile.intakeCaps) || {};
+    var v = Number(c.cigsPerDay);
+    return v > 0 ? v : 5;
+  }
+  function cigCardHtml(day) {
+    var k = INTAKE_KINDS[0];
+    var v = intakeCount(day, k);
+    var lim = cigLimit();
+    var pct = v ? Math.min(100, Math.round(v / lim * 100)) : 0;
+    var heavy = v && v > lim;
+    var since = intakeSince(k), best = intakeBest(k);
+    var packTxt = v ? (v >= CIGS_PER_PACK
+      ? (Math.round(v / CIGS_PER_PACK * 10) / 10) + ' packs'
+      : v + ' of a ' + CIGS_PER_PACK + '-pack') : '';
+    return '<div class="card">' +
+      '<div class="in-head"><span class="in-emoji">🚬</span>' +
+        '<div class="in-title"><b>Cigarettes</b>' +
+          '<div class="muted tiny">' + (v == null ? 'Not logged yet today' :
+            v === 0 ? 'None today ✓' : packTxt) + '</div></div>' +
+        '<span class="in-val mono' + (v === 0 ? ' zero' : (heavy ? ' over' : '')) + '">' +
+          (v == null ? '—' : v) + '</span>' +
+      '</div>' +
+      '<div class="alc-body">' +
+        '<div class="alc-jar">' + smokeSvgHtml(pct, 'sj-mini' + (heavy ? ' heavy' : ''), 'sjclip-cig', heavy) + '</div>' +
+        '<div class="alc-meta">' +
+          '<div class="muted tiny">' + (v
+            ? (heavy ? '⚠️ over your ' + lim + '-a-day mark' : pct + '% of your ' + lim + '-a-day mark')
+            : 'Daily reference: ' + lim + ' a day') +
+            ' <button class="link-btn" id="cig-limit">edit</button></div>' +
+          '<div class="in-quick" style="margin-top:8px">' + k.quick.map(function (n) {
+            return '<button class="btn fr-mini" data-iadd="' + k.key + ':' + n + '">+' + n + '</button>';
+          }).join('') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="in-actions">' +
+        '<button class="btn block" data-izero="' + k.key + '">✓ None today</button>' +
+        (v != null ? '<button class="btn fr-mini" data-idec="' + k.key + '">−</button>' +
+                     '<button class="btn fr-mini" data-iclear="' + k.key + '">Clear</button>' : '') +
+      '</div>' +
+      '<div class="muted tiny in-run">' +
+        (!since.known
+          ? 'No clean day recorded yet — tap “None today” to start a run.'
+          : since.days > 0
+            ? '🔥 ' + since.days + ' day' + (since.days === 1 ? '' : 's') + ' ' + k.clean +
+              (best > since.days ? ' · best ' + best : (since.days >= best && best > 0 ? ' · your best yet 🏆' : '')) +
+              (since.unknown ? ' <span class="muted">(' + since.unknown + ' of those not logged)</span>' : '')
+            : 'Logged today — the run starts again tomorrow.') +
+      '</div>' +
+    '</div>';
+  }
   var alcPickType = 'whiskey';   // last drink type tapped, remembered per session
   // The alcohol card, built like the water tracker: a jar you fill, in ml, with
   // the servings actually used in India. Volume alone isn't comparable across
@@ -8815,36 +8905,7 @@
     var day = appDay();
 
     box.innerHTML = rangeBarHtml('intake') + dayBarHtml() +
-      INTAKE_KINDS.map(function (k) {
-        var v = intakeCount(day, k);
-        var since = intakeSince(k), best = intakeBest(k);
-        var quick = k.quick.map(function (n) {
-          return '<button class="btn fr-mini" data-iadd="' + k.key + ':' + n + '">+' + n + '</button>';
-        }).join('');
-        return '<div class="card">' +
-          '<div class="in-head"><span class="in-emoji">' + k.emoji + '</span>' +
-            '<div class="in-title"><b>' + k.label + '</b>' +
-              '<div class="muted tiny">' + (v == null ? 'Not logged yet today' :
-                v === 0 ? 'None today ✓' : intakeNum(v, k) + ' ' + k.noun + (v === 1 ? '' : 's')) + '</div></div>' +
-            '<span class="in-val mono' + (v === 0 ? ' zero' : '') + '">' + intakeFmt(v, k) + '</span>' +
-          '</div>' +
-          '<div class="in-quick">' + quick + '</div>' +
-          '<div class="in-actions">' +
-            '<button class="btn block" data-izero="' + k.key + '">✓ None today</button>' +
-            (v != null ? '<button class="btn fr-mini" data-idec="' + k.key + '">−</button>' +
-                         '<button class="btn fr-mini" data-iclear="' + k.key + '">Clear</button>' : '') +
-          '</div>' +
-          '<div class="muted tiny in-run">' +
-            (!since.known
-              ? 'No clean day recorded yet — tap “None today” to start a run.'
-              : since.days > 0
-                ? '🔥 ' + since.days + ' day' + (since.days === 1 ? '' : 's') + ' ' + k.clean +
-                  (best > since.days ? ' · best ' + best : (since.days >= best && best > 0 ? ' · your best yet 🏆' : '')) +
-                  (since.unknown ? ' <span class="muted">(' + since.unknown + ' of those not logged)</span>' : '')
-                : 'Logged today — the run starts again tomorrow.') +
-          '</div>' +
-        '</div>';
-      }).join('') +
+      cigCardHtml(day) +
       alcCardHtml(day) +
       '<div class="card"><p class="muted tiny" style="margin:0">A blank day means <b>not logged</b>, not zero. ' +
         'Tap “None today” to record a clean day — that’s what builds the run.</p></div>';
@@ -8927,6 +8988,16 @@
       var d = appDay();
       alcSet(d, null); alcLast = null;
       queueSaveDay(d); renderIntake();
+    });
+    var cigLimitBtn = box.querySelector('#cig-limit');
+    if (cigLimitBtn) cigLimitBtn.addEventListener('click', function () {
+      var v = prompt('Daily reference, in cigarettes (just a mark for the meter — not a health guideline):', String(cigLimit()));
+      if (v == null) return;
+      var n = Number(v);
+      if (!(n > 0)) { toast('Enter a number above 0'); return; }
+      var caps = Object.assign({}, (state.profile && state.profile.intakeCaps) || {}, { cigsPerDay: n });
+      commitProfile(Object.assign({}, state.profile, { intakeCaps: caps }));
+      renderIntake();
     });
     var alcLimitBtn = box.querySelector('#alc-limit');
     if (alcLimitBtn) alcLimitBtn.addEventListener('click', function () {

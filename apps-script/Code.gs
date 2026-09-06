@@ -19,7 +19,7 @@
    deployed backend is current — a mismatch means this file has changes that are
    not live yet, and only a redeploy (Deploy > Manage deployments > edit > New
    version) can publish them. */
-var BACKEND_VERSION = '2.66.0';
+var BACKEND_VERSION = '2.67.0';
 
 
 var WATER_GOAL_ML = 4000;         // 4 L (comfortably meets the 1-gallon rule)

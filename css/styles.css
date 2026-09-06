@@ -1661,3 +1661,32 @@ label > .emoji-field .emoji-btn { width: 100%; }
 .alc-type.on { border-color: var(--primary); color: var(--text); background: color-mix(in srgb, var(--primary) 14%, transparent); }
 .alc-bds { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .alc-bd { font-size: 11px; color: var(--muted); background: var(--bg-soft); border: 1px solid var(--line); border-radius: 7px; padding: 2px 7px; }
+
+/* ---------- Smoke chamber (cigarettes) ----------
+   Water and alcohol are volumes, so they fill to a level. Cigarettes aren't,
+   so this varies DENSITY instead: --smoke (0..1) drives the haze, and the
+   plumes drift so a heavy day looks thick rather than tall. */
+.smokejar { width: 70px; height: 92px; flex: none; }
+.alc-jar .smokejar { width: 70px; height: 92px; }
+.sj-glass { fill: var(--bg-soft); }
+.sj-line { fill: none; stroke: var(--line); stroke-width: 2.5; }
+.sj-base { fill: var(--card-2); stroke: var(--line); stroke-width: 1.5; }
+.sj-smoke { opacity: calc(var(--smoke, 0) * 1); transition: opacity .9s ease; }
+/* fill comes from a per-instance radial gradient set in the markup. */
+.puff { opacity: .38; animation: puffDrift 7s ease-in-out infinite; transform-origin: 50% 50%; }
+.puff.p2 { animation-duration: 8.5s; }
+.puff.p3 { animation-duration: 6.2s; }
+.puff.p4 { animation-duration: 9.1s; }
+.puff.p5 { animation-duration: 7.6s; }
+.puff.p6 { animation-duration: 8s; }
+/* Past the daily mark the gradient tint switches to a stale amber (set in the
+   markup, since the gradient id is per-instance) and the haze thickens. */
+.smokejar.heavy .puff { opacity: .42; }
+@keyframes puffDrift {
+  0%   { transform: translate(0, 6px) scale(.86); opacity: .16; }
+  45%  { transform: translate(4px, -10px) scale(1.06); opacity: .34; }
+  100% { transform: translate(-3px, -26px) scale(1.2); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .puff { animation: none; opacity: .3; }
+}
