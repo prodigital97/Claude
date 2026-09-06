@@ -917,6 +917,10 @@
   /* ---------------- App boot ---------------- */
   function loadState() {
     return api('getState', {}).then(function (data) {
+      // Absent means the deployed backend predates version reporting — i.e. it
+      // is definitely behind this build.
+      state.backendVersion = data.backendVersion || '';
+      renderVersionLine();
       state.user = data.user;
       state.logs = dedupeLogs(data.logs || []);
       state.user.currentDay = dayNumber(state.user.startDate, todayStr());
@@ -944,9 +948,26 @@
     localStorage.setItem('hard_cache', JSON.stringify({ user: state.user, logs: state.logs }));
   }
 
+  /* App version, plus whether the Apps Script backend behind it is current.
+     The backend lives in the user's own Google account and is NOT deployed by
+     pushing this repo — it needs Deploy > Manage deployments > edit > New
+     version. Without this line there was no way to tell a stale deployment
+     from a current one, which made "is that fix live?" unanswerable. */
+  function renderVersionLine() {
+    var el = $('#set-version'); if (!el) return;
+    var txt = '75 Hard Tracker v' + CFG.APP_VERSION + (OFFLINE ? ' · demo mode' : '');
+    if (!OFFLINE) {
+      var bv = state.backendVersion;
+      txt += bv === CFG.APP_VERSION ? ' · backend v' + bv + ' ✓'
+        : ' · backend ' + (bv ? 'v' + bv : 'out of date') + ' — redeploy Apps Script';
+    }
+    el.textContent = txt;
+    el.classList.toggle('ver-stale', !OFFLINE && state.backendVersion !== CFG.APP_VERSION);
+  }
+
   function enterApp() {
     hide('#auth-screen'); show('#app-screen');
-    $('#set-version').textContent = '75 Hard Tracker v' + CFG.APP_VERSION + (OFFLINE ? ' · demo mode' : '');
+    renderVersionLine();
     bindAppEvents();
     loadCustomFoods();
     renderAll();

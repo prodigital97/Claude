@@ -1638,3 +1638,6 @@ label > .emoji-field .emoji-btn { width: 100%; }
 
 /* Secondary action under "End fast" — ending a forgotten fast at its real time. */
 .block-link { display: block; width: 100%; margin-top: 8px; text-align: center; font-size: 13px; padding: 6px; }
+
+/* Settings version line — amber when the deployed backend is behind the app. */
+.ver-stale { color: var(--amber); }

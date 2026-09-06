@@ -14,6 +14,14 @@
  *          Copy the /exec URL into js/config.js (API_URL).
  */
 
+/* Bumped whenever this file changes in a way the app depends on. The app shows
+   it in Settings beside its own version, so you can tell at a glance whether the
+   deployed backend is current — a mismatch means this file has changes that are
+   not live yet, and only a redeploy (Deploy > Manage deployments > edit > New
+   version) can publish them. */
+var BACKEND_VERSION = '2.65.1';
+
+
 var WATER_GOAL_ML = 4000;         // 4 L (comfortably meets the 1-gallon rule)
 var CHALLENGE_LENGTH = 75;        // days
 var GEMINI_MODEL = 'gemini-2.5-flash-lite';   // cheapest vision model for label scanning
@@ -404,6 +412,7 @@ function handleLogin(body) {
 function handleGetState(body) {
   var user = authUser(body);
   return {
+    backendVersion: BACKEND_VERSION,
     user: publicUser(user.username, user.displayName, user.startDate, user.email, user.emailVerified),
     logs: getUserLogs(user.username),
     profile: getProfile(user.username),
