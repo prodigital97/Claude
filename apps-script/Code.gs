@@ -19,7 +19,7 @@
    deployed backend is current — a mismatch means this file has changes that are
    not live yet, and only a redeploy (Deploy > Manage deployments > edit > New
    version) can publish them. */
-var BACKEND_VERSION = '2.67.0';
+var BACKEND_VERSION = '2.68.0';
 
 
 var WATER_GOAL_ML = 4000;         // 4 L (comfortably meets the 1-gallon rule)
@@ -418,6 +418,69 @@ function handleGetState(body) {
     profile: getProfile(user.username),
     activeFast: getActiveFast(user.username)
   };
+}
+
+/* ================= Google Health probe =================
+   Run this ONCE from the editor (Run > healthProbe) after linking this script
+   to the Cloud project that has the Google Health API enabled. It writes
+   nothing — it only reads and logs.
+
+   It exists because the Google Health API is new enough that its exact request
+   shape could not be confirmed from documentation, so rather than guess in the
+   sync code, this tries the plausible shapes and prints what the API actually
+   says. Google's errors name the fields they expected, so a failure here is
+   just as informative as a success. View output with Ctrl+Enter (Execution log). */
+function healthProbe() {
+  var token = ScriptApp.getOAuthToken();
+
+  // 1. Did we actually get the health scopes? This answers the auth question on
+  //    its own, before any API shape is involved.
+  var ti = UrlFetchApp.fetch(
+    'https://oauth2.googleapis.com/tokeninfo?access_token=' + encodeURIComponent(token),
+    { muteHttpExceptions: true });
+  Logger.log('--- TOKEN SCOPES (%s) ---', ti.getResponseCode());
+  Logger.log(ti.getContentText());
+
+  var tz = Session.getScriptTimeZone();
+  var end = new Date();
+  var start = new Date(end.getTime() - 6 * 86400000);
+  var ymd = function (d) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd').split('-').map(Number); };
+  var s = ymd(start), e = ymd(end);
+  var civil = function (p) { return { year: p[0], month: p[1], day: p[2] }; };
+
+  function tryCall(label, method, url, payload) {
+    var opt = {
+      method: method,
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    };
+    if (payload) { opt.contentType = 'application/json'; opt.payload = JSON.stringify(payload); }
+    var r = UrlFetchApp.fetch(url, opt);
+    Logger.log('--- %s -> %s ---', label, r.getResponseCode());
+    Logger.log(r.getContentText().slice(0, 4000));
+    return r.getResponseCode();
+  }
+
+  var base = 'https://health.googleapis.com/v4/users/me/dataTypes/';
+
+  // 2. The simplest possible read. If the resource path is right this either
+  //    returns data points or a precise complaint about missing parameters.
+  tryCall('steps list', 'get', base + 'steps/dataPoints?pageSize=5');
+
+  // 3. dailyRollUp — the method the sync will actually use. Two candidate
+  //    shapes for CivilTimeInterval; whichever is wrong will say so.
+  tryCall('steps dailyRollUp (startTime/endTime)', 'post',
+    base + 'steps/dataPoints:dailyRollUp',
+    { range: { startTime: civil(s), endTime: civil(e) } });
+
+  tryCall('steps dailyRollUp (startDate/endDate)', 'post',
+    base + 'steps/dataPoints:dailyRollUp',
+    { range: { startDate: civil(s), endDate: civil(e) } });
+
+  // 4. The other three types, to confirm the Air actually populates them.
+  ['sleep', 'heart_rate', 'weight'].forEach(function (t) {
+    tryCall(t + ' list', 'get', base + t + '/dataPoints?pageSize=3');
+  });
 }
 
 /* ---------------- Intermittent fasting ---------------- */
