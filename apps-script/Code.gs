@@ -489,22 +489,32 @@ function healthProbe() {
 
   var base = 'https://health.googleapis.com/v4/users/me/dataTypes/';
 
-  // dailyRollUp: both guessed shapes of `range` were rejected last time, so
-  // try the CivilDateTime form (start/end, each wrapping a date).
+  // dailyRollUp. Earlier runs proved `range` is NOT {startTime,endTime} or
+  // {startDate,endDate}. The reference lists the body as range (a
+  // CivilTimeInterval), windowSizeDays, pageSize, pageToken and
+  // dataSourceFamily, so try start/end holding CivilDateTime values, with
+  // windowSizeDays set. The first shape that returns 200 is reused for the
+  // other data types below.
+  var midnight = { hours: 0, minutes: 0, seconds: 0 }, lastSecond = { hours: 23, minutes: 59, seconds: 59 };
   var shapes = [
-    ['dailyRollUp range{start,end}.date', { range: { start: { date: s }, end: { date: e } } }],
-    ['dailyRollUp range{start,end} flat', { range: { start: s, end: e } }],
-    ['dailyRollUp range{start,end}.date+time', { range: {
-      start: { date: s, time: { hours: 0, minutes: 0, seconds: 0 } },
-      end: { date: e, time: { hours: 23, minutes: 59, seconds: 59 } } } }]
+    ['range{start,end}.date+time', { range: { start: { date: s, time: midnight }, end: { date: e, time: lastSecond } }, windowSizeDays: 1 }],
+    ['range{start,end}.date',      { range: { start: { date: s }, end: { date: e } }, windowSizeDays: 1 }],
+    ['range{start,end} flat',      { range: { start: s, end: e }, windowSizeDays: 1 }]
   ];
+  var okBody = null;
   for (var i = 0; i < shapes.length; i++) {
-    var code = call('steps ' + shapes[i][0], 'post', base + 'steps/dataPoints:dailyRollUp', shapes[i][1]);
-    if (code === 200) break;
+    var code = call('steps dailyRollUp ' + shapes[i][0], 'post', base + 'steps/dataPoints:dailyRollUp', shapes[i][1]);
+    if (code === 200) { okBody = shapes[i][1]; break; }
+  }
+  if (okBody) {
+    ['total-calories', 'active-minutes', 'daily-resting-heart-rate', 'heart-rate', 'sleep'].forEach(function (t) {
+      call(t + ' dailyRollUp', 'post', base + t + '/dataPoints:dailyRollUp', okBody, 1200);
+    });
   }
 
   // Which data types exist, and does the Air populate them? Hyphen and
   // underscore spellings both appear in the wild, so try both for heart rate.
-  ['steps', 'sleep', 'heart-rate', 'heart_rate', 'weight', 'total-calories', 'body-fat', 'distance']
+  ['steps', 'sleep', 'heart-rate', 'heart_rate', 'daily-resting-heart-rate', 'weight',
+   'total-calories', 'active-minutes', 'exercise', 'body-fat', 'distance']
     .forEach(function (t) { call(t + ' list', 'get', base + t + '/dataPoints?pageSize=2', null, 900); });
 }
